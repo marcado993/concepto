@@ -9,6 +9,12 @@
   let selectedIndex = $state(0);
   let sheetOpen = $state(false);
   let firstVisit = $state(false);
+  let showSplash = $state(true);
+
+  $effect(() => {
+    const t = setTimeout(() => (showSplash = false), 1800);
+    return () => clearTimeout(t);
+  });
 
   const activeCategory = $derived(categories[selectedIndex]);
 
@@ -52,6 +58,7 @@
     <div class="brandbar">
       <span class="brand-dot"></span>
       <span class="brand-name">AEIS</span>
+      <img src="/aso.png" alt="AEIS" class="brand-mark" />
     </div>
 
     <main class="menu-layer" class:receded={sheetOpen}>
@@ -86,6 +93,15 @@
     </main>
 
     <DetailSheet category={activeCategory} bind:open={sheetOpen} />
+
+    {#if showSplash}
+      <div class="splash" out:fade={{ duration: 400 }}>
+        <img src="/aso.png" alt="AEIS" class="splash-mark" />
+        <div class="splash-text">AEIS</div>
+        <div class="splash-sub">Asociación de Estudiantes de Ingeniería de Sistemas</div>
+        <div class="splash-bar"><span></span></div>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -123,6 +139,14 @@
     border-radius: 50%;
     background: var(--accent);
     box-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  .brand-mark {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    margin-left: auto;
+    filter: drop-shadow(0 0 6px var(--accent-glow));
   }
 
   .brand-name {
@@ -176,14 +200,16 @@
 
   .wheel-slot {
     width: 100%;
-    flex: 3 1 auto;
+    flex: 1 1 auto;
     min-height: 130px;
   }
 
+  /* Sits immediately under the wheel's own dots, not stranded in the
+     leftover space — Gestalt proximity: the dial and its "confirm" action
+     read as one control cluster only when they're actually close together. */
   .pill-slot {
     width: 100%;
-    flex: 1 1 auto;
-    min-height: 56px;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -264,13 +290,13 @@
     padding: 13px 26px;
     border-radius: 999px;
     background: var(--accent);
-    color: #04120c;
+    color: #010805;
     font-family: var(--font-display);
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 0.02em;
     text-transform: lowercase;
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+    text-shadow: none;
     text-align: center;
     white-space: nowrap;
     cursor: pointer;
@@ -299,7 +325,7 @@
   .open-pill-arrow {
     font-size: 12px;
     line-height: 0.6;
-    opacity: 0.75;
+    opacity: 0.9;
   }
 
   @keyframes pill-breathe {
@@ -311,6 +337,84 @@
     50% {
       transform: translateY(-3px) scale(1.02);
       box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3) inset, 0 12px 30px var(--accent-glow);
+    }
+  }
+
+  .splash {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 0 32px;
+    background: radial-gradient(120% 90% at 50% 40%, var(--bg-panel-2) 0%, var(--bg-deep) 55%, var(--bg-void) 100%);
+  }
+
+  .splash-mark {
+    width: 84px;
+    height: 84px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 18px var(--accent-glow));
+    animation: splash-pulse 1.8s ease-in-out infinite;
+  }
+
+  .splash-text {
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.4em;
+    color: var(--ink-0);
+    text-shadow: 0 0 24px var(--accent-glow);
+  }
+
+  .splash-sub {
+    margin-top: -8px;
+    font-family: var(--font-display);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--ink-1);
+    text-align: center;
+    max-width: 260px;
+  }
+
+  .splash-bar {
+    margin-top: 10px;
+    width: 120px;
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+
+  .splash-bar span {
+    display: block;
+    height: 100%;
+    width: 40%;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent-glow);
+    animation: splash-load 1.1s ease-in-out infinite;
+  }
+
+  @keyframes splash-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.06);
+    }
+  }
+
+  @keyframes splash-load {
+    0% {
+      transform: translateX(-120%);
+    }
+    100% {
+      transform: translateX(360%);
     }
   }
 

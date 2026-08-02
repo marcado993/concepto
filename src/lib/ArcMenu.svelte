@@ -270,8 +270,9 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 18px;
+    justify-content: flex-end;
+    gap: 14px;
+    padding-bottom: 4px;
   }
 
   .edge-arrow {
