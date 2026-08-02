@@ -21,9 +21,9 @@
   let boxW = $state(375);
 
   const R = $derived(boxW * 0.82);
-  const REVEAL = $derived(R * 0.66);
+  const REVEAL = $derived(R * 0.8);
   const HUB_R = $derived(R * 0.2);
-  const ICON_RADIUS = $derived(R * 0.67);
+  const ICON_RADIUS = $derived(R * 0.72);
   const RING_RADII = $derived([0.38, 0.58, 0.82].map((f) => HUB_R + (R - HUB_R) * f));
   const ANGLE_STEP = 360 / categories.length;
 

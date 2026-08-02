@@ -42,7 +42,7 @@
   function onPointerUp() {
     if (!dragging) return;
     dragging = false;
-    if ($progress > 0.28) {
+    if ($progress > 0.2) {
       open = false;
       onclose?.();
     } else {
@@ -87,7 +87,13 @@
   </div>
 
   <div class="sheet-inner" style="opacity: {contentOpacity}">
-    <header class="sheet-header">
+    <header
+      class="sheet-header"
+      onpointerdown={onPointerDown}
+      onpointermove={onPointerMove}
+      onpointerup={onPointerUp}
+      onpointercancel={onPointerUp}
+    >
       <h2>{category.label}</h2>
       <div class="icon-cluster">
         <IsoIcon kind={category.icon} size={128} />
@@ -220,6 +226,8 @@
     text-align: center;
     padding: 4px 24px 18px;
     flex-shrink: 0;
+    touch-action: none;
+    cursor: grab;
   }
 
   .sheet-header h2 {
