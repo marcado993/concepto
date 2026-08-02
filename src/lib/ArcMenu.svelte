@@ -23,7 +23,7 @@
   const R = $derived(boxW * 0.82);
   const REVEAL = $derived(R * 0.8);
   const HUB_R = $derived(R * 0.2);
-  const ICON_RADIUS = $derived(R * 0.72);
+  const ICON_RADIUS = $derived(R * 0.63);
   const RING_RADII = $derived([0.38, 0.58, 0.82].map((f) => HUB_R + (R - HUB_R) * f));
   const ANGLE_STEP = 360 / categories.length;
 
@@ -295,26 +295,28 @@
 
   .up-cue {
     position: absolute;
-    top: -6px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: -4px;
+    left: 0;
+    right: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 0;
     pointer-events: none;
     z-index: 6;
   }
 
   .chevron {
-    font-size: 13px;
-    line-height: 0.9;
+    font-size: 24px;
+    line-height: 0.8;
     color: var(--accent);
+    text-shadow: 0 0 10px var(--accent-glow);
     animation: chevron-pulse 1.8s ease-in-out infinite;
   }
 
   .chevron.c2 {
-    margin-top: -3px;
+    margin-top: -7px;
     animation-delay: 0.18s;
     opacity: 0.55;
   }

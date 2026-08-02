@@ -26,15 +26,19 @@
 </div>
 
 <style>
+  /* The ellipse now runs well past 100% before it ever reaches bg-void, so
+     the tone keeps drifting all the way to the bottom edge instead of
+     flatlining into a visibly different, texture-less zone once the wheel
+     (and everything below it) got taller. */
   .bg {
     position: absolute;
     inset: 0;
-    background: radial-gradient(120% 90% at 50% 0%, var(--bg-panel-2) 0%, var(--bg-deep) 55%, var(--bg-void) 100%);
+    background: radial-gradient(120% 150% at 50% 0%, var(--bg-panel-2) 0%, var(--bg-deep) 68%, var(--bg-void) 140%);
     color: var(--line-strong);
     overflow: hidden;
   }
   .bg.accent {
-    background: radial-gradient(130% 100% at 50% -10%, var(--accent-dim) 0%, var(--bg-deep) 60%, var(--bg-void) 100%);
+    background: radial-gradient(130% 160% at 50% -10%, var(--accent-dim) 0%, var(--bg-deep) 70%, var(--bg-void) 140%);
     color: var(--accent-ghost);
   }
 

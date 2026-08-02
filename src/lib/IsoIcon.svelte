@@ -65,7 +65,7 @@
   const tone = $derived(status ? statusTone[status] : { top: "var(--accent)", body: "var(--accent-dim)", glow: false });
 
   const photoMap: Partial<Record<IconKind, { src: string; alt: string }>> = {
-    lockers: { src: "/locker.png", alt: "Casilleros" },
+    lockers: { src: "/locker2.png", alt: "Casilleros" },
     events: { src: "/Calendar.png", alt: "Eventos" },
     resources: { src: "/repo.png", alt: "Recursos" },
     community: { src: "/comunidad.png", alt: "Comunidad" },

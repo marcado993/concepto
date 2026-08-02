@@ -77,10 +77,12 @@
       <div class="wheel-slot" onpointerdown={dismissOnboarding}>
         <ArcMenu bind:selectedIndex categories={categories} locked={sheetOpen} onswipeup={openSheet} />
       </div>
-      <button class="open-pill" class:emphasize={firstVisit} onclick={openSheet}>
-        <span class="open-pill-arrow">︿</span>
-        desliza arriba o toca aquí
-      </button>
+      <div class="pill-slot">
+        <button class="open-pill" class:emphasize={firstVisit} onclick={openSheet}>
+          <span class="open-pill-arrow">︿</span>
+          desliza arriba o toca aquí
+        </button>
+      </div>
     </main>
 
     <DetailSheet category={activeCategory} bind:open={sheetOpen} />
@@ -174,8 +176,17 @@
 
   .wheel-slot {
     width: 100%;
-    flex: 1 1 auto;
+    flex: 3 1 auto;
     min-height: 130px;
+  }
+
+  .pill-slot {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .swipe-hint {
@@ -249,7 +260,7 @@
     flex-direction: column;
     align-items: center;
     gap: 2px;
-    margin: 2px 0 clamp(14px, 3vh, 26px);
+    margin: 0 0 max(4px, env(safe-area-inset-bottom));
     padding: 13px 26px;
     border-radius: 999px;
     background: var(--accent);
