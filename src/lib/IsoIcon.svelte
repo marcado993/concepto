@@ -68,6 +68,7 @@
     lockers: { src: "/locker.png", alt: "Casilleros" },
     events: { src: "/Calendar.png", alt: "Eventos" },
     resources: { src: "/repo.png", alt: "Recursos" },
+    community: { src: "/comunidad.png", alt: "Comunidad" },
   };
   const photo = $derived(photoMap[kind]);
 </script>

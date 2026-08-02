@@ -69,14 +69,14 @@
           </div>
         {/key}
       </div>
-      <div class="wheel-slot" onpointerdown={dismissOnboarding}>
-        <ArcMenu bind:selectedIndex categories={categories} locked={sheetOpen} onswipeup={openSheet} />
-      </div>
       <p class="swipe-hint" class:emphasize={firstVisit}>
         <span class="hint-arrow bounce-left">‹</span>
         {firstVisit ? "desliza el disco para elegir" : "desliza para elegir"}
         <span class="hint-arrow bounce-right">›</span>
       </p>
+      <div class="wheel-slot" onpointerdown={dismissOnboarding}>
+        <ArcMenu bind:selectedIndex categories={categories} locked={sheetOpen} onswipeup={openSheet} />
+      </div>
       <button class="open-pill" class:emphasize={firstVisit} onclick={openSheet}>
         <span class="open-pill-arrow">︿</span>
         desliza arriba o toca aquí
@@ -183,16 +183,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 20px;
+    padding: 10px 22px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--line-strong);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
+    background: var(--accent-ghost);
+    border: 1px solid var(--accent-dim);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
     color: var(--ink-0);
     text-align: center;
     flex: 0 0 auto;
+    text-transform: lowercase;
     transition: font-size 0.3s ease, padding 0.3s ease, background 0.3s ease, border-color 0.3s ease,
       box-shadow 0.3s ease;
   }
