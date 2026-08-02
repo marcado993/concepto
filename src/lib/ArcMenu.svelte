@@ -21,7 +21,7 @@
   let boxW = $state(375);
 
   const R = $derived(boxW * 0.82);
-  const REVEAL = $derived(R * 0.8);
+  const REVEAL = $derived(R * 0.94);
   const HUB_R = $derived(R * 0.2);
   const ICON_RADIUS = $derived(R * 0.63);
   const RING_RADII = $derived([0.38, 0.58, 0.82].map((f) => HUB_R + (R - HUB_R) * f));
@@ -64,7 +64,6 @@
   let lastT = 0;
   let velocity = 0;
   let axisLocked: "x" | "y" | null = null;
-  let liftY = $state(0); // how far into the swipe-up gesture the user has pulled
 
   function wrap(deg: number) {
     return ((((deg + 180) % 360) + 360) % 360) - 180;
@@ -101,7 +100,6 @@
     }
 
     if (axisLocked === "y") {
-      liftY = Math.max(0, Math.min(1, -dy / 140));
       if (dy < -14) {
         dragging = false;
         onswipeup?.();
@@ -125,7 +123,6 @@
   function onPointerUp() {
     if (!dragging) return;
     dragging = false;
-    liftY = 0;
     dragPull.set(0);
     if (axisLocked !== "x") return;
 
@@ -169,11 +166,6 @@
 >
   <button class="edge-arrow left" style="opacity: {Math.max(0, -$dragPull)}" tabindex="-1" aria-hidden="true">‹</button>
   <button class="edge-arrow right" style="opacity: {Math.max(0, $dragPull)}" tabindex="-1" aria-hidden="true">›</button>
-
-  <div class="up-cue" style="opacity: {1 - liftY * 0.6}; transform: translateY({-liftY * 18}px)">
-    <span class="chevron c1">︿</span>
-    <span class="chevron c2">︿</span>
-  </div>
 
   <div class="dome-window" bind:clientWidth={boxW} style="height: {REVEAL + 8}px">
     <div
@@ -292,47 +284,6 @@
 
   .edge-arrow.right {
     right: 2px;
-  }
-
-  .up-cue {
-    position: absolute;
-    top: -4px;
-    left: 0;
-    right: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0;
-    pointer-events: none;
-    z-index: 6;
-  }
-
-  .chevron {
-    font-size: 24px;
-    line-height: 0.8;
-    color: var(--accent);
-    text-shadow: 0 0 10px var(--accent-glow);
-    animation: chevron-pulse 1.8s ease-in-out infinite;
-  }
-
-  .chevron.c2 {
-    margin-top: -7px;
-    animation-delay: 0.18s;
-    opacity: 0.55;
-  }
-
-
-  @keyframes chevron-pulse {
-    0%,
-    100% {
-      transform: translateY(2px);
-      opacity: 0.4;
-    }
-    50% {
-      transform: translateY(-3px);
-      opacity: 1;
-    }
   }
 
   .dome-window {
