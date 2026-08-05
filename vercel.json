@@ -2,19 +2,16 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "headers": [
     {
-      "comment": "Vite fingerprints every file in /assets with a content hash, so a given URL's bytes can never change. Cache them permanently: on a repeat visit — or a flaky connection that reloads — nothing here is re-fetched.",
       "source": "/assets/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     },
     {
-      "comment": "Artwork is unhashed (served straight from /public) so it can't be immutable, but a day of browser cache plus a month of stale-while-revalidate means a returning visitor on bad internet paints instantly and refreshes in the background.",
       "source": "/(.*)\\.(png|svg|jpg|jpeg|webp|avif|ico)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=2592000" }
       ]
     },
     {
-      "comment": "The HTML shell must always revalidate, otherwise a deploy that changes the asset hashes would never reach anyone holding a cached index.",
       "source": "/",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
     }
