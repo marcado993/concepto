@@ -43,6 +43,10 @@
   );
 
   const activeCategory = $derived(displayCategories[selectedIndex]);
+  // Handed to CategoryContent as a reference that doesn't change identity
+  // just because you've navigated to some other section — see the comment
+  // by <SecurityMapComp> for why that distinction is the whole point.
+  const securityCategory = $derived(displayCategories.find((c) => c.id === "security") ?? null);
   const bgOverride = $derived(
     activeCategory.id === "security" ? { dim: securityTheme.accentDim, deep: securityTheme.deep } : null
   );
@@ -110,11 +114,18 @@
             {/key}
           </div>
           <div class="desktop-panel">
-            {#key activeCategory.id}
-              <div class="desktop-panel-inner" in:fade={{ duration: 180 }}>
-                <CategoryContent category={activeCategory} securityRisk={riskForHour(currentHour)} wide />
-              </div>
-            {/key}
+            <!-- Not keyed on activeCategory.id: that used to blow away and
+                 rebuild CategoryContent (and the map inside it) on every
+                 switch. Content now swaps instantly instead of fading in,
+                 which is the right trade for not re-fetching a map. -->
+            <div class="desktop-panel-inner">
+              <CategoryContent
+                category={activeCategory}
+                {securityCategory}
+                securityRisk={riskForHour(currentHour)}
+                wide
+              />
+            </div>
           </div>
         </section>
       </main>
@@ -150,7 +161,12 @@
         </div>
       </main>
 
-      <DetailSheet category={activeCategory} bind:open={sheetOpen} securityRisk={riskForHour(currentHour)} />
+      <DetailSheet
+        category={activeCategory}
+        bind:open={sheetOpen}
+        {securityCategory}
+        securityRisk={riskForHour(currentHour)}
+      />
     {/if}
 
   </div>

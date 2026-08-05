@@ -8,9 +8,16 @@
     open?: boolean;
     onclose?: () => void;
     securityRisk?: number;
+    securityCategory?: Category | null;
   }
 
-  let { category, open = $bindable(false), onclose, securityRisk = 0.5 }: Props = $props();
+  let {
+    category,
+    open = $bindable(false),
+    onclose,
+    securityRisk = 0.5,
+    securityCategory = null,
+  }: Props = $props();
 
   // 1 = fully hidden below the screen, 0 = fully presented — a plain,
   // well-damped slide (the familiar iOS sheet motion) reads far more
@@ -75,6 +82,7 @@
   <div class="sheet-inner" style="opacity: {contentOpacity}">
     <CategoryContent
       {category}
+      {securityCategory}
       {securityRisk}
       onheaderpointerdown={onPointerDown}
       onheaderpointermove={onPointerMove}

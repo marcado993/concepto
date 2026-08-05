@@ -4,6 +4,10 @@
 
   interface Props {
     category: Category;
+    // A separate, always-the-same reference to the Seguridad category —
+    // NOT just `category` when it happens to be active. See the note by
+    // the map block below for why this exists.
+    securityCategory?: Category | null;
     securityRisk?: number;
     /** Desktop full-screen layout: let grids breathe into more columns. */
     wide?: boolean;
@@ -16,6 +20,7 @@
 
   let {
     category,
+    securityCategory = null,
     securityRisk = 0.5,
     wide = false,
     onheaderpointerdown,
@@ -40,6 +45,8 @@
   $effect(() => {
     if (category.id === "security") loadMap();
   });
+
+  const isSecurityActive = $derived(category.id === "security");
 
   const riskLabel: Record<"low" | "moderate" | "high", string> = {
     low: "Bajo",
@@ -146,12 +153,25 @@
           </div>
         {/each}
       </div>
-    {:else if category.id === "security" && category.security}
-      <div class="sec-panel">
+    {/if}
+
+    <!-- Seguridad is NOT in the {#if/:else if} chain above on purpose. It's
+         keyed off `securityCategory` — a reference that stays the same
+         object whether or not Seguridad is the active section — and only
+         hidden with CSS `display: none` while another category shows.
+         Branching it like the others (`{:else if category.id === ...}`)
+         would tear the whole block down, including the mounted
+         <SecurityMapComp>, every single time you navigated away — which
+         meant every return trip paid for a brand-new WebGL context plus a
+         fresh style/sprite/glyph/tile fetch from a third-party host. On
+         localhost that round trip is near-zero; on a real deploy it reads
+         as the module hanging for a second on every visit. -->
+    {#if securityCategory?.security}
+      <div class="sec-panel" style:display={isSecurityActive ? "flex" : "none"}>
         <div class="sec-map-frame">
           {#if mapModule}
             {@const SecurityMapComp = mapModule.default}
-            <SecurityMapComp risk={securityRisk} accent={theme.accent} />
+            <SecurityMapComp risk={securityRisk} accent={securityCategory.theme.accent} />
           {:else}
             <div class="sec-map-cta">
               <span class="sec-map-icon spin">◎</span>
@@ -161,7 +181,7 @@
         </div>
 
         <div class="sec-grid">
-          {#each category.security as ind (ind.id)}
+          {#each securityCategory.security as ind (ind.id)}
             <div class="sec-card">
               <span class="sec-label">{ind.label}</span>
               <span class="sec-value-row">
