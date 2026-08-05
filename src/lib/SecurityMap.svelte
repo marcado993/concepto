@@ -2,7 +2,7 @@
   import * as maplibregl from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import { MapboxOverlay } from "@deck.gl/mapbox";
-  import { HexagonLayer } from "@deck.gl/aggregation-layers";
+  import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 
   interface Props {
     risk?: number; // 0..1, current hour's illustrative risk level
@@ -43,24 +43,26 @@
     return pts;
   }
 
+  // A soft blurred glow, not skyscraper spikes — HeatmapLayer draws a flat,
+  // GPU-blurred gradient instead of extruding a column per bin, which was
+  // reading as absurdly tall needles once a bin had more than a few points.
   function buildLayer(riskFactor: number) {
-    return new HexagonLayer({
-      id: "risk-hex",
+    return new HeatmapLayer({
+      id: "risk-heat",
       data: samplePoints(riskFactor),
       getPosition: (d: { position: [number, number] }) => d.position,
-      radius: 160,
-      elevationScale: riskFactor * 160 + 20,
-      extruded: true,
-      pickable: false,
+      getWeight: 1,
+      radiusPixels: 70,
+      intensity: 1.2 + riskFactor,
+      threshold: 0.04,
       colorRange: [
-        [33, 224, 160],
-        [130, 214, 110],
-        [214, 193, 60],
-        [245, 185, 66],
-        [230, 110, 50],
-        [239, 68, 68],
+        [33, 224, 160, 0],
+        [130, 214, 110, 140],
+        [214, 193, 60, 180],
+        [245, 185, 66, 210],
+        [230, 110, 50, 230],
+        [239, 68, 68, 255],
       ],
-      opacity: 0.75,
     });
   }
 
