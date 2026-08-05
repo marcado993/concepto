@@ -43,6 +43,13 @@
           { x: 1, y: 0.4, face: 0.8 },
           { x: 0, y: 1, face: 1 },
         ].map((p) => ({ ...isoToScreen(p.x, p.y, 0, W, H, 34), face: p.face }));
+      case "security":
+        // A small beacon: a wide base cube with a narrower one stacked on
+        // top, reading as a watchtower/alarm silhouette on the wheel.
+        return [0, 1].map((level) => ({
+          ...isoToScreen(0, 0, level, W, H, 30),
+          face: 0.6 + level * 0.4,
+        }));
       default:
         return [{ x: 0, y: 0, face: 1 }];
     }
@@ -69,6 +76,7 @@
     events: { src: "/Calendar.png", alt: "Eventos" },
     resources: { src: "/repo.png", alt: "Recursos" },
     community: { src: "/comunidad.png", alt: "Comunidad" },
+    security: { src: "/alerta.png", alt: "Seguridad" },
   };
   const photo = $derived(photoMap[kind]);
 </script>

@@ -1,12 +1,14 @@
 <script lang="ts">
   interface Props {
     tint?: "navy" | "accent";
+    override?: { dim: string; deep: string } | null;
   }
-  let { tint = "navy" }: Props = $props();
+  let { tint = "navy", override = null }: Props = $props();
+  const overrideStyle = $derived(override ? `--ov-dim: ${override.dim}; --ov-deep: ${override.deep};` : "");
 </script>
 
-<div class="bg" class:accent={tint === "accent"}>
-  {#if tint === "navy"}
+<div class="bg" class:accent={tint === "accent"} class:override={!!override} style={overrideStyle}>
+  {#if tint === "navy" && !override}
     <div class="brushed"></div>
     <div class="sheen"></div>
   {/if}
@@ -40,6 +42,14 @@
   .bg.accent {
     background: radial-gradient(130% 160% at 50% -10%, var(--accent-dim) 0%, var(--bg-deep) 70%, var(--bg-void) 140%);
     color: var(--accent-ghost);
+  }
+
+  /* Security's hour-of-day risk tone — same gradient shape, colors handed
+     in via CSS vars so it stays visually consistent with every other
+     module instead of introducing a one-off look. */
+  .bg.override {
+    background: radial-gradient(130% 160% at 50% -10%, var(--ov-dim) 0%, var(--ov-deep) 70%, var(--bg-void) 140%);
+    transition: background 0.8s ease;
   }
 
   /* Brushed metal: fine directional grain + macro steel gradient, tinted to the AEIS navy/green hue */

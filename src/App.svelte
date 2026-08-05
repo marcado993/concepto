@@ -5,6 +5,7 @@
   import DetailSheet from "./lib/DetailSheet.svelte";
   import TypeText from "./lib/TypeText.svelte";
   import { categories } from "./lib/data";
+  import { riskForHour, themeForRisk } from "./lib/risk";
 
   let selectedIndex = $state(0);
   let sheetOpen = $state(false);
@@ -16,7 +17,24 @@
     return () => clearTimeout(t);
   });
 
-  const activeCategory = $derived(categories[selectedIndex]);
+  // Seguridad's tone tracks the actual clock — not fixed like every other
+  // module's theme — so it re-derives from the wall time on a slow tick
+  // instead of once at load.
+  let currentHour = $state(new Date().getHours());
+  $effect(() => {
+    const id = setInterval(() => (currentHour = new Date().getHours()), 60_000);
+    return () => clearInterval(id);
+  });
+  const securityTheme = $derived(themeForRisk(riskForHour(currentHour)));
+
+  const displayCategories = $derived(
+    categories.map((c) => (c.id === "security" ? { ...c, theme: securityTheme } : c))
+  );
+
+  const activeCategory = $derived(displayCategories[selectedIndex]);
+  const bgOverride = $derived(
+    activeCategory.id === "security" ? { dim: securityTheme.accentDim, deep: securityTheme.deep } : null
+  );
 
   function openSheet() {
     sheetOpen = true;
@@ -53,7 +71,7 @@
 
 <div class="phone-frame">
   <div class="screen">
-    <Background tint={sheetOpen ? "accent" : "navy"} />
+    <Background tint={sheetOpen ? "accent" : "navy"} override={bgOverride} />
 
     <div class="brandbar">
       <span class="brand-dot"></span>
@@ -82,7 +100,7 @@
         <span class="hint-arrow bounce-right">›</span>
       </p>
       <div class="wheel-slot" onpointerdown={dismissOnboarding}>
-        <ArcMenu bind:selectedIndex categories={categories} locked={sheetOpen} onswipeup={openSheet} />
+        <ArcMenu bind:selectedIndex categories={displayCategories} locked={sheetOpen} onswipeup={openSheet} />
       </div>
       <div class="pill-slot">
         <button class="open-pill" class:emphasize={firstVisit} onclick={openSheet}>
@@ -92,7 +110,7 @@
       </div>
     </main>
 
-    <DetailSheet category={activeCategory} bind:open={sheetOpen} />
+    <DetailSheet category={activeCategory} bind:open={sheetOpen} securityRisk={riskForHour(currentHour)} />
 
     {#if showSplash}
       <div class="splash" out:fade={{ duration: 400 }}>

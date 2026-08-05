@@ -1,4 +1,4 @@
-export type IconKind = "lockers" | "events" | "resources" | "community";
+export type IconKind = "lockers" | "events" | "resources" | "community" | "security";
 export type LockerStatus = "available" | "occupied" | "reserved";
 
 export interface LockerUnit {
@@ -38,6 +38,17 @@ export interface NewsItem {
   author: string;
 }
 
+export type RiskLevel = "low" | "moderate" | "high";
+
+export interface SecurityIndicator {
+  id: string;
+  label: string;
+  value: string;
+  unit: string;
+  risk: RiskLevel;
+  note: string;
+}
+
 /** Every section stays inside the AEIS identity (navy + circuit green) —
  *  these are hue-rotated siblings of the same accent, not arbitrary colors. */
 export interface CategoryTheme {
@@ -49,7 +60,7 @@ export interface CategoryTheme {
 }
 
 export interface Category {
-  id: "lockers" | "events" | "resources" | "community";
+  id: "lockers" | "events" | "resources" | "community" | "security";
   label: string;
   sublabel: string;
   prompt: string;
@@ -60,6 +71,7 @@ export interface Category {
   events?: EventItem[];
   resources?: ResourceItem[];
   news?: NewsItem[];
+  security?: SecurityIndicator[];
 }
 
 function makeLockers(zone: string, count: number, seed: number): LockerUnit[] {
@@ -194,6 +206,59 @@ export const categories: Category[] = [
         excerpt: "Es necesario para acceder a casilleros y recursos este semestre.",
         time: "hace 1 semana",
         author: "Soporte",
+      },
+    ],
+  },
+  {
+    id: "security",
+    label: "Seguridad",
+    sublabel: "Alarma · Zona campus",
+    prompt: "Elige esto para ver el estado de seguridad de tu zona",
+    icon: "security",
+    detailTitle: "Alarma",
+    // Placeholder — App.svelte overrides this with themeForRisk(currentHour)
+    // so the module's tone tracks the clock instead of sitting fixed.
+    theme: { accent: "#f5b942", accentDim: "#4d3a12", deep: "#241c0a", glow: "rgba(245, 185, 66, 0.4)", hue: 0 },
+    security: [
+      {
+        id: "s1",
+        label: "Tasa de homicidios",
+        value: "—",
+        unit: "por 100.000 hab.",
+        risk: "moderate",
+        note: "Indicador referencial — ver cifra oficial vigente",
+      },
+      {
+        id: "s2",
+        label: "Muertes violentas",
+        value: "—",
+        unit: "por 100.000 hab.",
+        risk: "moderate",
+        note: "Indicador referencial — ver cifra oficial vigente",
+      },
+      {
+        id: "s3",
+        label: "Robo a personas",
+        value: "—",
+        unit: "denuncias / mes",
+        risk: "high",
+        note: "Indicador referencial — ver cifra oficial vigente",
+      },
+      {
+        id: "s4",
+        label: "Robo a domicilios",
+        value: "—",
+        unit: "denuncias / mes",
+        risk: "low",
+        note: "Indicador referencial — ver cifra oficial vigente",
+      },
+      {
+        id: "s5",
+        label: "Operativos CACMQ",
+        value: "—",
+        unit: "acciones tácticas / mes",
+        risk: "low",
+        note: "Indicador referencial — ver cifra oficial vigente",
       },
     ],
   },

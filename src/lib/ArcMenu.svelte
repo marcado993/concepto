@@ -286,11 +286,17 @@
     right: 2px;
   }
 
+  /* The dome's curved silhouette used to end in a hard, sudden edge right
+     against the flat background below it — masking the last stretch of
+     the window to transparent lets the dial dissolve into the surrounding
+     tone instead of reading as a sticker cut-out. */
   .dome-window {
     position: relative;
     width: 100%;
     flex-shrink: 0;
     overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 82%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 0%, black 82%, transparent 100%);
   }
 
   .disc {
