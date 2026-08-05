@@ -7,11 +7,16 @@
   const overrideStyle = $derived(override ? `--ov-dim: ${override.dim}; --ov-deep: ${override.deep};` : "");
 </script>
 
-<div class="bg" class:accent={tint === "accent"} class:override={!!override} style={overrideStyle}>
-  {#if tint === "navy" && !override}
-    <div class="brushed"></div>
-    <div class="sheen"></div>
-  {/if}
+<div class="bg" class:accent={tint === "accent"} style={overrideStyle}>
+  <!-- The metal texture and the risk tint are always mounted and simply
+       cross-fade. Swapping the `background` shorthand between two different
+       radial-gradients can't animate (CSS has nothing to interpolate, so it
+       snaps), and tearing the texture layers out of the DOM made the change
+       land in one hard frame. Opacity is GPU-compositable, so this is both
+       smoother and cheaper than what it replaces. -->
+  <div class="brushed" class:hidden={!!override}></div>
+  <div class="sheen" class:hidden={!!override}></div>
+  <div class="risk-tint" class:on={!!override}></div>
   <svg class="grid" width="100%" height="100%" preserveAspectRatio="none">
     <defs>
       <pattern id="iso-grid" width="64" height="37" patternUnits="userSpaceOnUse" patternTransform="translate(0,0)">
@@ -46,10 +51,33 @@
 
   /* Security's hour-of-day risk tone — same gradient shape, colors handed
      in via CSS vars so it stays visually consistent with every other
-     module instead of introducing a one-off look. */
-  .bg.override {
-    background: radial-gradient(130% 160% at 50% -10%, var(--ov-dim) 0%, var(--ov-deep) 70%, var(--bg-void) 140%);
-    transition: background 0.8s ease;
+     module instead of introducing a one-off look. Sits as its own layer
+     that fades over the navy base rather than replacing it. */
+  .risk-tint {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(130% 160% at 50% -10%, var(--ov-dim, transparent) 0%, var(--ov-deep, transparent) 70%, var(--bg-void) 140%);
+    opacity: 0;
+    transition: opacity 0.55s ease;
+    pointer-events: none;
+  }
+
+  .risk-tint.on {
+    opacity: 1;
+  }
+
+  .brushed,
+  .sheen {
+    transition: opacity 0.55s ease;
+  }
+
+  .brushed.hidden,
+  .sheen.hidden {
+    opacity: 0;
+    /* A running keyframe animation outranks a normal opacity declaration,
+       so .sheen's breathing loop has to be cancelled or it would keep
+       pulsing itself back to visible while "hidden". */
+    animation: none;
   }
 
   /* Brushed metal: fine directional grain + macro steel gradient, tinted to the AEIS navy/green hue */

@@ -27,12 +27,6 @@
   let selectedIndex = $state(0);
   let sheetOpen = $state(false);
   let firstVisit = $state(false);
-  let showSplash = $state(true);
-
-  $effect(() => {
-    const t = setTimeout(() => (showSplash = false), 1800);
-    return () => clearTimeout(t);
-  });
 
   // Seguridad's tone tracks the actual clock — not fixed like every other
   // module's theme — so it re-derives from the wall time on a slow tick
@@ -86,8 +80,8 @@
   }
 </script>
 
-<div class="phone-frame">
-  <div class="screen">
+<div class="phone-frame" class:desktop={isDesktop}>
+  <div class="screen" class:desktop={isDesktop}>
     <Background tint={sheetOpen ? "accent" : "navy"} override={bgOverride} />
 
     <div class="brandbar">
@@ -98,22 +92,31 @@
 
     {#if isDesktop}
       <main class="desktop-main">
-        <div class="desktop-label">
-          {#key activeCategory.id}
-            <div in:fade={{ duration: 150 }}>
-              <h1 class="desktop-title">{activeCategory.label}</h1>
-              <p class="desktop-prompt">{activeCategory.prompt}</p>
-            </div>
-          {/key}
-        </div>
-        <DesktopNav categories={displayCategories} {selectedIndex} onselect={(i) => (selectedIndex = i)} />
-        <div class="desktop-panel">
-          {#key activeCategory.id}
-            <div class="desktop-panel-inner" in:fade={{ duration: 180 }}>
-              <CategoryContent category={activeCategory} securityRisk={riskForHour(currentHour)} />
-            </div>
-          {/key}
-        </div>
+        <aside class="desktop-side">
+          <DesktopNav
+            categories={displayCategories}
+            {selectedIndex}
+            onselect={(i) => (selectedIndex = i)}
+            vertical
+          />
+        </aside>
+        <section class="desktop-stage">
+          <div class="desktop-label">
+            {#key activeCategory.id}
+              <div in:fade={{ duration: 150 }}>
+                <h1 class="desktop-title">{activeCategory.label}</h1>
+                <p class="desktop-prompt">{activeCategory.prompt}</p>
+              </div>
+            {/key}
+          </div>
+          <div class="desktop-panel">
+            {#key activeCategory.id}
+              <div class="desktop-panel-inner" in:fade={{ duration: 180 }}>
+                <CategoryContent category={activeCategory} securityRisk={riskForHour(currentHour)} wide />
+              </div>
+            {/key}
+          </div>
+        </section>
       </main>
     {:else}
       <main class="menu-layer" class:receded={sheetOpen}>
@@ -150,14 +153,6 @@
       <DetailSheet category={activeCategory} bind:open={sheetOpen} securityRisk={riskForHour(currentHour)} />
     {/if}
 
-    {#if showSplash}
-      <div class="splash" out:fade={{ duration: 400 }}>
-        <img src="/aso.png" alt="AEIS" class="splash-mark" />
-        <div class="splash-text">AEIS</div>
-        <div class="splash-sub">Asociación de Estudiantes de Ingeniería de Sistemas</div>
-        <div class="splash-bar"><span></span></div>
-      </div>
-    {/if}
   </div>
 </div>
 
@@ -396,84 +391,6 @@
     }
   }
 
-  .splash {
-    position: absolute;
-    inset: 0;
-    z-index: 50;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding: 0 32px;
-    background: radial-gradient(120% 90% at 50% 40%, var(--bg-panel-2) 0%, var(--bg-deep) 55%, var(--bg-void) 100%);
-  }
-
-  .splash-mark {
-    width: 84px;
-    height: 84px;
-    object-fit: contain;
-    filter: drop-shadow(0 0 18px var(--accent-glow));
-    animation: splash-pulse 1.8s ease-in-out infinite;
-  }
-
-  .splash-text {
-    font-family: var(--font-display);
-    font-size: 30px;
-    font-weight: 700;
-    letter-spacing: 0.4em;
-    color: var(--ink-0);
-    text-shadow: 0 0 24px var(--accent-glow);
-  }
-
-  .splash-sub {
-    margin-top: -8px;
-    font-family: var(--font-display);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    color: var(--ink-1);
-    text-align: center;
-    max-width: 260px;
-  }
-
-  .splash-bar {
-    margin-top: 10px;
-    width: 120px;
-    height: 3px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    overflow: hidden;
-  }
-
-  .splash-bar span {
-    display: block;
-    height: 100%;
-    width: 40%;
-    border-radius: 999px;
-    background: var(--accent);
-    box-shadow: 0 0 10px var(--accent-glow);
-    animation: splash-load 1.1s ease-in-out infinite;
-  }
-
-  @keyframes splash-pulse {
-    0%,
-    100% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.06);
-    }
-  }
-
-  @keyframes splash-load {
-    0% {
-      transform: translateX(-120%);
-    }
-    100% {
-      transform: translateX(360%);
-    }
-  }
-
   /* Desktop/web: the same interface adapted as a page section — not a fake
      phone mockup. No bezel, no notch, just a comfortably sized panel that
      scales with the actual browser window. */
@@ -495,14 +412,22 @@
     }
   }
 
-  /* Mouse-and-keyboard visitors get a wider card — there's no dial to keep
-     narrow and thumb-reachable for, just a nav row and a reading panel, so
-     it can use the room a mouse-driven layout actually benefits from. */
-  @media (min-width: 720px) and (pointer: fine) {
-    .screen {
-      width: min(720px, 90vw);
-      height: min(820px, calc(100vh - 10vh));
-    }
+  /* Mouse-and-keyboard visitors get the whole viewport, not a phone-shaped
+     card floating in dead space — a desktop browser window IS the frame,
+     so the bezel, the max-width and the centering all come off. */
+  .phone-frame.desktop {
+    padding: 0;
+    background: var(--bg-void);
+    align-items: stretch;
+  }
+
+  .screen.desktop {
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .desktop-main {
@@ -510,19 +435,31 @@
     z-index: 5;
     flex: 1;
     min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(190px, 232px) 1fr;
+    gap: 0;
+  }
+
+  .desktop-side {
+    padding: 10px 16px 24px;
+    border-right: 1px solid var(--line-soft);
+    overflow-y: auto;
+  }
+
+  .desktop-stage {
     display: flex;
     flex-direction: column;
-    padding-top: 6px;
+    min-width: 0;
+    min-height: 0;
   }
 
   .desktop-label {
-    text-align: center;
-    padding: 4px 24px 2px;
+    padding: 10px 28px 6px;
   }
 
   .desktop-title {
     font-family: var(--font-display);
-    font-size: 26px;
+    font-size: clamp(26px, 2.4vw, 36px);
     font-weight: 500;
     letter-spacing: 0.05em;
     margin: 0;
@@ -532,14 +469,14 @@
 
   .desktop-prompt {
     margin: 6px 0 0;
-    font-size: 13px;
+    font-size: 13.5px;
     color: var(--ink-1);
   }
 
   .desktop-panel {
     flex: 1;
     min-height: 0;
-    margin: 0 20px 20px;
+    margin: 8px 20px 20px;
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--line-strong);

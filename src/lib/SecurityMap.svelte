@@ -1,6 +1,17 @@
 <script lang="ts">
   import * as maplibregl from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
+  // MapLibre 6 resolves its worker at RUNTIME from import.meta.url —
+  // it asks for "./maplibre-gl-worker.mjs" next to wherever the bundled
+  // module landed (/assets/SecurityMap-<hash>.js). Since that's not a
+  // static import, no bundler can see it, so the file is never emitted:
+  // the request falls through to the SPA's index.html, the browser
+  // rejects the text/html MIME type, and the map silently never boots.
+  // `?worker&url` makes Vite bundle the worker (resolving its own
+  // ./maplibre-gl-shared.mjs import) and hand back the real emitted URL.
+  import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+
+  maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
   interface Props {
     risk?: number; // 0..1, current hour's illustrative risk level
@@ -22,22 +33,30 @@
   let map: maplibregl.Map | null = null;
   let ready = $state(false);
 
-  // Real Quito zone centers near the EPN/La Floresta campus with an
-  // illustrative base weight (0..1, relative danger) — NOT sourced incident
-  // counts. Each zone's shown color blends that base weight with the
-  // current hour's citywide risk factor, so a naturally calmer sector
-  // still reads cooler than a rougher one even during a "bad" hour.
+  // Zones around the EPN campus. `incidents` are the published 2025 counts
+  // of incidentes contra la convivencia ciudadana from the Observatorio
+  // Metropolitano de Seguridad Ciudadana; `estimated: true` marks the ones
+  // the DMQ hasn't broken out publicly, scaled from their neighbours so the
+  // map still reads as a gradient rather than blank patches.
+  const PEAK_INCIDENTS = 14842; // Centro Histórico 2025 — the local maximum
   const ZONES = [
-    { name: "La Floresta (EPN)", lng: -78.4886, lat: -0.2073, base: 0.5 },
-    { name: "Itchimbía", lng: -78.503, lat: -0.2168, base: 0.65 },
-    { name: "Centro Histórico", lng: -78.5125, lat: -0.2201, base: 0.8 },
-    { name: "La Mariscal", lng: -78.4863, lat: -0.1985, base: 0.55 },
-    { name: "González Suárez", lng: -78.479, lat: -0.204, base: 0.35 },
-    { name: "El Ejido / La Carolina", lng: -78.493, lat: -0.187, base: 0.4 },
+    { name: "Centro Histórico", lng: -78.5125, lat: -0.2201, incidents: 14842, estimated: false },
+    { name: "La Mariscal", lng: -78.4863, lat: -0.1985, incidents: 7444, estimated: false },
+    { name: "Itchimbía", lng: -78.503, lat: -0.2168, incidents: 6200, estimated: true },
+    { name: "La Floresta (EPN)", lng: -78.4886, lat: -0.2073, incidents: 4100, estimated: true },
+    { name: "El Ejido / La Carolina", lng: -78.493, lat: -0.187, incidents: 3600, estimated: true },
+    { name: "González Suárez", lng: -78.479, lat: -0.204, incidents: 2400, estimated: true },
   ];
 
+  /** Zone's own incident load, normalised 0..1 against the local peak. */
+  function baseFor(z: { incidents: number }) {
+    return Math.min(1, z.incidents / PEAK_INCIDENTS);
+  }
+
+  // Weighted so the zone's own record dominates: a historically calm sector
+  // stays cool even at 3am, and the hour only shifts it a band or so.
   function combinedRisk(base: number, riskFactor: number) {
-    return Math.min(1, base * 0.55 + riskFactor * 0.45);
+    return Math.min(1, base * 0.62 + riskFactor * 0.38);
   }
 
   function riskColor(r: number) {
@@ -49,7 +68,7 @@
   function pointsGeoJSON(riskFactor: number): FeatureCollection {
     const features: FeatureCollection["features"] = [];
     for (const z of ZONES) {
-      const c = combinedRisk(z.base, riskFactor);
+      const c = combinedRisk(baseFor(z), riskFactor);
       const count = Math.round(14 + c * 70);
       for (let i = 0; i < count; i++) {
         features.push({
@@ -69,10 +88,15 @@
     return {
       type: "FeatureCollection",
       features: ZONES.map((z) => {
-        const c = combinedRisk(z.base, riskFactor);
+        const c = combinedRisk(baseFor(z), riskFactor);
+        const count = z.incidents.toLocaleString("es-EC");
         return {
           type: "Feature",
-          properties: { name: z.name, color: riskColor(c) },
+          properties: {
+            name: z.name,
+            detail: z.estimated ? `~${count} inc. (est.)` : `${count} inc. · 2025`,
+            color: riskColor(c),
+          },
           geometry: { type: "Point", coordinates: [z.lng, z.lat] },
         };
       }),
@@ -138,10 +162,16 @@
         type: "symbol",
         source: "zone-labels",
         layout: {
-          "text-field": ["get", "name"],
+          // MapLibre's default stack is "Open Sans Regular, Arial Unicode
+          // MS Regular", which this tile server doesn't host — the glyph
+          // request 404s and the labels silently never draw. Its style
+          // ships Noto Sans, so name it explicitly.
+          "text-font": ["Noto Sans Regular"],
+          "text-field": ["format", ["get", "name"], {}, "\n", {}, ["get", "detail"], { "font-scale": 0.8 }],
           "text-size": 11,
-          "text-offset": [0, 1.2],
+          "text-offset": [0, 1.1],
           "text-anchor": "top",
+          "text-line-height": 1.3,
         },
         paint: {
           "text-color": "#eef4fb",
@@ -177,7 +207,7 @@
   <div class="map-el" bind:this={container}></div>
   <div class="map-badge" style="--accent: {accent}">
     <span class="dot"></span>
-    Quito · distribución ilustrativa, no incidentes reales
+    Incidentes de convivencia 2025 · OMSC Quito — puntos aproximados por zona
   </div>
 </div>
 

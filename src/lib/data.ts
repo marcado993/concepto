@@ -46,7 +46,10 @@ export interface SecurityIndicator {
   value: string;
   unit: string;
   risk: RiskLevel;
+  /** Prior-period comparison, e.g. "248 en 2024" — shown as context. */
   note: string;
+  /** Direction vs the prior period; drives the ▲/▼ marker. */
+  trend?: "up" | "down" | "flat";
 }
 
 /** Every section stays inside the AEIS identity (navy + circuit green) —
@@ -219,46 +222,66 @@ export const categories: Category[] = [
     // Placeholder — App.svelte overrides this with themeForRisk(currentHour)
     // so the module's tone tracks the clock instead of sitting fixed.
     theme: { accent: "#f5b942", accentDim: "#4d3a12", deep: "#241c0a", glow: "rgba(245, 185, 66, 0.4)", hue: 0 },
+    // Real published figures for the Distrito Metropolitano de Quito, close
+    // of 2025, from the Observatorio Metropolitano de Seguridad Ciudadana
+    // (Policía Nacional + Fiscalía), as reported by Primicias in Jan 2026.
+    // These are annual totals, not a live feed — the DMQ's own per-month
+    // DataHub sits behind a login, so anything auto-refreshing would be
+    // guesswork. Values are labelled with their period for that reason.
     security: [
       {
         id: "s1",
         label: "Tasa de homicidios",
-        value: "—",
-        unit: "por 100.000 hab.",
+        value: "9",
+        unit: "por 100.000 hab. · 2025",
         risk: "moderate",
-        note: "Indicador referencial — ver cifra oficial vigente",
+        note: "8 en 2024",
+        trend: "up",
       },
       {
         id: "s2",
-        label: "Muertes violentas",
-        value: "—",
-        unit: "por 100.000 hab.",
+        label: "Homicidios intencionales",
+        value: "264",
+        unit: "casos · 2025",
         risk: "moderate",
-        note: "Indicador referencial — ver cifra oficial vigente",
+        note: "248 en 2024",
+        trend: "up",
       },
       {
         id: "s3",
-        label: "Robo a personas",
-        value: "—",
-        unit: "denuncias / mes",
+        label: "Violencia criminal",
+        value: "204",
+        unit: "casos · 2025",
         risk: "high",
-        note: "Indicador referencial — ver cifra oficial vigente",
+        note: "179 en 2024",
+        trend: "up",
       },
       {
         id: "s4",
-        label: "Robo a domicilios",
-        value: "—",
-        unit: "denuncias / mes",
+        label: "Riñas interpersonales",
+        value: "60",
+        unit: "casos · 2025",
         risk: "low",
-        note: "Indicador referencial — ver cifra oficial vigente",
+        note: "69 en 2024",
+        trend: "down",
       },
       {
         id: "s5",
-        label: "Operativos CACMQ",
-        value: "—",
-        unit: "acciones tácticas / mes",
-        risk: "low",
-        note: "Indicador referencial — ver cifra oficial vigente",
+        label: "Con arma de fuego",
+        value: "163",
+        unit: "casos · 2025",
+        risk: "high",
+        note: "143 en 2024",
+        trend: "up",
+      },
+      {
+        id: "s6",
+        label: "Incidentes Centro Histórico",
+        value: "14.842",
+        unit: "convivencia · 2025",
+        risk: "moderate",
+        note: "17.449 en 2024",
+        trend: "down",
       },
     ],
   },

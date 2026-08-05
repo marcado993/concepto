@@ -6,12 +6,13 @@
     categories: Category[];
     selectedIndex: number;
     onselect: (i: number) => void;
+    vertical?: boolean;
   }
 
-  let { categories, selectedIndex, onselect }: Props = $props();
+  let { categories, selectedIndex, onselect, vertical = false }: Props = $props();
 </script>
 
-<nav class="desktop-nav" aria-label="Selector de categorías">
+<nav class="desktop-nav" class:vertical aria-label="Selector de categorías">
   {#each categories as cat, i (cat.id)}
     <button
       class="nav-item"
@@ -32,6 +33,30 @@
     padding: 4px 20px 14px;
     overflow-x: auto;
     flex-shrink: 0;
+  }
+
+  /* Sidebar form for the full-screen desktop layout: a vertical rail of
+     left-aligned rows reads as real navigation, where the horizontal
+     row was really just a tab strip for the narrow card. */
+  .desktop-nav.vertical {
+    flex-direction: column;
+    padding: 0;
+    overflow-x: visible;
+    gap: 6px;
+  }
+
+  .desktop-nav.vertical .nav-item {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    width: 100%;
+  }
+
+  .desktop-nav.vertical .nav-label {
+    font-size: 13px;
   }
 
   .nav-item {

@@ -5,6 +5,8 @@
   interface Props {
     category: Category;
     securityRisk?: number;
+    /** Desktop full-screen layout: let grids breathe into more columns. */
+    wide?: boolean;
     // Only wired up by the mobile sliding sheet, so its header doubles as a
     // drag handle — the desktop panel just omits these.
     onheaderpointerdown?: (e: PointerEvent) => void;
@@ -12,8 +14,14 @@
     onheaderpointerup?: (e: PointerEvent) => void;
   }
 
-  let { category, securityRisk = 0.5, onheaderpointerdown, onheaderpointermove, onheaderpointerup }: Props =
-    $props();
+  let {
+    category,
+    securityRisk = 0.5,
+    wide = false,
+    onheaderpointerdown,
+    onheaderpointermove,
+    onheaderpointerup,
+  }: Props = $props();
 
   let mapModule: typeof import("./SecurityMap.svelte") | null = $state(null);
   let loadingMap = $state(false);
@@ -60,7 +68,7 @@
   );
 </script>
 
-<div class="content-wrap" style={wrapStyle}>
+<div class="content-wrap" class:wide style={wrapStyle}>
   <header
     class="sheet-header"
     onpointerdown={onheaderpointerdown}
@@ -156,15 +164,25 @@
           {#each category.security as ind (ind.id)}
             <div class="sec-card">
               <span class="sec-label">{ind.label}</span>
-              <span class="sec-value">{ind.value}</span>
+              <span class="sec-value-row">
+                <span class="sec-value">{ind.value}</span>
+                {#if ind.trend && ind.trend !== "flat"}
+                  <span class="sec-trend trend-{ind.trend}">{ind.trend === "up" ? "▲" : "▼"}</span>
+                {/if}
+              </span>
               <span class="sec-unit">{ind.unit}</span>
+              {#if ind.note}<span class="sec-note">{ind.note}</span>{/if}
               <span class="sec-risk risk-{ind.risk}">{riskLabel[ind.risk]}</span>
             </div>
           {/each}
         </div>
 
-        <a class="sec-source" href="https://miq.quito.gob.ec/indicadores" target="_blank" rel="noreferrer">
-          Cifras oficiales vigentes → miq.quito.gob.ec/indicadores
+        <p class="sec-src-note">
+          Distrito Metropolitano de Quito · cierre 2025. Fuente: Observatorio Metropolitano de Seguridad
+          Ciudadana (Policía Nacional y Fiscalía).
+        </p>
+        <a class="sec-source" href="https://observatorioseguridad.quito.gob.ec" target="_blank" rel="noreferrer">
+          Cifras oficiales actualizadas → observatorioseguridad.quito.gob.ec
         </a>
       </div>
     {/if}
@@ -177,6 +195,45 @@
     flex-direction: column;
     flex: 1;
     min-height: 0;
+  }
+
+  /* Full-screen desktop: the header shrinks (the sidebar already names the
+     section) and every list/grid spreads into the extra columns a wide
+     viewport affords, instead of staying in a phone-width single file. */
+  .content-wrap.wide .sheet-header {
+    display: none;
+  }
+
+  .content-wrap.wide .grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    padding: 20px 28px 40px;
+  }
+
+  .content-wrap.wide .repo-list,
+  .content-wrap.wide .news-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+    padding: 20px 28px 40px;
+  }
+
+  .content-wrap.wide .timeline {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 0 24px;
+    padding: 20px 28px 40px;
+  }
+
+  .content-wrap.wide .sec-panel {
+    padding: 20px 28px 32px;
+  }
+
+  .content-wrap.wide .sec-map-frame {
+    height: min(46vh, 420px);
+  }
+
+  .content-wrap.wide .sec-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   }
 
   .sheet-header {
@@ -531,17 +588,51 @@
     color: rgba(234, 255, 245, 0.65);
   }
 
+  .sec-value-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
   .sec-value {
     font-family: var(--font-display);
     font-size: 22px;
     font-weight: 500;
     color: #eafff5;
-    margin-top: 2px;
+  }
+
+  /* Up is bad and down is good for every indicator here (they're all counts
+     of harm), so the arrow can carry a fixed valence colour. */
+  .sec-trend {
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .sec-trend.trend-up {
+    color: #ef4444;
+  }
+
+  .sec-trend.trend-down {
+    color: #21e0a0;
   }
 
   .sec-unit {
     font-size: 10px;
     color: rgba(234, 255, 245, 0.5);
+  }
+
+  .sec-note {
+    font-size: 10px;
+    color: rgba(234, 255, 245, 0.4);
+    margin-top: 2px;
+  }
+
+  .sec-src-note {
+    margin: 2px 0 0;
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: rgba(234, 255, 245, 0.45);
   }
 
   .sec-risk {

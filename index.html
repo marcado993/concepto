@@ -1,17 +1,130 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#050810" />
+    <meta name="theme-color" content="#04060d" />
+    <meta name="description" content="Concepto AEIS — casilleros, eventos, recursos, comunidad y seguridad." />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Doto:wght,ROND@100..900,0..100&display=swap" rel="stylesheet" />
+    <!-- Warm the tile host's DNS/TLS while the app boots, so the map isn't
+         paying for a cold connection the moment someone opens Seguridad. -->
+    <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+
+    <!-- Loaded non-render-blocking: on a slow connection the Google Fonts
+         stylesheet used to gate first paint behind two extra round trips.
+         Swapping media to `all` on load lets the shell paint immediately in
+         the fallback face, then upgrade to Doto when it arrives. -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Doto:wght@400;500;700;800&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Doto:wght@400;500;700;800&display=swap"
+      />
+    </noscript>
+
     <title>AEIS · Casilleros</title>
+
+    <!-- Inline so there is something on screen the instant the HTML lands,
+         instead of a white page until the JS bundle downloads and mounts. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #04060d;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: radial-gradient(120% 90% at 50% 40%, #0d1838 0%, #070c1c 55%, #04060d 100%);
+        font-family: "Doto", ui-monospace, "Segoe UI", sans-serif;
+        color: #eef4fb;
+        z-index: 100;
+      }
+      #boot img {
+        width: 84px;
+        height: 84px;
+        object-fit: contain;
+        filter: drop-shadow(0 0 18px rgba(33, 224, 160, 0.45));
+        animation: boot-pulse 1.8s ease-in-out infinite;
+      }
+      #boot .t {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: 0.4em;
+        text-shadow: 0 0 24px rgba(33, 224, 160, 0.45);
+      }
+      #boot .s {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: #9db0d1;
+        text-align: center;
+        max-width: 260px;
+        margin-top: -8px;
+      }
+      #boot .bar {
+        width: 120px;
+        height: 3px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+        margin-top: 10px;
+      }
+      #boot .bar i {
+        display: block;
+        height: 100%;
+        width: 40%;
+        border-radius: 999px;
+        background: #21e0a0;
+        box-shadow: 0 0 10px rgba(33, 224, 160, 0.45);
+        animation: boot-load 1.1s ease-in-out infinite;
+      }
+      @keyframes boot-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.06);
+        }
+      }
+      @keyframes boot-load {
+        0% {
+          transform: translateX(-120%);
+        }
+        100% {
+          transform: translateX(360%);
+        }
+      }
+      #boot.done {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.4s ease;
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>
+
+    <div id="boot">
+      <img src="/aso.png" alt="" fetchpriority="high" />
+      <div class="t">AEIS</div>
+      <div class="s">Asociación de Estudiantes de Ingeniería de Sistemas</div>
+      <div class="bar"><i></i></div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
