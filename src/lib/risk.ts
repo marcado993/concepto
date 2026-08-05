@@ -43,6 +43,10 @@ const STOPS = [
   { at: 1, color: "#ef4444", label: "Riesgo alto" }, // red
 ];
 
+export function hexToRgb(hex: string): [number, number, number] {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+}
+
 /** Maps a 0..1 risk value to a themed color set consistent with the rest
  *  of the app's palette formula (accent / dim / deep / glow). */
 export function themeForRisk(risk: number): RiskTheme {

@@ -3,9 +3,26 @@
   import Background from "./lib/Background.svelte";
   import ArcMenu from "./lib/ArcMenu.svelte";
   import DetailSheet from "./lib/DetailSheet.svelte";
+  import DesktopNav from "./lib/DesktopNav.svelte";
+  import CategoryContent from "./lib/CategoryContent.svelte";
   import TypeText from "./lib/TypeText.svelte";
   import { categories } from "./lib/data";
   import { riskForHour, themeForRisk } from "./lib/risk";
+
+  // The wheel is a touch gesture wearing a UI — dragging a disc with a
+  // mouse (or worse, tabbing to it with a keyboard) is a parlor trick, not
+  // navigation. Mouse-and-keyboard visitors get a plain clickable nav and
+  // a static content panel instead; touch (phone or tablet, any width)
+  // keeps the dial, since that's the input it was actually designed for.
+  let isDesktop = $state(false);
+  $effect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(pointer: fine) and (min-width: 720px)");
+    isDesktop = mq.matches;
+    const handler = (e: MediaQueryListEvent) => (isDesktop = e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  });
 
   let selectedIndex = $state(0);
   let sheetOpen = $state(false);
@@ -79,38 +96,59 @@
       <img src="/aso.png" alt="AEIS" class="brand-mark" />
     </div>
 
-    <main class="menu-layer" class:receded={sheetOpen}>
-      <div class="label-block">
-        {#key activeCategory.id}
-          <div in:fade={{ duration: 150 }}>
-            <TypeText tag="h1" class="label" text={activeCategory.label} speed={34} />
-            <TypeText
-              tag="p"
-              class="prompt-text"
-              text={activeCategory.prompt}
-              speed={14}
-              startDelay={activeCategory.label.length * 34 + 120}
-            />
-          </div>
-        {/key}
-      </div>
-      <p class="swipe-hint" class:emphasize={firstVisit}>
-        <span class="hint-arrow bounce-left">‹</span>
-        {firstVisit ? "desliza el disco para elegir" : "desliza para elegir"}
-        <span class="hint-arrow bounce-right">›</span>
-      </p>
-      <div class="wheel-slot" onpointerdown={dismissOnboarding}>
-        <ArcMenu bind:selectedIndex categories={displayCategories} locked={sheetOpen} onswipeup={openSheet} />
-      </div>
-      <div class="pill-slot">
-        <button class="open-pill" class:emphasize={firstVisit} onclick={openSheet}>
-          <span class="open-pill-arrow">︿</span>
-          desliza arriba o toca aquí
-        </button>
-      </div>
-    </main>
+    {#if isDesktop}
+      <main class="desktop-main">
+        <div class="desktop-label">
+          {#key activeCategory.id}
+            <div in:fade={{ duration: 150 }}>
+              <h1 class="desktop-title">{activeCategory.label}</h1>
+              <p class="desktop-prompt">{activeCategory.prompt}</p>
+            </div>
+          {/key}
+        </div>
+        <DesktopNav categories={displayCategories} {selectedIndex} onselect={(i) => (selectedIndex = i)} />
+        <div class="desktop-panel">
+          {#key activeCategory.id}
+            <div class="desktop-panel-inner" in:fade={{ duration: 180 }}>
+              <CategoryContent category={activeCategory} securityRisk={riskForHour(currentHour)} />
+            </div>
+          {/key}
+        </div>
+      </main>
+    {:else}
+      <main class="menu-layer" class:receded={sheetOpen}>
+        <div class="label-block">
+          {#key activeCategory.id}
+            <div in:fade={{ duration: 150 }}>
+              <TypeText tag="h1" class="label" text={activeCategory.label} speed={34} />
+              <TypeText
+                tag="p"
+                class="prompt-text"
+                text={activeCategory.prompt}
+                speed={14}
+                startDelay={activeCategory.label.length * 34 + 120}
+              />
+            </div>
+          {/key}
+        </div>
+        <p class="swipe-hint" class:emphasize={firstVisit}>
+          <span class="hint-arrow bounce-left">‹</span>
+          {firstVisit ? "desliza el disco para elegir" : "desliza para elegir"}
+          <span class="hint-arrow bounce-right">›</span>
+        </p>
+        <div class="wheel-slot" onpointerdown={dismissOnboarding}>
+          <ArcMenu bind:selectedIndex categories={displayCategories} locked={sheetOpen} onswipeup={openSheet} />
+        </div>
+        <div class="pill-slot">
+          <button class="open-pill" class:emphasize={firstVisit} onclick={openSheet}>
+            <span class="open-pill-arrow">︿</span>
+            desliza arriba o toca aquí
+          </button>
+        </div>
+      </main>
 
-    <DetailSheet category={activeCategory} bind:open={sheetOpen} securityRisk={riskForHour(currentHour)} />
+      <DetailSheet category={activeCategory} bind:open={sheetOpen} securityRisk={riskForHour(currentHour)} />
+    {/if}
 
     {#if showSplash}
       <div class="splash" out:fade={{ duration: 400 }}>
@@ -455,5 +493,64 @@
     .brandbar {
       padding-top: 26px;
     }
+  }
+
+  /* Mouse-and-keyboard visitors get a wider card — there's no dial to keep
+     narrow and thumb-reachable for, just a nav row and a reading panel, so
+     it can use the room a mouse-driven layout actually benefits from. */
+  @media (min-width: 720px) and (pointer: fine) {
+    .screen {
+      width: min(720px, 90vw);
+      height: min(820px, calc(100vh - 10vh));
+    }
+  }
+
+  .desktop-main {
+    position: relative;
+    z-index: 5;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-top: 6px;
+  }
+
+  .desktop-label {
+    text-align: center;
+    padding: 4px 24px 2px;
+  }
+
+  .desktop-title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    margin: 0;
+    color: var(--ink-0);
+    text-shadow: 0 0 24px var(--accent-glow);
+  }
+
+  .desktop-prompt {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--ink-1);
+  }
+
+  .desktop-panel {
+    flex: 1;
+    min-height: 0;
+    margin: 0 20px 20px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--line-strong);
+    overflow: hidden;
+    display: flex;
+  }
+
+  .desktop-panel-inner {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
   }
 </style>

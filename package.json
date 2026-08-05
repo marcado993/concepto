@@ -19,10 +19,6 @@
     "vite": "^8.2.0"
   },
   "dependencies": {
-    "@deck.gl/aggregation-layers": "^9.3.7",
-    "@deck.gl/core": "^9.3.7",
-    "@deck.gl/layers": "^9.3.7",
-    "@deck.gl/mapbox": "^9.3.7",
     "maplibre-gl": "^6.1.0"
   }
 }
