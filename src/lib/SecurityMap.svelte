@@ -1,10 +1,10 @@
 <script lang="ts">
-  // SecurityMap NO crea su propio Map — adopta el warmMap pre-inicializado
-  // en mapWarm.ts que arrancó durante el splash screen.
-  // La única operación que ocurre aquí es mover el div `warmShell` al
-  // contenedor del componente (no hay new Map(), no hay workers nuevos).
+  // SecurityMap adopta el warmMap pre-inicializado en mapWarm.ts.
+  // NO crea su propio Map — solo mueve warmShell al contenedor cuando
+  // el mapa está listo (puede ser inmediato o asíncrono si el usuario
+  // navega muy rápido antes de que el mapa haya terminado de crear).
   import * as maplibregl from "maplibre-gl";
-  import { warmMap, warmShell, mapLoaded, state as warmState } from "./mapWarm";
+  import { warmMap, warmShell, mapLoaded, onWarmReady, state as warmState } from "./mapWarm";
 
   interface Props {
     risk?: number; // 0..1, current hour's illustrative risk level
@@ -26,35 +26,27 @@
   let container: HTMLDivElement | undefined = $state();
   let ready = $state(false);
 
-  // Zones around the EPN campus. `incidents` are the published 2025 counts
-  // of incidentes contra la convivencia ciudadana from the Observatorio
-  // Metropolitano de Seguridad Ciudadana; `estimated: true` marks the ones
-  // the DMQ hasn't broken out publicly, scaled from their neighbours so the
-  // map still reads as a gradient rather than blank patches.
-  const PEAK_INCIDENTS = 14842; // Centro Histórico 2025 — the local maximum
+  const PEAK_INCIDENTS = 14842;
   const ZONES = [
     { name: "Centro Histórico", lng: -78.5125, lat: -0.2201, incidents: 14842, estimated: false },
-    { name: "La Mariscal", lng: -78.4863, lat: -0.1985, incidents: 7444, estimated: false },
-    { name: "Itchimbía", lng: -78.503, lat: -0.2168, incidents: 6200, estimated: true },
-    { name: "La Floresta (EPN)", lng: -78.4886, lat: -0.2073, incidents: 4100, estimated: true },
+    { name: "La Mariscal",      lng: -78.4863, lat: -0.1985, incidents: 7444,  estimated: false },
+    { name: "Itchimbía",        lng: -78.503,  lat: -0.2168, incidents: 6200,  estimated: true  },
+    { name: "La Floresta (EPN)",lng: -78.4886, lat: -0.2073, incidents: 4100,  estimated: true  },
     { name: "El Ejido / La Carolina", lng: -78.493, lat: -0.187, incidents: 3600, estimated: true },
-    { name: "González Suárez", lng: -78.479, lat: -0.204, incidents: 2400, estimated: true },
+    { name: "González Suárez",  lng: -78.479,  lat: -0.204,  incidents: 2400,  estimated: true  },
   ];
 
-  /** Zone's own incident load, normalised 0..1 against the local peak. */
   function baseFor(z: { incidents: number }) {
     return Math.min(1, z.incidents / PEAK_INCIDENTS);
   }
 
-  // Weighted so the zone's own record dominates: a historically calm sector
-  // stays cool even at 3am, and the hour only shifts it a band or so.
   function combinedRisk(base: number, riskFactor: number) {
     return Math.min(1, base * 0.62 + riskFactor * 0.38);
   }
 
   function riskColor(r: number) {
     if (r > 0.66) return "#ef4444";
-    if (r > 0.4) return "#f5b942";
+    if (r > 0.4)  return "#f5b942";
     return "#21e0a0";
   }
 
@@ -96,36 +88,32 @@
     };
   }
 
-  // Agrega sources y layers al warmMap la primera vez.
-  // Si ya existen (remount), solo actualiza los datos.
-  function setupSources() {
-    if (!warmMap.getSource("risk-points")) {
-      warmMap.addSource("risk-points", { type: "geojson", data: pointsGeoJSON(risk) });
-      warmMap.addLayer({
+  /** Agrega sources/layers si es la primera vez, actualiza datos si ya existen. */
+  function setupSources(m: maplibregl.Map) {
+    if (!m.getSource("risk-points")) {
+      m.addSource("risk-points", { type: "geojson", data: pointsGeoJSON(risk) });
+      m.addLayer({
         id: "risk-heat",
         type: "heatmap",
         source: "risk-points",
         paint: {
           "heatmap-weight": 1,
           "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 11, 1, 16, 2.4],
-          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 11, 16, 16, 42],
+          "heatmap-radius":    ["interpolate", ["linear"], ["zoom"], 11, 16, 16, 42],
           "heatmap-opacity": 0.75,
           "heatmap-color": [
-            "interpolate",
-            ["linear"],
-            ["heatmap-density"],
-            0, "rgba(33,224,160,0)",
+            "interpolate", ["linear"], ["heatmap-density"],
+            0,    "rgba(33,224,160,0)",
             0.25, "rgba(130,214,110,0.55)",
-            0.5, "rgba(214,193,60,0.7)",
-            0.7, "rgba(245,185,66,0.8)",
+            0.5,  "rgba(214,193,60,0.7)",
+            0.7,  "rgba(245,185,66,0.8)",
             0.85, "rgba(230,110,50,0.85)",
-            1, "rgba(239,68,68,0.9)",
+            1,    "rgba(239,68,68,0.9)",
           ],
         },
       });
-
-      warmMap.addSource("zone-labels", { type: "geojson", data: labelsGeoJSON(risk) });
-      warmMap.addLayer({
+      m.addSource("zone-labels", { type: "geojson", data: labelsGeoJSON(risk) });
+      m.addLayer({
         id: "zone-dot",
         type: "circle",
         source: "zone-labels",
@@ -136,15 +124,11 @@
           "circle-stroke-color": "#04060d",
         },
       });
-      warmMap.addLayer({
+      m.addLayer({
         id: "zone-text",
         type: "symbol",
         source: "zone-labels",
         layout: {
-          // MapLibre's default stack is "Open Sans Regular, Arial Unicode
-          // MS Regular", which this tile server doesn't host — the glyph
-          // request 404s and the labels silently never draw. Its style
-          // ships Noto Sans, so name it explicitly.
           "text-font": ["Noto Sans Regular"],
           "text-field": ["format", ["get", "name"], {}, "\n", {}, ["get", "detail"], { "font-scale": 0.8 }],
           "text-size": 11,
@@ -159,14 +143,13 @@
         },
       });
     } else {
-      // Remount — solo sincroniza datos actuales
-      (warmMap.getSource("risk-points") as maplibregl.GeoJSONSource).setData(pointsGeoJSON(risk));
-      (warmMap.getSource("zone-labels") as maplibregl.GeoJSONSource).setData(labelsGeoJSON(risk));
+      // Remount: solo sincroniza datos
+      (m.getSource("risk-points") as maplibregl.GeoJSONSource).setData(pointsGeoJSON(risk));
+      (m.getSource("zone-labels") as maplibregl.GeoJSONSource).setData(labelsGeoJSON(risk));
     }
 
-    // NavigationControl se agrega una sola vez (el mapa es singleton)
     if (!warmState.navControlAdded) {
-      warmMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+      m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
       warmState.navControlAdded = true;
     }
 
@@ -178,29 +161,55 @@
     if (!container) return;
     const el = container;
 
-    // ── Adoptar el mapa pre-calentado ────────────────────────────────────
-    // Movemos warmShell (que contiene el canvas WebGL) dentro de nuestro
-    // contenedor. No creamos ningún Map nuevo — zero workers, zero GL init.
-    warmShell.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
-    el.appendChild(warmShell);
+    // Cuando el mapa esté disponible, mueve warmShell al contenedor y adopta.
+    // Si el mapa ya existe (caso normal), la adopción es inmediata.
+    // Si el usuario llegó aquí antes de los 2 rAF de mapWarm, esperamos.
+    function adopt() {
+      const m = warmMap!;
 
-    if (mapLoaded || mapWarm.mapLoaded) {
-      // El mapa ya cargó durante el splash — sources se agregan de inmediato
-      setupSources();
-    } else {
-      // Todavía cargando (conexión muy lenta) — esperamos el evento
-      warmMap.once("load", setupSources);
+      // Mover el shell (que contiene el canvas WebGL) al contenedor real.
+      // Esto es lo único que hacemos — no new Map(), no workers.
+      warmShell.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
+      el.appendChild(warmShell);
+
+      // Resize guardado: solo si el contenedor tiene dimensiones reales.
+      // Evita el bug de canvas 1×1px cuando el contenedor está colapsado.
+      const safeResize = () => {
+        if (el.offsetWidth > 10 && el.offsetHeight > 10) {
+          m.resize();
+        }
+      };
+
+      requestAnimationFrame(safeResize);
+
+      const ro = new ResizeObserver(() => safeResize());
+      ro.observe(el);
+
+      if (mapLoaded) {
+        setupSources(m);
+      } else {
+        m.once("load", () => {
+          if (container === el) setupSources(m); // aún montado
+        });
+      }
+
+      return ro;
     }
 
-    const ro = new ResizeObserver(() => warmMap.resize());
-    ro.observe(el);
-    // Forzar resize tras adoptar: el container tiene dimensiones reales ahora
-    requestAnimationFrame(() => warmMap.resize());
+    let ro: ResizeObserver | null = null;
+
+    if (warmMap) {
+      ro = adopt();
+    } else {
+      // Mapa aún no creado (usuario muy rápido, < 2 frames del splash)
+      onWarmReady(() => {
+        if (container === el) ro = adopt();
+      });
+    }
 
     return () => {
-      ro.disconnect();
-      // Devolver el shell al limbo off-screen: el mapa sigue vivo, los
-      // workers no se destruyen, y en el próximo adopt será instantáneo.
+      ro?.disconnect();
+      // Devolver el shell al limbo off-screen — el mapa sigue vivo y cálido.
       warmShell.style.cssText =
         "position:fixed;top:-99999px;left:0;" +
         "width:360px;height:280px;pointer-events:none;";
@@ -211,7 +220,7 @@
 
   $effect(() => {
     const r = risk;
-    if (!ready) return;
+    if (!ready || !warmMap) return;
     (warmMap.getSource("risk-points") as maplibregl.GeoJSONSource | undefined)?.setData(pointsGeoJSON(r));
     (warmMap.getSource("zone-labels") as maplibregl.GeoJSONSource | undefined)?.setData(labelsGeoJSON(r));
   });

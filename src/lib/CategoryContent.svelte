@@ -167,21 +167,24 @@
          as the module hanging for a second on every visit. -->
     {#if securityCategory?.security}
       <!--
-        sec-panel siempre presente en el DOM (hidden cuando inactivo).
-        SecurityMap adopta warmMap — no hay new Map(), no hay WebGL init aquí.
+        SecurityMap monta/desmonta cuando el usuario navega a/desde Seguridad.
+        Con el Map Singleton (mapWarm.ts), el costo es solo un movimiento de DOM
+        — no new Map(), no workers. El mapa ya estaba cálido desde el splash.
       -->
-      <div class="sec-panel" class:sec-panel--hidden={!isSecurityActive}>
+      <div class="sec-panel" style:display={isSecurityActive ? "flex" : "none"}>
         <div class="sec-map-frame">
           <!-- Overlay fade-out cuando mapReady=true -->
           <div class="sec-map-overlay" class:sec-map-overlay--hidden={mapReady}>
             <span class="sec-map-icon spin">◎</span>
             cargando mapa 3d…
           </div>
-          <SecurityMapComp
-            risk={securityRisk}
-            accent={securityCategory.theme.accent}
-            onready={() => (mapReady = true)}
-          />
+          {#if isSecurityActive}
+            <SecurityMapComp
+              risk={securityRisk}
+              accent={securityCategory.theme.accent}
+              onready={() => (mapReady = true)}
+            />
+          {/if}
         </div>
 
         <div class="sec-grid">
@@ -210,6 +213,7 @@
         </a>
       </div>
     {/if}
+
   </div>
 </div>
 
