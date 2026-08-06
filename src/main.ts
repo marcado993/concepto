@@ -18,4 +18,16 @@ if (boot) {
   setTimeout(dismiss, 600)
 }
 
+// Registra el Service Worker que cachea el style JSON, tiles, glyphs y
+// sprites del mapa MapLibre. En la segunda visita (o conexión lenta) los
+// assets del mapa salen de la caché local en vez de cruzar el Atlántico.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
+      // El SW no es crítico — si falla, el mapa sigue funcionando, solo
+      // sin la capa de caché offline.
+    })
+  })
+}
+
 export default app

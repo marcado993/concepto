@@ -12,6 +12,10 @@
     <!-- Warm the tile host's DNS/TLS while the app boots, so the map isn't
          paying for a cold connection the moment someone opens Seguridad. -->
     <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+    <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
+    <!-- El style JSON está auto-alojado en Vercel CDN. preload lo pide en
+         paralelo con el bundle JS para que MapLibre lo encuentre ya listo. -->
+    <link rel="preload" href="/map-style.json" as="fetch" crossorigin />
 
     <!-- Loaded non-render-blocking: on a slow connection the Google Fonts
          stylesheet used to gate first paint behind two extra round trips.

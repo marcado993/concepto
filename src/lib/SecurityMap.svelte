@@ -109,7 +109,10 @@
     const el = container;
     map = new maplibregl.Map({
       container: el,
-      style: "https://tiles.openfreemap.org/styles/dark",
+      // Servido desde /public/map-style.json → Vercel edge CDN, no desde
+      // el servidor externo de openfreemap. Elimina el round-trip más lento
+      // que bloqueaba el arranque del mapa en conexiones lentas.
+      style: "/map-style.json",
       center: [-78.4886, -0.208],
       zoom: 14,
       pitch: 45,
