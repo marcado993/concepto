@@ -1,6 +1,10 @@
 import { mount } from 'svelte'
 import './app.css'
 import App from './App.svelte'
+// Importar ANTES del mount: crea el mapa MapLibre en un div off-screen
+// durante el splash. Workers WebGL, style JSON y tiles del viewport inicial
+// arrancan mientras el usuario ve la pantalla de carga.
+import './lib/mapWarm'
 
 const app = mount(App, {
   target: document.getElementById('app')!,

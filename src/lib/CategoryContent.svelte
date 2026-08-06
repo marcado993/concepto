@@ -28,25 +28,17 @@
     onheaderpointerup,
   }: Props = $props();
 
-  let mapModule: typeof import("./SecurityMap.svelte") | null = $state(null);
-  // mapReady: el mapa ya disparó su evento 'load' y tiene WebGL activo.
-  // Se usa solo para saber si debemos llamar resize al abrir el sheet.
-  let mapReady = $state(false);
+  // SecurityMap se importa de forma estática — mapWarm.ts ya arrancó el
+  // mapa durante el splash, así que el componente puede usarlo de inmediato.
+  import SecurityMapComp from "./SecurityMap.svelte";
 
-  // Importamos el módulo inmediatamente — no esperamos a que Seguridad
-  // sea la categoría activa. El componente se montará oculto en el DOM
-  // (visibility:hidden + opacity:0) así que los workers de WebGL arrancan
-  // al cargar la página, no al primer tap del usuario.
-  import("./SecurityMap.svelte").then((mod) => {
-    mapModule = mod;
-  });
+  let mapReady = $state(false);
 
   // Cuando el sheet se abre y el mapa ya está listo, forzamos resize
   // para que llene el contenedor correctamente (el tamaño cambia al
   // animarse el slide del sheet).
   $effect(() => {
     if (isSecurityActive && mapReady) {
-      // Pequeño delay para que el CSS transition del sheet termine
       setTimeout(() => {
         window.dispatchEvent(new Event("resize"));
       }, 420);
@@ -175,31 +167,21 @@
          as the module hanging for a second on every visit. -->
     {#if securityCategory?.security}
       <!--
-        sec-panel siempre presente en el DOM (visibility hidden cuando inactivo)
-        así el mapa WebGL pre-inicializa sus workers sin ser visible.
-        El panel se oculta con opacity+pointer-events en CSS, no con display:none,
-        para que MapLibre pueda renderizar y tener el contexto listo.
+        sec-panel siempre presente en el DOM (hidden cuando inactivo).
+        SecurityMap adopta warmMap — no hay new Map(), no hay WebGL init aquí.
       -->
       <div class="sec-panel" class:sec-panel--hidden={!isSecurityActive}>
         <div class="sec-map-frame">
-          {#if mapModule}
-            {@const SecurityMapComp = mapModule.default}
-            <!-- El overlay se desvanece una vez que el mapa reporta 'load' -->
-            <div class="sec-map-overlay" class:sec-map-overlay--hidden={mapReady}>
-              <span class="sec-map-icon spin">◎</span>
-              cargando mapa 3d…
-            </div>
-            <SecurityMapComp
-              risk={securityRisk}
-              accent={securityCategory.theme.accent}
-              onready={() => (mapReady = true)}
-            />
-          {:else}
-            <div class="sec-map-cta">
-              <span class="sec-map-icon spin">◎</span>
-              cargando mapa 3d…
-            </div>
-          {/if}
+          <!-- Overlay fade-out cuando mapReady=true -->
+          <div class="sec-map-overlay" class:sec-map-overlay--hidden={mapReady}>
+            <span class="sec-map-icon spin">◎</span>
+            cargando mapa 3d…
+          </div>
+          <SecurityMapComp
+            risk={securityRisk}
+            accent={securityCategory.theme.accent}
+            onready={() => (mapReady = true)}
+          />
         </div>
 
         <div class="sec-grid">

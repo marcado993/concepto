@@ -1,17 +1,10 @@
 <script lang="ts">
+  // SecurityMap NO crea su propio Map — adopta el warmMap pre-inicializado
+  // en mapWarm.ts que arrancó durante el splash screen.
+  // La única operación que ocurre aquí es mover el div `warmShell` al
+  // contenedor del componente (no hay new Map(), no hay workers nuevos).
   import * as maplibregl from "maplibre-gl";
-  import "maplibre-gl/dist/maplibre-gl.css";
-  // MapLibre 6 resolves its worker at RUNTIME from import.meta.url —
-  // it asks for "./maplibre-gl-worker.mjs" next to wherever the bundled
-  // module landed (/assets/SecurityMap-<hash>.js). Since that's not a
-  // static import, no bundler can see it, so the file is never emitted:
-  // the request falls through to the SPA's index.html, the browser
-  // rejects the text/html MIME type, and the map silently never boots.
-  // `?worker&url` makes Vite bundle the worker (resolving its own
-  // ./maplibre-gl-shared.mjs import) and hand back the real emitted URL.
-  import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-
-  maplibregl.setWorkerUrl(maplibreWorkerUrl);
+  import { warmMap, warmShell, mapLoaded, state as warmState } from "./mapWarm";
 
   interface Props {
     risk?: number; // 0..1, current hour's illustrative risk level
@@ -28,10 +21,9 @@
     }>;
   };
 
-  let { risk = 0.5, accent = "#f5b942" }: Props = $props();
+  let { risk = 0.5, accent = "#f5b942", onready }: Props = $props();
 
   let container: HTMLDivElement | undefined = $state();
-  let map: maplibregl.Map | null = null;
   let ready = $state(false);
 
   // Zones around the EPN campus. `incidents` are the published 2025 counts
@@ -104,29 +96,12 @@
     };
   }
 
-  $effect(() => {
-    if (!container || map) return;
-    const el = container;
-    map = new maplibregl.Map({
-      container: el,
-      // Servido desde /public/map-style.json → Vercel edge CDN, no desde
-      // el servidor externo de openfreemap. Elimina el round-trip más lento
-      // que bloqueaba el arranque del mapa en conexiones lentas.
-      style: "/map-style.json",
-      center: [-78.4886, -0.208],
-      zoom: 14,
-      pitch: 45,
-      bearing: -12,
-      attributionControl: false,
-    });
-    const currentMap = map;
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
-
-    currentMap.on("load", () => {
-      if (map !== currentMap) return;
-
-      currentMap.addSource("risk-points", { type: "geojson", data: pointsGeoJSON(risk) });
-      currentMap.addLayer({
+  // Agrega sources y layers al warmMap la primera vez.
+  // Si ya existen (remount), solo actualiza los datos.
+  function setupSources() {
+    if (!warmMap.getSource("risk-points")) {
+      warmMap.addSource("risk-points", { type: "geojson", data: pointsGeoJSON(risk) });
+      warmMap.addLayer({
         id: "risk-heat",
         type: "heatmap",
         source: "risk-points",
@@ -149,8 +124,8 @@
         },
       });
 
-      currentMap.addSource("zone-labels", { type: "geojson", data: labelsGeoJSON(risk) });
-      currentMap.addLayer({
+      warmMap.addSource("zone-labels", { type: "geojson", data: labelsGeoJSON(risk) });
+      warmMap.addLayer({
         id: "zone-dot",
         type: "circle",
         source: "zone-labels",
@@ -161,7 +136,7 @@
           "circle-stroke-color": "#04060d",
         },
       });
-      currentMap.addLayer({
+      warmMap.addLayer({
         id: "zone-text",
         type: "symbol",
         source: "zone-labels",
@@ -183,28 +158,62 @@
           "text-halo-width": 1.4,
         },
       });
+    } else {
+      // Remount — solo sincroniza datos actuales
+      (warmMap.getSource("risk-points") as maplibregl.GeoJSONSource).setData(pointsGeoJSON(risk));
+      (warmMap.getSource("zone-labels") as maplibregl.GeoJSONSource).setData(labelsGeoJSON(risk));
+    }
 
-      ready = true;
-      onready?.();
-    });
+    // NavigationControl se agrega una sola vez (el mapa es singleton)
+    if (!warmState.navControlAdded) {
+      warmMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+      warmState.navControlAdded = true;
+    }
 
-    const ro = new ResizeObserver(() => currentMap.resize());
+    ready = true;
+    onready?.();
+  }
+
+  $effect(() => {
+    if (!container) return;
+    const el = container;
+
+    // ── Adoptar el mapa pre-calentado ────────────────────────────────────
+    // Movemos warmShell (que contiene el canvas WebGL) dentro de nuestro
+    // contenedor. No creamos ningún Map nuevo — zero workers, zero GL init.
+    warmShell.style.cssText = "position:absolute;inset:0;width:100%;height:100%;";
+    el.appendChild(warmShell);
+
+    if (mapLoaded || mapWarm.mapLoaded) {
+      // El mapa ya cargó durante el splash — sources se agregan de inmediato
+      setupSources();
+    } else {
+      // Todavía cargando (conexión muy lenta) — esperamos el evento
+      warmMap.once("load", setupSources);
+    }
+
+    const ro = new ResizeObserver(() => warmMap.resize());
     ro.observe(el);
-    requestAnimationFrame(() => currentMap.resize());
+    // Forzar resize tras adoptar: el container tiene dimensiones reales ahora
+    requestAnimationFrame(() => warmMap.resize());
 
     return () => {
       ro.disconnect();
-      map?.remove();
-      map = null;
+      // Devolver el shell al limbo off-screen: el mapa sigue vivo, los
+      // workers no se destruyen, y en el próximo adopt será instantáneo.
+      warmShell.style.cssText =
+        "position:fixed;top:-99999px;left:0;" +
+        "width:360px;height:280px;pointer-events:none;";
+      document.body.appendChild(warmShell);
       ready = false;
     };
   });
 
   $effect(() => {
     const r = risk;
-    if (!ready || !map) return;
-    (map.getSource("risk-points") as maplibregl.GeoJSONSource | undefined)?.setData(pointsGeoJSON(r));
-    (map.getSource("zone-labels") as maplibregl.GeoJSONSource | undefined)?.setData(labelsGeoJSON(r));
+    if (!ready) return;
+    (warmMap.getSource("risk-points") as maplibregl.GeoJSONSource | undefined)?.setData(pointsGeoJSON(r));
+    (warmMap.getSource("zone-labels") as maplibregl.GeoJSONSource | undefined)?.setData(labelsGeoJSON(r));
   });
 </script>
 
