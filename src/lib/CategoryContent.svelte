@@ -29,21 +29,28 @@
   }: Props = $props();
 
   let mapModule: typeof import("./SecurityMap.svelte") | null = $state(null);
-  let loadingMap = $state(false);
+  // mapReady: el mapa ya disparó su evento 'load' y tiene WebGL activo.
+  // Se usa solo para saber si debemos llamar resize al abrir el sheet.
+  let mapReady = $state(false);
 
-  async function loadMap() {
-    if (mapModule || loadingMap) return;
-    loadingMap = true;
-    mapModule = await import("./SecurityMap.svelte");
-    loadingMap = false;
-  }
+  // Importamos el módulo inmediatamente — no esperamos a que Seguridad
+  // sea la categoría activa. El componente se montará oculto en el DOM
+  // (visibility:hidden + opacity:0) así que los workers de WebGL arrancan
+  // al cargar la página, no al primer tap del usuario.
+  import("./SecurityMap.svelte").then((mod) => {
+    mapModule = mod;
+  });
 
-  // Preloads the (code-split) map bundle the moment Seguridad becomes the
-  // selected category — on the wheel that's well before the sheet opens,
-  // on desktop it's the instant the panel needs it — instead of waiting
-  // for a second interaction and making the visitor watch it fetch.
+  // Cuando el sheet se abre y el mapa ya está listo, forzamos resize
+  // para que llene el contenedor correctamente (el tamaño cambia al
+  // animarse el slide del sheet).
   $effect(() => {
-    if (category.id === "security") loadMap();
+    if (isSecurityActive && mapReady) {
+      // Pequeño delay para que el CSS transition del sheet termine
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      }, 420);
+    }
   });
 
   const isSecurityActive = $derived(category.id === "security");
@@ -167,11 +174,26 @@
          localhost that round trip is near-zero; on a real deploy it reads
          as the module hanging for a second on every visit. -->
     {#if securityCategory?.security}
-      <div class="sec-panel" style:display={isSecurityActive ? "flex" : "none"}>
+      <!--
+        sec-panel siempre presente en el DOM (visibility hidden cuando inactivo)
+        así el mapa WebGL pre-inicializa sus workers sin ser visible.
+        El panel se oculta con opacity+pointer-events en CSS, no con display:none,
+        para que MapLibre pueda renderizar y tener el contexto listo.
+      -->
+      <div class="sec-panel" class:sec-panel--hidden={!isSecurityActive}>
         <div class="sec-map-frame">
           {#if mapModule}
             {@const SecurityMapComp = mapModule.default}
-            <SecurityMapComp risk={securityRisk} accent={securityCategory.theme.accent} />
+            <!-- El overlay se desvanece una vez que el mapa reporta 'load' -->
+            <div class="sec-map-overlay" class:sec-map-overlay--hidden={mapReady}>
+              <span class="sec-map-icon spin">◎</span>
+              cargando mapa 3d…
+            </div>
+            <SecurityMapComp
+              risk={securityRisk}
+              accent={securityCategory.theme.accent}
+              onready={() => (mapReady = true)}
+            />
           {:else}
             <div class="sec-map-cta">
               <span class="sec-map-icon spin">◎</span>
@@ -586,6 +608,20 @@
     padding: 4px 20px 24px;
   }
 
+  /* Oculta visualmente sin destruir el DOM ni el contexto WebGL.
+     visibility:hidden + opacity:0 mantiene el layout y permite que
+     MapLibre siga vivo; pointer-events:none bloquea la interacción
+     accidental mientras el panel no está activo. */
+  .sec-panel--hidden {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
   .sec-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -690,11 +726,38 @@
   }
 
   .sec-map-frame {
+    position: relative;
     width: 100%;
     height: 260px;
     border-radius: 16px;
     overflow: hidden;
     background: rgba(0, 0, 0, 0.25);
+  }
+
+  /* Overlay de carga encima del mapa: cubre el WebGL mientras inicializa
+     y hace fade-out suave cuando el mapa dispara su evento 'load'. */
+  .sec-map-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 16px;
+    background: rgba(4, 6, 13, 0.88);
+    color: var(--sheet-accent);
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    transition: opacity 0.55s ease;
+    opacity: 1;
+  }
+
+  .sec-map-overlay--hidden {
+    opacity: 0;
   }
 
   .sec-map-cta {

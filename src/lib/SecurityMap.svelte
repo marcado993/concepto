@@ -16,6 +16,7 @@
   interface Props {
     risk?: number; // 0..1, current hour's illustrative risk level
     accent?: string;
+    onready?: () => void;
   }
 
   type FeatureCollection = {
@@ -181,6 +182,7 @@
       });
 
       ready = true;
+      onready?.();
     });
 
     const ro = new ResizeObserver(() => currentMap.resize());
