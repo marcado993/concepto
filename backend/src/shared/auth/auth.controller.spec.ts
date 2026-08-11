@@ -50,7 +50,7 @@ describe("AuthController", () => {
     config = moduleRef.get(ConfigService);
   });
 
-  it("Dado un inicio de login, Cuando se llama /auth/login, Entonces guarda code_verifier+state en una cookie FIRMADA y HTTPOnly, y redirige a Logto con direct_sign_in=social:github", () => {
+  it("Dado un inicio de login, Cuando se llama /auth/login, Entonces guarda code_verifier+state en una cookie FIRMADA y HTTPOnly, y redirige a la pantalla de Logto (sin forzar un conector — Logto muestra GitHub y correo institucional)", () => {
     const res = mockResponse();
 
     controller.login(res);
@@ -62,6 +62,18 @@ describe("AuthController", () => {
     );
     expect(logto.authorizationUrl).toHaveBeenCalledWith({ codeChallenge: "challenge-1", state: "state-1" });
     expect(res.redirect).toHaveBeenCalledWith("https://logto.example/oidc/auth?direct_sign_in=social:github");
+  });
+
+  it("Dado que Logto no está configurado (credenciales placeholder), Cuando se llama /auth/login, Entonces redirige al frontend con una señal clara en vez de tirar un 500 crudo", () => {
+    const res = mockResponse();
+    logto.authorizationUrl.mockImplementation(() => {
+      throw new Error("Logto no está configurado o no respondió al arrancar el backend — revisa LOGTO_ISSUER");
+    });
+
+    controller.login(res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=logto_not_configured");
+    expect(res.cookie).not.toHaveBeenCalled();
   });
 
   it("Dado un callback sin cookie de PKCE pendiente (expirada o CSRF), Cuando se llama /auth/callback, Entonces rechaza con BadRequestException sin intentar intercambiar el código", async () => {

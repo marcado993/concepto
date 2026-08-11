@@ -29,6 +29,18 @@ export class AuthController {
   login(@Res() res: Response) {
     const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();
 
+    let authUrl: string;
+    try {
+      authUrl = this.logto.authorizationUrl({ codeChallenge, state });
+    } catch {
+      // Logto sigue con credenciales placeholder (ver LogtoOidcClient) —
+      // esto es un estado esperado en desarrollo, no un 500 crudo que
+      // parezca un crash. Redirige al frontend con una señal clara en vez
+      // de tirar un JSON de error sin contexto.
+      const frontendOrigin = this.config.getOrThrow<string>("FRONTEND_ORIGIN").split(",")[0];
+      return res.redirect(`${frontendOrigin}/?auth_error=logto_not_configured`);
+    }
+
     res.cookie(OIDC_COOKIE, JSON.stringify({ codeVerifier, state }), {
       httpOnly: true,
       secure: true,
@@ -37,7 +49,7 @@ export class AuthController {
       maxAge: 5 * 60 * 1000, // 5 minutos — el login real no debería tardar más
     });
 
-    return res.redirect(this.logto.authorizationUrl({ codeChallenge, state }));
+    return res.redirect(authUrl);
   }
 
   @Public()

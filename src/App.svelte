@@ -17,6 +17,19 @@
   consumeAuthCallback();
   let authed = $state(isAuthenticated());
 
+  // auth.controller.ts redirige aquí con ?auth_error=... cuando Logto
+  // rechaza el intento (ej. credenciales placeholder en desarrollo, ver
+  // docs/dominio/10-despliegue-vps-vercel.md) — mensaje claro en vez de
+  // dejar que el usuario se quede mirando un 500 crudo en otra pestaña.
+  let authError = $state<string | null>(null);
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("auth_error") === "logto_not_configured") {
+      authError = "El login todavía no está disponible — Logto está pendiente de configurar.";
+      history.replaceState(null, "", window.location.pathname + window.location.hash);
+    }
+  }
+
   // The wheel is a touch gesture wearing a UI — dragging a disc with a
   // mouse (or worse, tabbing to it with a keyboard) is a parlor trick, not
   // navigation. Mouse-and-keyboard visitors get a plain clickable nav and
@@ -172,11 +185,18 @@
       <button
         class="auth-button"
         onclick={() => (authed ? logout() : login())}
-        aria-label={authed ? "Cerrar sesión" : "Iniciar sesión con GitHub"}
+        aria-label={authed ? "Cerrar sesión" : "Iniciar sesión"}
       >
         {authed ? "Cerrar sesión" : "Iniciar sesión"}
       </button>
     </div>
+
+    {#if authError}
+      <div class="auth-error-banner" role="alert">
+        <span>{authError}</span>
+        <button onclick={() => (authError = null)} aria-label="Cerrar aviso">×</button>
+      </div>
+    {/if}
 
     {#if isDesktop}
       <main class="desktop-main">
@@ -324,6 +344,32 @@
   .auth-button:hover {
     border-color: var(--accent);
     color: var(--accent);
+  }
+
+  .auth-error-banner {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 14px 4px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #ffb4b4;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .auth-error-banner button {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
   }
 
   .brand-name {

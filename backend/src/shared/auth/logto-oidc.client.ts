@@ -61,9 +61,18 @@ export class LogtoOidcClient implements OnModuleInit {
     return { codeVerifier, codeChallenge, state };
   }
 
-  // direct_sign_in=social:github salta la pantalla de selección de Logto y
-  // va directo al conector de GitHub — es la parte que el sponsor pidió
-  // ("conecta con logto por github"), no un login genérico con opciones.
+  // Sin direct_sign_in — Logto muestra su propia pantalla con TODOS los
+  // conectores habilitados en el tenant (GitHub + correo institucional),
+  // y decide sola si es un registro nuevo o un login existente. Un solo
+  // botón en AEIS-APP ("Iniciar sesión"), sin que el frontend tenga que
+  // preguntar antes "¿ya tienes cuenta?" ni distinguir método — eso es
+  // exactamente lo que Logto ya resuelve del otro lado.
+  //
+  // Requiere que el tenant de Logto tenga configurado, además del
+  // conector social de GitHub, un conector de correo/contraseña o enlace
+  // mágico para el dominio institucional (@epn.edu.ec) — configuración
+  // del lado de Logto, no de este código (ver docs/dominio/
+  // 10-despliegue-vps-vercel.md, pendiente de credenciales reales).
   authorizationUrl(params: { codeChallenge: string; state: string }) {
     this.assertReady();
     return this.client.authorizationUrl({
@@ -71,8 +80,7 @@ export class LogtoOidcClient implements OnModuleInit {
       code_challenge: params.codeChallenge,
       code_challenge_method: "S256",
       state: params.state,
-      direct_sign_in: "social:github",
-    } as Record<string, string>);
+    });
   }
 
   async exchangeCode(params: { code: string; state: string; expectedState: string; codeVerifier: string }) {
