@@ -254,3 +254,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "Todos los gates de DevSecOps pasaron — PR listo para revisión humana."
+
+  # ---------------------------------------------------------------
+  # 8. Deploy automático — SOLO en push a main (nunca en pull_request, ni
+  #    siquiera de un fork propio) y SOLO si policy-gate ya paso. El
+  #    servidor no tiene SSH publico (docs/dominio/11-hardening-servidor.md
+  #    §1) — el runner se une al tailnet con una authkey efimera/reusable
+  #    (se limpia sola al desconectar, no se acumulan nodos fantasma de
+  #    corridas viejas) y entra por la IP privada de Tailscale, nunca por
+  #    la IP publica. La llave SSH (DEPLOY_SSH_KEY) es una dedicada solo
+  #    para CI, generada aparte — nunca la llave personal del sponsor.
+  #    Deliberadamente sin acciones de terceros para el paso de SSH (menos
+  #    superficie de supply chain): solo el cliente `ssh` real dentro del
+  #    runner, la unica accion de terceros es la oficial de Tailscale.
+  # ---------------------------------------------------------------
+  deploy:
+    name: Deploy a produccion (Oracle Cloud)
+    needs: [policy-gate]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conectar al tailnet
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+      - name: Desplegar por SSH (via Tailscale, no IP publica)
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_TS_IP: "100.74.53.122"
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new opc@"$SERVER_TS_IP" '
+            set -e
+            cd ~/aeis-app
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+            sudo docker compose -f docker-compose.prod.yml up -d --build
+            sudo docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy
+          '
