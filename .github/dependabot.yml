@@ -6,6 +6,12 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # Espera 7 días desde la publicación antes de proponer una versión
+    # nueva — un paquete recién publicado puede ser malicioso (typosquat,
+    # cuenta de mantenedor comprometida) o simplemente inestable; 7 días
+    # da tiempo a que la comunidad lo detecte antes de que llegue aquí.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     groups:
       dev-dependencies:
@@ -22,6 +28,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     groups:
       dev-dependencies:
@@ -37,6 +45,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
       - "security"
@@ -49,6 +59,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
       - "ci"

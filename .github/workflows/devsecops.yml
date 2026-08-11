@@ -31,8 +31,8 @@ jobs:
     name: Frontend · Lint · Tipos · Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: "npm"
@@ -54,8 +54,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: "npm"
@@ -75,10 +75,10 @@ jobs:
     name: Escaneo de secretos (Gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # Gitleaks necesita el historial completo, no solo el último commit
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -96,7 +96,7 @@ jobs:
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Semgrep — policy propia + 4 paquetes OWASP/seguridad
         # p/nodejsscan se probó y se descartó a propósito: sus reglas
         # "ajinabraham.njsscan.good.*" no son vulnerabilidades — CONFIRMAN
@@ -117,7 +117,7 @@ jobs:
             --error \
             --sarif --output=semgrep.sarif
       - name: Subir resultados a Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -135,28 +135,33 @@ jobs:
     name: SAST independiente (CodeQL)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: github/codeql-action/init@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
         with:
           languages: javascript-typescript
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
         with:
           category: codeql
 
   # ---------------------------------------------------------------
-  # 4. Dependencias y CVEs — OSV-Scanner
+  # 4. Dependencias y CVEs — OSV-Scanner. La acción v1 (paso directo) fue
+  #    descontinuada por el propio proyecto en favor del workflow
+  #    reusable — "Not intended to be used directly" según su propio
+  #    action.yml a partir de v2. Se llama distinto (job-level `uses:`,
+  #    no step-level), por eso requiere permissions explícitos aquí.
   # ---------------------------------------------------------------
   dependency-scan:
     name: Dependencias y CVEs (OSV-Scanner)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: google/osv-scanner-action/osv-scanner-action@v1
-        with:
-          scan-args: |-
-            --recursive
-            --skip-git
-            ./
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
+    with:
+      scan-args: |-
+        --recursive
+        --skip-git
+        ./
 
   # ---------------------------------------------------------------
   # 5a. Filesystem — Trivy sobre todo el repo (frontend + backend fuente)
@@ -165,9 +170,9 @@ jobs:
     name: Escaneo de filesystem (Trivy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Trivy fs scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           scan-type: "fs"
           scan-ref: "."
@@ -175,7 +180,7 @@ jobs:
           exit-code: "1"
           format: "sarif"
           output: "trivy-fs.sarif"
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
         if: always()
         with:
           sarif_file: trivy-fs.sarif
@@ -191,18 +196,18 @@ jobs:
     name: Escaneo de imagen del backend (Trivy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build imagen backend
         run: docker build -t aeis-app-backend:ci ./backend
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: "aeis-app-backend:ci"
           severity: "CRITICAL,HIGH"
           exit-code: "1"
           format: "sarif"
           output: "trivy-image.sarif"
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
         if: always()
         with:
           sarif_file: trivy-image.sarif
@@ -218,14 +223,21 @@ jobs:
     name: Generar SBOM (CycloneDX)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
+          cache: "npm"
+      # cyclonedx-npm corre "npm ls" internamente para resolver el árbol de
+      # dependencias — sin node_modules instalado, npm ls falla con
+      # ELSPROBLEMS ("missing" para cada paquete) y el SBOM sale vacío/roto.
+      - run: npm ci
       - run: npx @cyclonedx/cyclonedx-npm --output-file sbom-frontend.json
+      - run: npm ci
+        working-directory: backend
       - run: npx @cyclonedx/cyclonedx-npm --output-file sbom-backend.json
         working-directory: backend
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom
           path: |
@@ -275,7 +287,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Conectar al tailnet
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade # v3
         with:
           authkey: ${{ secrets.TS_AUTHKEY }}
       - name: Desplegar por SSH (via Tailscale, no IP publica)
