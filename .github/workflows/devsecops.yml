@@ -171,13 +171,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Trivy fs scan
+      # Mismo patrón que trivy-image-scan: "table" es el gate real, el
+      # SARIF de abajo es solo para la pestaña Security y no bloquea —
+      # trivy-action tiene un bug confirmado generando SARIF con 0
+      # hallazgos que produce exit code 1 espurio.
+      - name: Trivy fs scan (gate)
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: "fs"
           scan-ref: "."
           severity: "CRITICAL,HIGH"
           exit-code: "1"
+          format: "table"
+      - name: Trivy fs scan (SARIF para Security tab, no bloquea)
+        if: always()
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
           format: "sarif"
           output: "trivy-fs.sarif"
       - uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
@@ -199,28 +212,30 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build imagen backend
         run: docker build -t aeis-app-backend:ci ./backend
-      # DEBUG temporal — formato tabla para ver en el log qué encuentra CI
-      # exactamente (con SARIF los resultados van al archivo, no a stdout).
-      # Se quita en cuanto se identifique la causa real de la discrepancia
-      # entre esta corrida y la reproducción local (que sale limpia).
-      - name: DEBUG Trivy image scan (tabla, no falla el build)
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
-        with:
-          image-ref: "aeis-app-backend:ci"
-          severity: "CRITICAL,HIGH"
-          exit-code: "0"
-          format: "table"
-          trivyignores: ".trivyignore"
-      - name: Trivy image scan
+      # Gate real — formato tabla, es el que decide si el job falla.
+      # Diagnosticado: aquasecurity/trivy-action tiene un bug de verdad
+      # generando SARIF cuando el resultado son 0 hallazgos (exit code 1
+      # espurio pese a tabla limpia, confirmado corriendo ambos formatos
+      # en paralelo contra la misma imagen). Por eso el gate usa "table",
+      # no "sarif" — el SARIF de abajo es solo para la pestaña Security,
+      # nunca decide pass/fail.
+      - name: Trivy image scan (gate)
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: "aeis-app-backend:ci"
           severity: "CRITICAL,HIGH"
           exit-code: "1"
+          format: "table"
+          trivyignores: ".trivyignore"
+      - name: Trivy image scan (SARIF para Security tab, no bloquea)
+        if: always()
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: "aeis-app-backend:ci"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
           format: "sarif"
           output: "trivy-image.sarif"
-          # trivy-action NO carga .trivyignore por defecto — solo lo aplica
-          # si se lo pasas explícito aquí (confirmado en su entrypoint.sh).
           trivyignores: ".trivyignore"
       - uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
         if: always()
