@@ -1,6 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { ConfigService } from "@nestjs/config";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { AuthController } from "./auth.controller";
 import { LogtoOidcClient } from "./logto-oidc.client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -16,7 +16,7 @@ function mockResponse() {
 describe("AuthController", () => {
   let controller: AuthController;
   let logto: { generatePkce: jest.Mock; authorizationUrl: jest.Mock; exchangeCode: jest.Mock };
-  let prisma: { user: { upsert: jest.Mock } };
+  let prisma: { user: { upsert: jest.Mock; findUnique: jest.Mock } };
   let config: ConfigService;
 
   beforeEach(async () => {
@@ -25,7 +25,12 @@ describe("AuthController", () => {
       authorizationUrl: jest.fn().mockReturnValue("https://logto.example/oidc/auth?direct_sign_in=social:github"),
       exchangeCode: jest.fn(),
     };
-    prisma = { user: { upsert: jest.fn().mockResolvedValue({ id: "user-1" }) } };
+    prisma = {
+      user: {
+        upsert: jest.fn().mockResolvedValue({ id: "user-1" }),
+        findUnique: jest.fn().mockResolvedValue({ fullName: "Estudiante EPN", uniqueCode: "PENDIENTE-abc", role: "ESTUDIANTE" }),
+      },
+    };
 
     const moduleRef = await Test.createTestingModule({
       controllers: [AuthController],
@@ -109,5 +114,23 @@ describe("AuthController", () => {
     expect(prisma.user.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ update: {} })
     );
+  });
+
+  it("Dado un usuario autenticado, Cuando pide /auth/me, Entonces retorna solo nombre/código/rol, nunca el logtoSub ni otros campos internos", async () => {
+    const req = { user: { id: "user-1" } } as any;
+
+    const result = await controller.me(req);
+
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "user-1" }, select: { fullName: true, uniqueCode: true, role: true } })
+    );
+    expect(result).toEqual({ fullName: "Estudiante EPN", uniqueCode: "PENDIENTE-abc", role: "ESTUDIANTE" });
+  });
+
+  it("Dado un id de usuario que ya no existe en la base, Cuando pide /auth/me, Entonces lanza UnauthorizedException", async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    const req = { user: { id: "user-fantasma" } } as any;
+
+    await expect(controller.me(req)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

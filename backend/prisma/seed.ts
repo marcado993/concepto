@@ -23,6 +23,24 @@ async function main() {
     },
   });
 
+  // Los 108 casilleros reales — hasta ahora esto solo existía como datos
+  // MOCK en el frontend (makeLockers() en src/lib/data.ts), sin nada real
+  // en la base de datos con lo que alquilar de verdad. 12 zonas (A-L) × 9
+  // casilleros, mismo patrón de código "<zona><número de 2 dígitos>" que
+  // ya usaba el mock, para no romper la convención visual existente.
+  const ZONES = "ABCDEFGHIJKL".split("");
+  const LOCKERS_PER_ZONE = 9;
+  for (const zone of ZONES) {
+    for (let i = 1; i <= LOCKERS_PER_ZONE; i++) {
+      const code = `${zone}${String(i).padStart(2, "0")}`;
+      await prisma.locker.upsert({
+        where: { code },
+        update: {},
+        create: { code, zone, status: "AVAILABLE" },
+      });
+    }
+  }
+
   const tiers: Array<{ name: string; amount: number; benefits: unknown }> = [
     {
       name: "Bronce",
@@ -141,7 +159,9 @@ async function main() {
     });
   }
 
-  console.log(`Seed listo — periodo ${period.label}, ${tiers.length} tiers (montos PLACEHOLDER), ${mockVentures.length} emprendimientos mock.`);
+  console.log(
+    `Seed listo — periodo ${period.label}, ${ZONES.length * LOCKERS_PER_ZONE} casilleros, ${tiers.length} tiers (montos PLACEHOLDER), ${mockVentures.length} emprendimientos mock.`
+  );
 }
 
 main()

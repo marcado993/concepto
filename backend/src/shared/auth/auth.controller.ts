@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, Controller, Get, Query, Req, Res } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Query, Req, Res, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Request, Response } from "express";
 import { Public } from "./public.decorator";
@@ -98,6 +98,22 @@ export class AuthController {
         fullName: name ?? email ?? "Estudiante pendiente de completar registro",
       },
     });
+  }
+
+  // Identidad del estudiante logueado — el frontend la usa para mostrar
+  // nombre/código en el formulario de alquiler en modo solo-lectura (nunca
+  // se le pide al estudiante escribir su propio código a mano: lo que hay
+  // en la base de datos es la fuente de verdad, aunque hoy sea un
+  // placeholder "PENDIENTE-..." hasta que exista el flujo de verificación
+  // institucional real).
+  @Get("me")
+  async me(@Req() req: Request & { user: { id: string } }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { fullName: true, uniqueCode: true, role: true },
+    });
+    if (!user) throw new UnauthorizedException();
+    return user;
   }
 
   @Public()

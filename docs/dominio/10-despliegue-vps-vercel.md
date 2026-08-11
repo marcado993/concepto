@@ -71,7 +71,7 @@ Luego, la contraseña de Postgres (compartida entre `docker-compose.prod.yml` y
 `DATABASE_URL` dentro de `backend/.env` — ver el comentario en el propio compose):
 
 ```bash
-echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)" > .env
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" > .env
 # copiar ese mismo valor a la parte de la contraseña en DATABASE_URL dentro de backend/.env
 ```
 

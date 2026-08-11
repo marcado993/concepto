@@ -6,7 +6,7 @@
 # antes de desplegar.
 #
 # Uso:
-#   echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)" > .env   # primera vez
+#   echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" > .env   # primera vez
 #   docker compose up            # normal
 #   docker compose up --build    # tras cambiar package.json o el Dockerfile
 #   docker compose down          # parar (los datos de Postgres persisten)
@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: aeis
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?corre "echo POSTGRES_PASSWORD=$(openssl rand -base64 24) > .env" primero}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?corre "echo POSTGRES_PASSWORD=$(openssl rand -hex 24) > .env" primero}
       POSTGRES_DB: aeis_app
     ports:
       - "127.0.0.1:5433:5432"

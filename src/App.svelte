@@ -6,9 +6,9 @@
   import DesktopNav from "./lib/DesktopNav.svelte";
   import CategoryContent from "./lib/CategoryContent.svelte";
   import TypeText from "./lib/TypeText.svelte";
-  import { categories, type SecurityIndicator, type VenturePublic } from "./lib/data";
+  import { categories, type SecurityIndicator, type VenturePublic, type LockerStatus, type LockerUnit } from "./lib/data";
   import { riskForHour, themeForRisk } from "./lib/risk";
-  import { fetchSecurityIndicators, fetchVentures } from "./lib/api";
+  import { fetchSecurityIndicators, fetchVentures, fetchLockers, type LockerFromApi } from "./lib/api";
   import { consumeAuthCallback, isAuthenticated, login, logout } from "./lib/auth.svelte";
 
   // Si el backend acaba de redirigir tras un login (Logto → GitHub → Logto
@@ -79,10 +79,42 @@
       });
   });
 
+  // Casilleros reales — reemplaza los 9 casilleros MOCK que generaba
+  // makeLockers() en data.ts. Mismo patrón de error explícito que
+  // security/ventures arriba. El backend usa AVAILABLE/RESERVED/RENTED
+  // (vocabulario de negocio); el frontend usa available/reserved/occupied
+  // (vocabulario ya establecido en LockerStatus) — RENTED se traduce a
+  // "occupied" porque para el estudiante que mira el mapa, "alguien ya lo
+  // tiene" es lo mismo esté RESERVED-transferencia-pendiente o RENTED.
+  const LOCKER_STATUS_MAP: Record<LockerFromApi["status"], LockerStatus> = {
+    AVAILABLE: "available",
+    RESERVED: "reserved",
+    RENTED: "occupied",
+  };
+  let lockers = $state<LockerUnit[] | null>(null);
+  let lockersError = $state(false);
+  function loadLockers() {
+    fetchLockers()
+      .then((data) => {
+        lockers = data.map((l) => ({
+          id: l.id,
+          number: l.code,
+          zone: l.zone,
+          status: LOCKER_STATUS_MAP[l.status],
+        }));
+        lockersError = false;
+      })
+      .catch(() => {
+        lockersError = true;
+      });
+  }
+  $effect(loadLockers);
+
   const displayCategories = $derived(
     categories.map((c) => {
       if (c.id === "security") return { ...c, theme: securityTheme, security: securityIndicators ?? undefined };
       if (c.id === "community") return { ...c, ventures: ventures ?? undefined };
+      if (c.id === "lockers" && lockers) return { ...c, lockers };
       return c;
     })
   );
@@ -177,6 +209,8 @@
                 securityRisk={riskForHour(currentHour)}
                 {securityIndicatorsError}
                 {venturesError}
+                {lockersError}
+                onlockerrented={loadLockers}
                 wide
               />
             </div>
@@ -222,6 +256,8 @@
         securityRisk={riskForHour(currentHour)}
         {securityIndicatorsError}
         {venturesError}
+        {lockersError}
+        onlockerrented={loadLockers}
       />
     {/if}
 

@@ -13,6 +13,8 @@
     securityIndicatorsError?: boolean;
     /** true si fetchVentures() falló — mismo patrón que securityIndicatorsError. */
     venturesError?: boolean;
+    /** true si fetchLockers() falló — mismo patrón que securityIndicatorsError. */
+    lockersError?: boolean;
     /** Desktop full-screen layout: let grids breathe into more columns. */
     wide?: boolean;
     // Only wired up by the mobile sliding sheet, so its header doubles as a
@@ -20,6 +22,8 @@
     onheaderpointerdown?: (e: PointerEvent) => void;
     onheaderpointermove?: (e: PointerEvent) => void;
     onheaderpointerup?: (e: PointerEvent) => void;
+    /** Se llama tras un alquiler exitoso, para que App.svelte vuelva a pedir /lockers. */
+    onlockerrented?: () => void;
   }
 
   let {
@@ -28,15 +32,20 @@
     securityRisk = 0.5,
     securityIndicatorsError = false,
     venturesError = false,
+    lockersError = false,
     wide = false,
     onheaderpointerdown,
     onheaderpointermove,
     onheaderpointerup,
+    onlockerrented,
   }: Props = $props();
 
   // SecurityMap se importa de forma estática — mapWarm.ts ya arrancó el
   // mapa durante el splash, así que el componente puede usarlo de inmediato.
   import SecurityMapComp from "./SecurityMap.svelte";
+  import RentLockerModal from "./RentLockerModal.svelte";
+
+  let rentingLockerCode = $state<string | null>(null);
 
   let mapReady = $state(false);
 
@@ -113,13 +122,22 @@
 
   <div class="sheet-body">
     {#if category.id === "lockers" && category.lockers}
+      {#if lockersError}
+        <p class="fetch-error">No se pudo cargar la disponibilidad real de casilleros — intenta más tarde.</p>
+      {/if}
       <div class="grid">
         {#each category.lockers as unit (unit.id)}
-          <div class="unit" class:dim={unit.status !== "available"}>
+          <button
+            class="unit"
+            class:dim={unit.status !== "available"}
+            disabled={unit.status !== "available"}
+            onclick={() => (rentingLockerCode = unit.number)}
+            aria-label="Alquilar casillero {unit.number}"
+          >
             <IsoIcon unit status={unit.status} size={64} />
             <span class="unit-number">{unit.number}</span>
             <span class="unit-status status-{unit.status}">{statusLabel[unit.status]}</span>
-          </div>
+          </button>
         {/each}
       </div>
     {:else if category.id === "events" && category.events}
@@ -278,6 +296,14 @@
   </div>
 </div>
 
+{#if rentingLockerCode}
+  <RentLockerModal
+    lockerCode={rentingLockerCode}
+    onclose={() => (rentingLockerCode = null)}
+    onrented={() => onlockerrented?.()}
+  />
+{/if}
+
 <style>
   .content-wrap {
     display: flex;
@@ -379,6 +405,12 @@
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.08);
     transition: transform 0.2s ease;
+    /* .unit ahora es un <button> (antes era un <div> decorativo) — reset de
+       estilos nativos de botón para que siga viéndose igual que antes. */
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    width: 100%;
   }
 
   .unit:active {
@@ -387,6 +419,16 @@
 
   .unit.dim {
     background: rgba(0, 0, 0, 0.18);
+  }
+
+  .unit:disabled {
+    cursor: not-allowed;
+  }
+
+  .fetch-error {
+    margin: 0 22px 10px;
+    font-size: 12.5px;
+    color: #ff8a8a;
   }
 
   .unit-number {

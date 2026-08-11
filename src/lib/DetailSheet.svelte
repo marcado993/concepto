@@ -11,6 +11,8 @@
     securityCategory?: Category | null;
     securityIndicatorsError?: boolean;
     venturesError?: boolean;
+    lockersError?: boolean;
+    onlockerrented?: () => void;
   }
 
   let {
@@ -21,6 +23,8 @@
     securityCategory = null,
     securityIndicatorsError = false,
     venturesError = false,
+    lockersError = false,
+    onlockerrented,
   }: Props = $props();
 
   // 1 = fully hidden below the screen, 0 = fully presented — a plain,
@@ -90,6 +94,8 @@
       {securityRisk}
       {securityIndicatorsError}
       {venturesError}
+      {lockersError}
+      {onlockerrented}
       onheaderpointerdown={onPointerDown}
       onheaderpointermove={onPointerMove}
       onheaderpointerup={onPointerUp}

@@ -1,19 +1,43 @@
-import { Body, Controller, Post, Req } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  FileTypeValidator,
+  Get,
+  MaxFileSizeValidator,
+  Param,
+  ParseFilePipe,
+  Post,
+  Req,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { Throttle } from "@nestjs/throttler";
 import { Request } from "express";
+import { Public } from "../shared/auth/public.decorator";
 import { Roles } from "../shared/auth/roles.decorator";
 import { Role } from "@prisma/client";
 import { LockerService } from "./locker.service";
 import { RentLockerDto } from "./dto/rent-locker.dto";
 
-// El periodo activo (periodId) debería resolverse server-side a partir del
-// calendario académico, no venir del cliente — se deja como TODO explícito
-// para el módulo `period` (no implementado todavía) en vez de simularlo
-// con un valor hardcodeado que parecería real.
+// El periodo activo se resuelve dentro de LockerService.getCurrentPeriodId()
+// a partir de las fechas de Period — no viene del cliente. Es una
+// resolución mínima (vigente o más próximo), no un PeriodService real
+// todavía; ver el comentario en locker.service.ts si se extrae a futuro.
 
 @Controller("lockers")
 export class LockerController {
   constructor(private readonly lockerService: LockerService) {}
+
+  // Público — mismo criterio que security/ y ventures/: ver disponibilidad
+  // de casilleros no expone nada sensible, no hay motivo de negocio para
+  // exigir login solo para mirar el mapa de casilleros.
+  @Public()
+  @Get()
+  list() {
+    return this.lockerService.list();
+  }
 
   @Post("rent")
   @Roles(Role.ESTUDIANTE)
@@ -30,8 +54,29 @@ export class LockerController {
       lockerCode: dto.lockerCode,
       method: dto.method,
       ipAddress: req.ip,
-      // TODO: resolver desde PeriodService.getCurrent() cuando ese módulo exista.
-      periodId: "TODO-period-not-yet-implemented",
     });
+  }
+
+  @Post("rentals/:rentalId/confirm-receipt")
+  @Roles(Role.ESTUDIANTE)
+  // Más laxo que "rent" (5 en vez de 3): una foto borrosa que hay que
+  // volver a tomar y subir es un caso legítimo esperado, no un abuso.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor("receipt"))
+  confirmReceipt(
+    @Param("rentalId") rentalId: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 8 * 1024 * 1024 }), // 8MB
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
+        ],
+      })
+    )
+    file: Express.Multer.File,
+    @Req() req: Request & { user: { id: string } }
+  ) {
+    if (!file?.buffer) throw new BadRequestException("Falta el archivo del comprobante");
+    return this.lockerService.confirmReceipt(rentalId, req.user.id, file.buffer, req.ip);
   }
 }
