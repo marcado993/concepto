@@ -199,6 +199,18 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build imagen backend
         run: docker build -t aeis-app-backend:ci ./backend
+      # DEBUG temporal — formato tabla para ver en el log qué encuentra CI
+      # exactamente (con SARIF los resultados van al archivo, no a stdout).
+      # Se quita en cuanto se identifique la causa real de la discrepancia
+      # entre esta corrida y la reproducción local (que sale limpia).
+      - name: DEBUG Trivy image scan (tabla, no falla el build)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: "aeis-app-backend:ci"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          format: "table"
+          trivyignores: ".trivyignore"
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
