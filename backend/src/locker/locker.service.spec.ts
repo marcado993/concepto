@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { LockerService, LockerUnavailableError } from "./locker.service";
 import { PrismaService } from "../shared/prisma/prisma.service";
@@ -123,7 +123,7 @@ describe("LockerService.confirmReceipt", () => {
 
   beforeEach(async () => {
     const tx = {
-      payment: { update: jest.fn().mockResolvedValue({}) },
+      payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       locker: { update: jest.fn().mockResolvedValue({ id: "locker-1", status: "RENTED" }) },
     };
     prisma = {
@@ -177,8 +177,11 @@ describe("LockerService.confirmReceipt", () => {
 
     await service.confirmReceipt("rental-1", "user-1", Buffer.from("img"));
 
-    expect(prisma.__tx.payment.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "CONFIRMED" }) })
+    expect(prisma.__tx.payment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "payment-1", status: "PENDING" },
+        data: expect.objectContaining({ status: "CONFIRMED" }),
+      })
     );
     expect(prisma.__tx.locker.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: "RENTED" } })
@@ -198,5 +201,25 @@ describe("LockerService.confirmReceipt", () => {
     await expect(service.confirmReceipt("rental-1", "user-1", Buffer.from("img"))).rejects.toBeInstanceOf(
       BadRequestException
     );
+  });
+
+  // CONCURRENCIA — el chequeo `payment.status !== "PENDING"` de arriba lee
+  // ANTES de la transacción, así que dos peticiones para el MISMO
+  // comprobante (doble click, reintento de red) pueden pasar ambas ese
+  // chequeo antes de que cualquiera escriba. Este test simula justo esa
+  // ventana: el mock representa "otra petición ya ganó la carrera y puso
+  // status=CONFIRMED entre el findUnique() de esta petición y su propio
+  // updateMany()" — el WHERE status:"PENDING" de la transacción real
+  // (no simulable con un mock de Prisma, que no tiene estado) es lo que
+  // hace esto imposible en producción; aquí se prueba que el servicio SÍ
+  // reacciona correctamente cuando ese WHERE no encuentra fila que tocar.
+  it("Dado que otra petición ya confirmó el mismo comprobante justo antes de esta transacción (condición de carrera), Cuando updateMany no encuentra ninguna fila PENDING que tocar, Entonces lanza ConflictException y NUNCA toca el casillero", async () => {
+    ocr.extractText.mockResolvedValue("Transferencia exitosa por $6.50");
+    prisma.__tx.payment.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.confirmReceipt("rental-1", "user-1", Buffer.from("img"))).rejects.toBeInstanceOf(
+      ConflictException
+    );
+    expect(prisma.__tx.locker.update).not.toHaveBeenCalled();
   });
 });

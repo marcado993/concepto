@@ -136,10 +136,21 @@ export class LockerService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id: rental.paymentId },
+      // updateMany + where status:"PENDING", no update() simple — el chequeo
+      // de `rental.payment.status !== "PENDING"` de arriba NO es atómico con
+      // esta escritura (condición de carrera real: dos peticiones para el
+      // MISMO comprobante — doble click, o el navegador reintentando una
+      // petición que ya llegó — pueden pasar ambas ese chequeo antes de que
+      // cualquiera confirme). El WHERE status:"PENDING" aquí es lo que
+      // garantiza que como máximo una gana; la otra ve count=0 y se entera
+      // de que ya no hay nada que confirmar, en vez de confirmar dos veces.
+      const { count } = await tx.payment.updateMany({
+        where: { id: rental.paymentId, status: "PENDING" },
         data: { status: "CONFIRMED", confirmedAt: new Date(), providerRef: `receipt-${rental.id}` },
       });
+      if (count === 0) {
+        throw new ConflictException("Este comprobante ya fue procesado por otra petición");
+      }
       const updatedLocker = await tx.locker.update({
         where: { id: rental.lockerId },
         data: { status: "RENTED" },
