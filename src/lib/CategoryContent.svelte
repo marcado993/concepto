@@ -99,6 +99,22 @@
     return hash;
   }
 
+  // Degradado a lo largo de la grilla de casilleros — un tono por
+  // posición en vez de un color plano fijo. Recorre un arco de tono cada
+  // ~30 casilleros (108 ÷ 30 ≈ 3.6 tramos), anclado cerca del teal de
+  // acento de la app (~160°) para que nunca desentone con el resto de la UI.
+  function unitHue(index: number): number {
+    const withinBand = (index % 30) / 30; // 0..1 dentro del tramo de 30
+    const band = Math.floor(index / 30); // qué tramo de 30 le toca
+    return (160 + band * 55 + withinBand * 40) % 360;
+  }
+
+  // Entrada escalonada — cada casillero aparece un poco después que el
+  // anterior, con techo para que el número 108 no tarde una eternidad.
+  function unitDelay(index: number): number {
+    return Math.min(index * 12, 500);
+  }
+
   const theme = $derived(category.theme);
   const wrapStyle = $derived(
     `--sheet-accent: ${theme.accent}; --sheet-dim: ${theme.accentDim}; --sheet-deep: ${theme.deep}; --sheet-glow: ${theme.glow}; --sheet-hue: ${theme.hue}deg;`
@@ -126,13 +142,14 @@
         <p class="fetch-error">No se pudo cargar la disponibilidad real de casilleros — intenta más tarde.</p>
       {/if}
       <div class="grid">
-        {#each category.lockers as unit (unit.id)}
+        {#each category.lockers as unit, i (unit.id)}
           <button
             class="unit"
             class:dim={unit.status !== "available"}
             disabled={unit.status !== "available"}
             onclick={() => (rentingLockerCode = unit.number)}
             aria-label="Alquilar casillero {unit.number}"
+            style="--unit-hue: {unitHue(i)}; animation-delay: {unitDelay(i)}ms"
           >
             <IsoIcon unit status={unit.status} size={64} />
             <span class="unit-number">{unit.number}</span>
@@ -402,15 +419,48 @@
     gap: 6px;
     padding: 14px 6px;
     border-radius: 18px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: transform 0.2s ease;
+    /* Degradado por posición (--unit-hue, calculado en unitHue()) — un
+       tramo de tono distinto cada ~30 casilleros, no un color plano
+       repetido en los 108. Solo se nota en los disponibles (ver .dim
+       abajo, que lo apaga a propósito — un casillero ocupado no debe
+       competir visualmente por atención con uno libre). */
+    background: linear-gradient(
+      145deg,
+      hsla(var(--unit-hue), 70%, 55%, 0.16),
+      hsla(var(--unit-hue), 70%, 55%, 0.05)
+    );
+    border: 1px solid hsla(var(--unit-hue), 70%, 60%, 0.28);
+    transition:
+      transform 0.2s ease,
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
     /* .unit ahora es un <button> (antes era un <div> decorativo) — reset de
        estilos nativos de botón para que siga viéndose igual que antes. */
     font: inherit;
     color: inherit;
     cursor: pointer;
     width: 100%;
+    /* Entrada escalonada — animation-delay viene inline por unidad
+       (unitDelay() en el script), así que los 108 no aparecen todos de
+       golpe sino en una ola rápida de izquierda a derecha, arriba a abajo. */
+    opacity: 0;
+    animation: unit-enter 0.45s ease-out forwards;
+  }
+
+  @keyframes unit-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .unit:hover:not(:disabled) {
+    border-color: hsla(var(--unit-hue), 75%, 65%, 0.55);
+    box-shadow: 0 0 16px hsla(var(--unit-hue), 75%, 60%, 0.25);
   }
 
   .unit:active {
@@ -419,6 +469,17 @@
 
   .unit.dim {
     background: rgba(0, 0, 0, 0.18);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+  .unit.dim:hover {
+    box-shadow: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .unit {
+      animation: none;
+      opacity: 1;
+    }
   }
 
   .unit:disabled {
