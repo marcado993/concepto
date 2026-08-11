@@ -6,10 +6,16 @@
 # antes de desplegar.
 #
 # Uso:
-#   docker compose up            # primera vez / normal
+#   echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)" > .env   # primera vez
+#   docker compose up            # normal
 #   docker compose up --build    # tras cambiar package.json o el Dockerfile
 #   docker compose down          # parar (los datos de Postgres persisten)
 #   docker compose down -v       # parar y borrar también los datos
+#
+# POSTGRES_PASSWORD nunca va hardcodeado en este archivo — aunque sea solo
+# desarrollo local, un valor fijo en texto plano en el repo dispara los
+# escaneres de secretos (GitGuardian/Gitleaks lo marcan igual, sin
+# distinguir "es solo dev"). Mismo patrón que ya usa docker-compose.prod.yml.
 
 services:
   postgres:
@@ -18,7 +24,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: aeis
-      POSTGRES_PASSWORD: REDACTED_never_a_real_secret
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?corre "echo POSTGRES_PASSWORD=$(openssl rand -base64 24) > .env" primero}
       POSTGRES_DB: aeis_app
     ports:
       - "127.0.0.1:5433:5432"
@@ -46,8 +52,10 @@ services:
     environment:
       # Dentro de la red del compose el backend habla con Postgres por el
       # nombre del servicio, no por localhost:5433 (eso es solo para el
-      # host) — sobreescribe lo que traiga backend/.env.
-      DATABASE_URL: postgresql://aeis:REDACTED_never_a_real_secret@postgres:5432/aeis_app?schema=public
+      # host) — sobreescribe lo que traiga backend/.env. Misma variable
+      # POSTGRES_PASSWORD que usa el servicio postgres arriba — docker
+      # compose la interpola en ambos lugares desde el mismo .env.
+      DATABASE_URL: postgresql://aeis:${POSTGRES_PASSWORD:?}@postgres:5432/aeis_app?schema=public
     ports:
       - "3000:3000"
     depends_on:
