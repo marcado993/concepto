@@ -20,6 +20,14 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# El npm que trae node:22-alpine por defecto carga sus propias dependencias
+# vendored (tar, brace-expansion, sigstore...) con CVEs conocidos — no son
+# dependencias de AEIS-APP, pero Trivy las escanea igual porque quedan en
+# la imagen final. Se necesita `npx` en runtime (prisma migrate deploy se
+# corre dentro del contenedor ya desplegado), así que no se puede quitar
+# npm — se actualiza a la última versión en vez, que ya trae esos CVEs
+# resueltos.
+RUN npm install -g npm@latest
 COPY package*.json ./
 COPY prisma ./prisma
 RUN npm ci --omit=dev && npx prisma generate
