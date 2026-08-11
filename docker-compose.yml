@@ -1,0 +1,66 @@
+# Flujo de desarrollo local con Docker — reemplaza el `docker run` manual
+# de Postgres usado hasta ahora y añade el backend al mismo compose, con
+# hot-reload vía bind mount. Ver docs/dominio/09-auditoria-pentest.md §2:
+# Postgres se publica SOLO en 127.0.0.1 (loopback), nunca en 0.0.0.0 — ni
+# siquiera en desarrollo local, para no depender de acordarse de cambiarlo
+# antes de desplegar.
+#
+# Uso:
+#   docker compose up            # primera vez / normal
+#   docker compose up --build    # tras cambiar package.json o el Dockerfile
+#   docker compose down          # parar (los datos de Postgres persisten)
+#   docker compose down -v       # parar y borrar también los datos
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aeis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aeis
+      POSTGRES_PASSWORD: REDACTED_never_a_real_secret
+      POSTGRES_DB: aeis_app
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - aeis-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aeis -d aeis_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      target: builder
+    container_name: aeis-backend
+    restart: unless-stopped
+    # target: builder trae devDependencies + nest-cli, así --watch funciona.
+    # La imagen "runtime" del Dockerfile (sin devDependencies, usuario no
+    # root) es la que de verdad se despliega al VPS — este compose es solo
+    # para desarrollo local.
+    command: sh -c "npx prisma migrate deploy && npm run start:dev"
+    env_file:
+      - ./backend/.env
+    environment:
+      # Dentro de la red del compose el backend habla con Postgres por el
+      # nombre del servicio, no por localhost:5433 (eso es solo para el
+      # host) — sobreescribe lo que traiga backend/.env.
+      DATABASE_URL: postgresql://aeis:REDACTED_never_a_real_secret@postgres:5432/aeis_app?schema=public
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+      # node_modules como volumen anónimo: evita que el node_modules del
+      # host (Windows) pise al de Linux dentro del contenedor — Prisma y
+      # otros paquetes nativos compilan binarios distintos por plataforma.
+      - aeis-backend-node-modules:/app/node_modules
+
+volumes:
+  aeis-postgres-data:
+  aeis-backend-node-modules:

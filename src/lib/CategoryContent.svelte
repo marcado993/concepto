@@ -9,6 +9,10 @@
     // the map block below for why this exists.
     securityCategory?: Category | null;
     securityRisk?: number;
+    /** true si fetchSecurityIndicators() falló — distingue "cargando" de "no se pudo". */
+    securityIndicatorsError?: boolean;
+    /** true si fetchVentures() falló — mismo patrón que securityIndicatorsError. */
+    venturesError?: boolean;
     /** Desktop full-screen layout: let grids breathe into more columns. */
     wide?: boolean;
     // Only wired up by the mobile sliding sheet, so its header doubles as a
@@ -22,6 +26,8 @@
     category,
     securityCategory = null,
     securityRisk = 0.5,
+    securityIndicatorsError = false,
+    venturesError = false,
     wide = false,
     onheaderpointerdown,
     onheaderpointermove,
@@ -66,6 +72,22 @@
       .slice(0, 2)
       .join("")
       .toUpperCase();
+  }
+
+  // Un tono por categoría, no una paleta fija a mano — el estudiante que
+  // sube un emprendimiento puede escribir cualquier texto en "categoría",
+  // así que un mapa hardcodeado ("Alimentos" → naranja) se rompería con la
+  // primera categoría nueva. Un hash determinístico da el mismo color
+  // siempre para la misma palabra, sin mantenimiento, y sigue cumpliendo
+  // el objetivo real: que el ojo agrupe tarjetas de la misma categoría por
+  // color al escanear la grilla (categorización rápida, efecto Von
+  // Restorff — una grilla monocroma se vuelve ruido visual).
+  function categoryHue(category: string): number {
+    let hash = 0;
+    for (let i = 0; i < category.length; i++) {
+      hash = (hash * 31 + category.charCodeAt(i)) % 360;
+    }
+    return hash;
   }
 
   const theme = $derived(category.theme);
@@ -135,22 +157,48 @@
           </div>
         {/each}
       </div>
-    {:else if category.id === "community" && category.news}
-      <div class="news-list">
-        {#each category.news as n (n.id)}
-          <div class="news-card">
-            <div class="news-top">
-              <span class="news-tag">{n.tag}</span>
-              <span class="news-time">{n.time}</span>
-            </div>
-            <h3 class="news-title">{n.title}</h3>
-            <p class="news-excerpt">{n.excerpt}</p>
-            <div class="news-author">
-              <span class="avatar">{initials(n.author)}</span>
-              {n.author}
-            </div>
-          </div>
-        {/each}
+    {:else if category.id === "community"}
+      <!-- "Comunidad" reemplazado por Emprendimientos — vitrina +
+           contacto WhatsApp, sin chat propio (docs/dominio/
+           01-analisis-negocio-mision.md §4). El id interno se queda como
+           "community" a propósito: renombrarlo tocaría IconKind/ArcMenu/
+           IsoIcon sin necesidad real, cuando lo único que cambió es el
+           contenido, no la mecánica de navegación. -->
+      <div class="news-list venture-grid">
+        {#if category.ventures}
+          {#each category.ventures as v (v.id)}
+            <article class="venture-card" style="--v-hue: {categoryHue(v.category)}">
+              <div class="venture-media">
+                {#if v.photoUrl}
+                  <img src={v.photoUrl} alt={v.name} loading="lazy" />
+                {:else}
+                  <div class="venture-media-fallback">{initials(v.name)}</div>
+                {/if}
+                <span class="venture-badge">{v.category}</span>
+              </div>
+              <div class="venture-body">
+                <h3 class="venture-name">{v.name}</h3>
+                <p class="venture-desc">{v.description}</p>
+                <a class="venture-cta" href={v.whatsappLink} target="_blank" rel="noreferrer">
+                  <svg class="wa-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.06-1.36A10 10 0 1 0 12 2Zm0 18.2a8.15 8.15 0 0 1-4.16-1.14l-.3-.18-3 .8.8-2.93-.2-.31A8.2 8.2 0 1 1 12 20.2Zm4.5-6.13c-.24-.12-1.44-.71-1.66-.8-.22-.08-.38-.12-.55.12-.16.24-.63.8-.77.96-.14.16-.28.18-.52.06-.24-.12-1.01-.37-1.92-1.18-.71-.63-1.19-1.42-1.33-1.66-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.7 2.6 4.12 3.64.58.25 1.03.4 1.38.51.58.18 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28Z"
+                    />
+                  </svg>
+                  Escribir por WhatsApp
+                </a>
+              </div>
+            </article>
+          {/each}
+          {#if category.ventures.length === 0}
+            <p class="sec-note">Todavía no hay emprendimientos aprobados en el directorio.</p>
+          {/if}
+        {:else if venturesError}
+          <p class="sec-note">No se pudo cargar el directorio de emprendimientos.</p>
+        {:else}
+          <p class="sec-note">Cargando emprendimientos…</p>
+        {/if}
       </div>
     {/if}
 
@@ -165,11 +213,18 @@
          fresh style/sprite/glyph/tile fetch from a third-party host. On
          localhost that round trip is near-zero; on a real deploy it reads
          as the module hanging for a second on every visit. -->
-    {#if securityCategory?.security}
+    {#if securityCategory}
       <!--
         SecurityMap monta/desmonta cuando el usuario navega a/desde Seguridad.
         Con el Map Singleton (mapWarm.ts), el costo es solo un movimiento de DOM
         — no new Map(), no workers. El mapa ya estaba cálido desde el splash.
+
+        `security` (los 6 indicadores) ahora se pide al backend de forma
+        asíncrona (App.svelte, fetchSecurityIndicators) — a propósito NO se
+        usa como condición de este panel: si se gatilla en `.security`, el
+        mapa entero desaparece mientras carga o si el backend no responde.
+        El mapa se mantiene siempre montado; solo la grilla de indicadores
+        de abajo tiene su propio estado de carga/error.
       -->
       <div class="sec-panel" style:display={isSecurityActive ? "flex" : "none"}>
         <div class="sec-map-frame">
@@ -188,20 +243,26 @@
         </div>
 
         <div class="sec-grid">
-          {#each securityCategory.security as ind (ind.id)}
-            <div class="sec-card">
-              <span class="sec-label">{ind.label}</span>
-              <span class="sec-value-row">
-                <span class="sec-value">{ind.value}</span>
-                {#if ind.trend && ind.trend !== "flat"}
-                  <span class="sec-trend trend-{ind.trend}">{ind.trend === "up" ? "▲" : "▼"}</span>
-                {/if}
-              </span>
-              <span class="sec-unit">{ind.unit}</span>
-              {#if ind.note}<span class="sec-note">{ind.note}</span>{/if}
-              <span class="sec-risk risk-{ind.risk}">{riskLabel[ind.risk]}</span>
-            </div>
-          {/each}
+          {#if securityCategory.security}
+            {#each securityCategory.security as ind (ind.id)}
+              <div class="sec-card">
+                <span class="sec-label">{ind.label}</span>
+                <span class="sec-value-row">
+                  <span class="sec-value">{ind.value}</span>
+                  {#if ind.trend && ind.trend !== "flat"}
+                    <span class="sec-trend trend-{ind.trend}">{ind.trend === "up" ? "▲" : "▼"}</span>
+                  {/if}
+                </span>
+                <span class="sec-unit">{ind.unit}</span>
+                {#if ind.note}<span class="sec-note">{ind.note}</span>{/if}
+                <span class="sec-risk risk-{ind.risk}">{riskLabel[ind.risk]}</span>
+              </div>
+            {/each}
+          {:else if securityIndicatorsError}
+            <p class="sec-note">No se pudieron cargar los indicadores del backend.</p>
+          {:else}
+            <p class="sec-note">Cargando indicadores…</p>
+          {/if}
         </div>
 
         <p class="sec-src-note">
@@ -571,6 +632,167 @@
     gap: 8px;
     font-size: 11.5px;
     color: rgba(234, 255, 245, 0.6);
+  }
+
+  /* ---------- Emprendimientos: tarjetas de directorio ---------- */
+
+  /* Grilla, no lista de una columna — un directorio se hojea, no se lee de
+     corrido; ver también .content-wrap.wide .news-list para la versión
+     de escritorio (ya define columnas ahí). En móvil, una columna angosta
+     ya es efectivamente una grilla de 1. */
+  .venture-grid {
+    padding: 8px 16px 40px;
+  }
+
+  .venture-card {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-md, 18px);
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+    /* La variable por tarjeta (--v-hue) es lo que hace que cada categoría
+       "sienta" distinta sin escribir una regla CSS por categoría. */
+    transition:
+      transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-color 0.22s ease,
+      box-shadow 0.22s ease;
+  }
+
+  .venture-card:hover,
+  .venture-card:focus-within {
+    transform: translateY(-4px);
+    border-color: hsl(var(--v-hue) 85% 65% / 0.55);
+    box-shadow:
+      0 14px 28px -12px hsl(var(--v-hue) 85% 55% / 0.35),
+      0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  }
+
+  .venture-media {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .venture-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .venture-card:hover .venture-media img {
+    transform: scale(1.06);
+  }
+
+  /* Scrim de abajo hacia arriba — asegura que la insignia de categoría se
+     lea sobre CUALQUIER foto, sin depender de que la imagen sea oscura. */
+  .venture-media::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(4, 6, 13, 0) 55%, rgba(4, 6, 13, 0.75) 100%);
+    pointer-events: none;
+  }
+
+  .venture-media-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-size: 28px;
+    letter-spacing: 0.08em;
+    color: hsl(var(--v-hue) 85% 72%);
+    background: hsl(var(--v-hue) 60% 18%);
+  }
+
+  .venture-badge {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 1;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    color: hsl(var(--v-hue) 40% 12%);
+    background: hsl(var(--v-hue) 85% 68%);
+    box-shadow: 0 2px 10px hsl(var(--v-hue) 85% 45% / 0.5);
+  }
+
+  .venture-body {
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .venture-name {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 16px;
+    line-height: 1.25;
+    color: #f4f9ff;
+  }
+
+  .venture-desc {
+    margin: 0 0 6px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: rgba(234, 255, 245, 0.68);
+    /* Recorta a 2 líneas — todas las tarjetas de la grilla quedan del
+       mismo alto sin importar cuánto haya escrito cada estudiante. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .venture-cta {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 9px 12px;
+    border-radius: 999px;
+    background: #25d366;
+    color: #04150d;
+    font-size: 12.5px;
+    font-weight: 700;
+    text-decoration: none;
+    transition:
+      filter 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  /* Verde real de WhatsApp, no el acento de AEIS — "reconocer, no
+     recordar": el ojo ya sabe qué hace este botón antes de leer el texto,
+     que es exactamente lo que se busca en el paso de mayor fricción del
+     flujo (salir de la app a escribir a un desconocido). */
+  .venture-cta:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+  .venture-cta:active {
+    transform: translateY(0);
+    filter: brightness(0.96);
+  }
+
+  .wa-icon {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
   }
 
   .avatar {

@@ -1,0 +1,54 @@
+version: 2
+updates:
+  # Frontend — Svelte + Vite (raíz del repo, despliega a Vercel)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+    labels:
+      - "dependencies"
+      - "security"
+      - "frontend"
+
+  # Backend — NestJS + Prisma (backend/, despliega a VPS vía Docker) —
+  # árbol de dependencias completamente separado del frontend.
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+    labels:
+      - "dependencies"
+      - "security"
+      - "backend"
+
+  # Imagen base del Dockerfile del backend (node:22-alpine)
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "security"
+      - "backend"
+
+  # El propio pipeline también es superficie de ataque (supply chain de CI) —
+  # mantener las Actions actualizadas es parte de DevSecOps, no un extra.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "ci"

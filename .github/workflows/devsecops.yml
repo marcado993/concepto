@@ -1,0 +1,256 @@
+name: DevSecOps
+
+# Pipeline de referencia para AEIS-APP, alineado con
+# docs/dominio/05-metodologia-devsecops-pipeline.md.
+#
+# Orden deliberado: gates baratos y rápidos primero (lint, tipos, tests,
+# secretos) para fallar rápido; escaneos más pesados (dependencias,
+# contenedores, SAST) después. Frontend (Svelte + Vite, raíz del repo,
+# despliega a Vercel) y backend (NestJS, backend/, despliega a un VPS vía
+# Docker) son dos package.json separados a propósito — monolito modular en
+# código, desacoplado en despliegue (ver docs/dominio/01 §5). Los jobs de
+# secretos/SAST/dependencias/SBOM escanean el repo completo; los de
+# lint-test-build corren uno por proyecto.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  security-events: write # requerido para subir resultados SARIF a la pestaña Security
+
+jobs:
+  # ---------------------------------------------------------------
+  # 1a. TDD/BDD gate — frontend (Svelte + Vite + Vitest)
+  # ---------------------------------------------------------------
+  frontend-build-and-test:
+    name: Frontend · Lint · Tipos · Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Type check + svelte-check
+        run: npm run check
+      - name: Tests unitarios (TDD)
+        run: npm run test
+      - name: Build de producción
+        run: npm run build
+
+  # ---------------------------------------------------------------
+  # 1b. TDD/BDD gate — backend (NestJS + Prisma + Jest)
+  # ---------------------------------------------------------------
+  backend-build-and-test:
+    name: Backend · Tests (TDD/BDD) · Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Prisma generate
+        run: npx prisma generate
+      - name: Tests unitarios (TDD/BDD — Given/When/Then)
+        run: npm test
+      - name: Build de producción
+        run: npm run build
+
+  # ---------------------------------------------------------------
+  # 2. Escaneo de secretos — Gitleaks
+  # ---------------------------------------------------------------
+  secret-scan:
+    name: Escaneo de secretos (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Gitleaks necesita el historial completo, no solo el último commit
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------
+  # 3a. Policy as Code + SAST — Semgrep, cadena completa de rulesets para
+  #     cubrir las 10 categorías de OWASP Top 10 2021, no solo un paquete
+  #     genérico. Ver docs/dominio/05-metodologia-devsecops-pipeline.md §3
+  #     para la matriz categoría → regla/paquete, verificada localmente
+  #     antes de comprometerse en el pipeline (los 5 paquetes se probaron
+  #     con `semgrep scan` real, no se asumió que existían).
+  # ---------------------------------------------------------------
+  policy-and-sast:
+    name: Policy as Code + SAST (Semgrep — OWASP Top 10 completo)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep — policy propia + 4 paquetes OWASP/seguridad
+        # p/nodejsscan se probó y se descartó a propósito: sus reglas
+        # "ajinabraham.njsscan.good.*" no son vulnerabilidades — CONFIRMAN
+        # buenas prácticas (ej. "good_helmet_checks": helmet está bien
+        # configurado) y Semgrep las reporta igual como "finding", lo que
+        # bloquearía el gate por código correcto. Verificado localmente
+        # (docs/dominio/05-metodologia-devsecops-pipeline.md §3): con estos
+        # 4 paquetes + policy propia, 0 falsos positivos contra el código
+        # real, 247 reglas ejecutadas con nodejsscan (6 "good"), 134 sin él
+        # (0 findings, limpio de verdad).
+        run: |
+          semgrep scan \
+            --config=policy/semgrep-rules.yml \
+            --config=p/owasp-top-ten \
+            --config=p/security-audit \
+            --config=p/secrets \
+            --config=p/typescript \
+            --error \
+            --sarif --output=semgrep.sarif
+      - name: Subir resultados a Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  # ---------------------------------------------------------------
+  # 3b. SAST independiente — CodeQL (motor de GitHub, distinto al de
+  #     Semgrep). Defensa en profundidad real: dos motores de análisis
+  #     estático con heurísticas distintas encuentran cosas distintas: un
+  #     patrón que Semgrep no modela puede caer en el data-flow tracking de
+  #     CodeQL, y viceversa. Gratis en repos públicos, cero configuración
+  #     adicional más allá de este job.
+  # ---------------------------------------------------------------
+  codeql-analysis:
+    name: SAST independiente (CodeQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: codeql
+
+  # ---------------------------------------------------------------
+  # 4. Dependencias y CVEs — OSV-Scanner
+  # ---------------------------------------------------------------
+  dependency-scan:
+    name: Dependencias y CVEs (OSV-Scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google/osv-scanner-action/osv-scanner-action@v1
+        with:
+          scan-args: |-
+            --recursive
+            --skip-git
+            ./
+
+  # ---------------------------------------------------------------
+  # 5a. Filesystem — Trivy sobre todo el repo (frontend + backend fuente)
+  # ---------------------------------------------------------------
+  trivy-fs-scan:
+    name: Escaneo de filesystem (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy fs scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          format: "sarif"
+          output: "trivy-fs.sarif"
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  # ---------------------------------------------------------------
+  # 5b. Imagen de contenedor del backend — Trivy sobre la imagen que
+  #     realmente correría en el VPS (backend/Dockerfile). Este es el paso
+  #     que docs/dominio/05 §6 dejó pendiente "para cuando exista el
+  #     Dockerfile" — ya existe.
+  # ---------------------------------------------------------------
+  trivy-image-scan:
+    name: Escaneo de imagen del backend (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build imagen backend
+        run: docker build -t aeis-app-backend:ci ./backend
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "aeis-app-backend:ci"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          format: "sarif"
+          output: "trivy-image.sarif"
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+  # ---------------------------------------------------------------
+  # 6. SBOM — inventario de dependencias (CycloneDX) de cada proyecto, se
+  #    archiva como artefacto de cada corrida para trazabilidad de supply
+  #    chain (frontend y backend por separado — son dos árboles de
+  #    dependencias distintos).
+  # ---------------------------------------------------------------
+  sbom:
+    name: Generar SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npx @cyclonedx/cyclonedx-npm --output-file sbom-frontend.json
+      - run: npx @cyclonedx/cyclonedx-npm --output-file sbom-backend.json
+        working-directory: backend
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom-frontend.json
+            backend/sbom-backend.json
+          retention-days: 90
+
+  # ---------------------------------------------------------------
+  # 7. Policy gate — punto único que decide si el PR puede fusionarse.
+  #    Configurar como "required status check" en la protección de rama
+  #    (branch protection) para que sea la puerta real, no solo un reporte.
+  # ---------------------------------------------------------------
+  policy-gate:
+    name: Policy Gate
+    needs:
+      [
+        frontend-build-and-test,
+        backend-build-and-test,
+        secret-scan,
+        policy-and-sast,
+        codeql-analysis,
+        dependency-scan,
+        trivy-fs-scan,
+        trivy-image-scan,
+      ]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Todos los gates de DevSecOps pasaron — PR listo para revisión humana."

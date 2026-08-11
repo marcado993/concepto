@@ -52,6 +52,18 @@ export interface SecurityIndicator {
   trend?: "up" | "down" | "flat";
 }
 
+/** Shape que devuelve GET /ventures — coincide con VenturePublic del
+ *  backend (backend/src/venture/venture.service.ts). Nunca trae el número
+ *  de WhatsApp crudo ni el ownerId, solo el link ya armado. */
+export interface VenturePublic {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  photoUrl: string | null;
+  whatsappLink: string;
+}
+
 /** Every section stays inside the AEIS identity (navy + circuit green) —
  *  these are hue-rotated siblings of the same accent, not arbitrary colors. */
 export interface CategoryTheme {
@@ -75,6 +87,7 @@ export interface Category {
   resources?: ResourceItem[];
   news?: NewsItem[];
   security?: SecurityIndicator[];
+  ventures?: VenturePublic[];
 }
 
 function makeLockers(zone: string, count: number, seed: number): LockerUnit[] {
@@ -171,46 +184,17 @@ export const categories: Category[] = [
   },
   {
     id: "community",
-    label: "Comunidad",
-    sublabel: "Miembros AEIS",
-    prompt: "Elige esto para conectar con la comunidad",
+    label: "Emprendimientos",
+    sublabel: "Politécnicos emprendedores",
+    prompt: "Elige esto para descubrir emprendimientos de estudiantes",
     icon: "community",
-    detailTitle: "Noticias de la comunidad",
+    detailTitle: "Directorio de emprendimientos",
     theme: { accent: "#5b8def", accentDim: "#1c2f66", deep: "#0a1230", glow: "rgba(91, 141, 239, 0.4)", hue: 57 },
-    news: [
-      {
-        id: "n1",
-        tag: "Logro",
-        title: "Equipo AEIS gana hackathon regional",
-        excerpt: "Tres estudiantes representaron a la asociación y obtuvieron el primer lugar.",
-        time: "hace 2 días",
-        author: "Comité AEIS",
-      },
-      {
-        id: "n2",
-        tag: "Bienvenida",
-        title: "Nuevos miembros se unen este semestre",
-        excerpt: "Más de 40 estudiantes se inscribieron en la jornada de afiliación.",
-        time: "hace 4 días",
-        author: "Secretaría",
-      },
-      {
-        id: "n3",
-        tag: "Alianza",
-        title: "Convenio con empresa de tecnología local",
-        excerpt: "Se abrirán pasantías exclusivas para miembros activos de AEIS.",
-        time: "hace 1 semana",
-        author: "Comité AEIS",
-      },
-      {
-        id: "n4",
-        tag: "Recordatorio",
-        title: "Actualiza tu perfil en la plataforma",
-        excerpt: "Es necesario para acceder a casilleros y recursos este semestre.",
-        time: "hace 1 semana",
-        author: "Soporte",
-      },
-    ],
+    // Reemplaza "Comunidad" (docs/dominio/01-analisis-negocio-mision.md §4)
+    // — vitrina + contacto WhatsApp, pedida al backend (fetchVentures en
+    // api.ts), igual que security. `news`/NewsItem se dejan sin usar aquí
+    // a propósito, no se borra el tipo por si algún día vuelve a hacer
+    // falta un feed real de noticias.
   },
   {
     id: "security",
@@ -222,67 +206,13 @@ export const categories: Category[] = [
     // Placeholder — App.svelte overrides this with themeForRisk(currentHour)
     // so the module's tone tracks the clock instead of sitting fixed.
     theme: { accent: "#f5b942", accentDim: "#4d3a12", deep: "#241c0a", glow: "rgba(245, 185, 66, 0.4)", hue: 0 },
-    // Real published figures for the Distrito Metropolitano de Quito, close
-    // of 2025, from the Observatorio Metropolitano de Seguridad Ciudadana
-    // (Policía Nacional + Fiscalía), as reported by Primicias in Jan 2026.
-    // These are annual totals, not a live feed — the DMQ's own per-month
-    // DataHub sits behind a login, so anything auto-refreshing would be
-    // guesswork. Values are labelled with their period for that reason.
-    security: [
-      {
-        id: "s1",
-        label: "Tasa de homicidios",
-        value: "9",
-        unit: "por 100.000 hab. · 2025",
-        risk: "moderate",
-        note: "8 en 2024",
-        trend: "up",
-      },
-      {
-        id: "s2",
-        label: "Homicidios intencionales",
-        value: "264",
-        unit: "casos · 2025",
-        risk: "moderate",
-        note: "248 en 2024",
-        trend: "up",
-      },
-      {
-        id: "s3",
-        label: "Violencia criminal",
-        value: "204",
-        unit: "casos · 2025",
-        risk: "high",
-        note: "179 en 2024",
-        trend: "up",
-      },
-      {
-        id: "s4",
-        label: "Riñas interpersonales",
-        value: "60",
-        unit: "casos · 2025",
-        risk: "low",
-        note: "69 en 2024",
-        trend: "down",
-      },
-      {
-        id: "s5",
-        label: "Con arma de fuego",
-        value: "163",
-        unit: "casos · 2025",
-        risk: "high",
-        note: "143 en 2024",
-        trend: "up",
-      },
-      {
-        id: "s6",
-        label: "Incidentes Centro Histórico",
-        value: "14.842",
-        unit: "convivencia · 2025",
-        risk: "moderate",
-        note: "17.449 en 2024",
-        trend: "down",
-      },
-    ],
+    // `security` ya NO vive hardcodeado aquí — se pide al backend
+    // (fetchSecurityIndicators en api.ts) y App.svelte lo fusiona en tiempo
+    // de ejecución. Antes esta misma lista de 6 indicadores estaba
+    // duplicada en dos lugares (frontend y, ahora, backend/src/security/
+    // indicators.ts); mantenerla en un solo lugar es lo que permite
+    // actualizar las cifras reales sin redesplegar el frontend. Ver
+    // docs/dominio/05-metodologia-devsecops-pipeline.md §7 (auditoría del
+    // mapa) y App.svelte (carga + fusión).
   },
 ];

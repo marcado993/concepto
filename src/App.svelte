@@ -6,8 +6,16 @@
   import DesktopNav from "./lib/DesktopNav.svelte";
   import CategoryContent from "./lib/CategoryContent.svelte";
   import TypeText from "./lib/TypeText.svelte";
-  import { categories } from "./lib/data";
+  import { categories, type SecurityIndicator, type VenturePublic } from "./lib/data";
   import { riskForHour, themeForRisk } from "./lib/risk";
+  import { fetchSecurityIndicators, fetchVentures } from "./lib/api";
+  import { consumeAuthCallback, isAuthenticated, login, logout } from "./lib/auth.svelte";
+
+  // Si el backend acaba de redirigir tras un login (Logto → GitHub → Logto
+  // → backend → aquí), el access_token viene en location.hash — se
+  // consume una sola vez, al montar, antes de cualquier otra cosa.
+  consumeAuthCallback();
+  let authed = $state(isAuthenticated());
 
   // The wheel is a touch gesture wearing a UI — dragging a disc with a
   // mouse (or worse, tabbing to it with a keyboard) is a parlor trick, not
@@ -38,8 +46,45 @@
   });
   const securityTheme = $derived(themeForRisk(riskForHour(currentHour)));
 
+  // Los indicadores de seguridad ya no viven hardcodeados en data.ts — se
+  // piden una vez al backend (mismo dato real, ahora en un solo lugar:
+  // backend/src/security/indicators.ts). Si el backend no responde, la
+  // sección de indicadores muestra el estado de error explícito de
+  // CategoryContent en vez de romper — el mapa (SecurityMap) no depende de
+  // este fetch en absoluto.
+  let securityIndicators = $state<SecurityIndicator[] | null>(null);
+  let securityIndicatorsError = $state(false);
+  $effect(() => {
+    fetchSecurityIndicators()
+      .then((data) => {
+        securityIndicators = data;
+      })
+      .catch(() => {
+        securityIndicatorsError = true;
+      });
+  });
+
+  // Directorio de emprendimientos — mismo patrón que los indicadores de
+  // seguridad: se pide una vez al backend, con estado de error explícito
+  // en vez de dejar la sección en blanco sin explicación.
+  let ventures = $state<VenturePublic[] | null>(null);
+  let venturesError = $state(false);
+  $effect(() => {
+    fetchVentures()
+      .then((data) => {
+        ventures = data;
+      })
+      .catch(() => {
+        venturesError = true;
+      });
+  });
+
   const displayCategories = $derived(
-    categories.map((c) => (c.id === "security" ? { ...c, theme: securityTheme } : c))
+    categories.map((c) => {
+      if (c.id === "security") return { ...c, theme: securityTheme, security: securityIndicators ?? undefined };
+      if (c.id === "community") return { ...c, ventures: ventures ?? undefined };
+      return c;
+    })
   );
 
   const activeCategory = $derived(displayCategories[selectedIndex]);
@@ -92,6 +137,13 @@
       <span class="brand-dot"></span>
       <span class="brand-name">AEIS</span>
       <img src="/aso.png" alt="AEIS" class="brand-mark" />
+      <button
+        class="auth-button"
+        onclick={() => (authed ? logout() : login())}
+        aria-label={authed ? "Cerrar sesión" : "Iniciar sesión con GitHub"}
+      >
+        {authed ? "Cerrar sesión" : "Iniciar sesión"}
+      </button>
     </div>
 
     {#if isDesktop}
@@ -123,6 +175,8 @@
                 category={activeCategory}
                 {securityCategory}
                 securityRisk={riskForHour(currentHour)}
+                {securityIndicatorsError}
+                {venturesError}
                 wide
               />
             </div>
@@ -166,6 +220,8 @@
         bind:open={sheetOpen}
         {securityCategory}
         securityRisk={riskForHour(currentHour)}
+        {securityIndicatorsError}
+        {venturesError}
       />
     {/if}
 
@@ -214,6 +270,24 @@
     object-fit: contain;
     margin-left: auto;
     filter: drop-shadow(0 0 6px var(--accent-glow));
+  }
+
+  .auth-button {
+    margin-left: 10px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ink-1);
+    font-family: var(--font-display, inherit);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .auth-button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .brand-name {

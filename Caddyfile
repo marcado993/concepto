@@ -1,0 +1,10 @@
+# Reverse proxy del VPS — TLS automático vía Let's Encrypt (Caddy renueva
+# solo, sin cron ni certbot). Reemplazar api.aeis-app.example por el
+# dominio real antes de desplegar (docs/dominio/10-despliegue-vps-vercel.md).
+api.aeis-app.example {
+	reverse_proxy backend:3000
+
+	# El backend ya limita origins vía FRONTEND_ORIGIN (CORS) y ya trae
+	# Helmet — Caddy no duplica esas cabeceras, solo termina TLS y reenvía.
+	encode gzip
+}
