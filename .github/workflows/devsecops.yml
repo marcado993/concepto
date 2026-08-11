@@ -207,6 +207,9 @@ jobs:
           exit-code: "1"
           format: "sarif"
           output: "trivy-image.sarif"
+          # trivy-action NO carga .trivyignore por defecto — solo lo aplica
+          # si se lo pasas explícito aquí (confirmado en su entrypoint.sh).
+          trivyignores: ".trivyignore"
       - uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
         if: always()
         with:
