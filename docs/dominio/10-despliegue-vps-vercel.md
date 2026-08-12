@@ -34,9 +34,13 @@ entrante salvo el puerto 22 (SSH) por defecto — se debe abrir manualmente 80/4
 también (Networking → Virtual Cloud Networks → tu VCN → Security Lists → Add Ingress
 Rules, Source `0.0.0.0/0`, puertos TCP 80 y 443), o Caddy nunca va a recibir tráfico.
 
-**1.2 DNS:** apuntar un subdominio (p. ej. `api.aeis-app.<dominio>`) a la IP pública de la
-instancia con un registro `A`. Sustituir ese dominio en `Caddyfile` (raíz del repo) antes
-de desplegar — Caddy no emite el certificado TLS hasta que el DNS resuelva correctamente.
+**1.2 DNS:** dominio real ya comprado — `aeis-app.online`. Crear un registro `A` para
+`api.aeis-app.online` apuntando a la IP pública de la instancia OCI, en el panel del
+proveedor de DNS del dominio (fuera de este repo — cada registrador tiene su propia
+interfaz). El `Caddyfile` (raíz del repo) ya usa ese hostname — no requiere cambios antes
+de desplegar. Caddy no emite el certificado TLS hasta que el DNS resuelva correctamente;
+verificar con `dig api.aeis-app.online` o `nslookup api.aeis-app.online` antes de levantar
+el compose de producción.
 
 **1.3 Instalar Docker** (Oracle Linux 9 no lo trae preinstalado, a diferencia de las
 imágenes "Docker on Ubuntu" de DigitalOcean):
@@ -105,7 +109,7 @@ abiertos, o Caddy no recibe tráfico (hallazgo de `09-auditoria-pentest.md` §2)
 **1.7 Verificar:**
 
 ```bash
-curl https://api.aeis-app.<dominio>/health
+curl https://api.aeis-app.online/health
 # → {"status":"ok","database":"ok",...}
 ```
 
@@ -128,7 +132,7 @@ repo). Framework preset: Vite (auto-detectado por el `vite.config.ts` existente)
 un archivo del repo):
 
 ```
-VITE_API_BASE_URL = https://api.aeis-app.<dominio>
+VITE_API_BASE_URL = https://api.aeis-app.online
 ```
 
 Mismo nombre que usa `.env.example` (raíz) en local, apuntando ahora a la instancia OCI en

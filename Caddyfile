@@ -1,15 +1,15 @@
-# Reverse proxy del VPS. Todavia no hay dominio real apuntando a la
-# instancia (docs/dominio/10-despliegue-vps-vercel.md §1.2, pendiente) —
-# por eso sirve en ":80" plano (sin TLS automatico) en vez de un hostname.
-# En cuanto haya un dominio con DNS resuelto, cambiar el bloque a:
+# Reverse proxy del VPS — dominio real: api.aeis-app.online (comprado para
+# el backend; el subdominio "api." deja la raíz libre para una futura
+# landing/marketing page). Caddy emite y renueva el certificado de Let's
+# Encrypt solo, sin cron ni certbot, en cuanto el DNS resuelva hacia esta
+# instancia (ver docs/dominio/10-despliegue-vps-vercel.md §1.2).
 #
-#   api.aeis-app.<dominio> {
-#     reverse_proxy backend:3000
-#     encode gzip
-#   }
-#
-# y Caddy emite el certificado de Let's Encrypt solo, sin cron ni certbot.
-:80 {
+# Requisito previo en el proveedor de DNS del dominio: un registro A
+#   api.aeis-app.online  →  <IP pública de la instancia OCI>
+# (y opcionalmente AAAA si la instancia tiene IPv6). Sin ese registro
+# resuelto, Caddy no puede completar el challenge HTTP-01 de Let's Encrypt
+# y esta instancia sigue exponiendo lo que tenía antes.
+api.aeis-app.online {
 	reverse_proxy backend:3000
 
 	# El backend ya limita origins vía FRONTEND_ORIGIN (CORS) y ya trae
