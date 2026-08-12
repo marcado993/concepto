@@ -39,6 +39,18 @@ export class LogtoOidcClient implements OnModuleInit {
         client_secret: this.config.get<string>("LOGTO_APP_SECRET"),
         redirect_uris: [this.config.getOrThrow<string>("LOGTO_REDIRECT_URI")],
         response_types: ["code"],
+        // openid-client asume RS256 por defecto para el id_token si no se le
+        // dice lo contrario — pero este tenant de Logto firma con ES384 (se
+        // confirmó en producción vía el header real del JWT). Sin esto,
+        // openid-client rechazaba TODO login con "unexpected JWT alg
+        // received, expected RS256, got: ES384" aunque el token fuera
+        // legítimo. Se toma del propio discovery doc del issuer en vez de
+        // hardcodear "ES384" a mano, para no romper de nuevo si Logto
+        // rota el algoritmo de firma más adelante.
+        id_token_signed_response_alg:
+          (issuer.metadata as Record<string, unknown>).id_token_signing_alg_values_supported instanceof Array
+            ? ((issuer.metadata as Record<string, unknown>).id_token_signing_alg_values_supported as string[])[0]
+            : "RS256",
       });
       this.logger.log(`Logto OIDC client inicializado contra ${issuer.issuer}`);
     } catch (err) {
