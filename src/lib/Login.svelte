@@ -147,17 +147,6 @@
     filter: drop-shadow(0 0 20px rgba(33, 224, 160, 0.5));
     margin-bottom: -18px;
     z-index: 2;
-    animation: logo-pulse 3.2s ease-in-out infinite;
-  }
-
-  @keyframes logo-pulse {
-    0%,
-    100% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.04);
-    }
   }
 
   .panel {
