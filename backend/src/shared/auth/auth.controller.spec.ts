@@ -50,18 +50,46 @@ describe("AuthController", () => {
     config = moduleRef.get(ConfigService);
   });
 
-  it("Dado un inicio de login, Cuando se llama /auth/login, Entonces guarda code_verifier+state en una cookie FIRMADA y HTTPOnly, y redirige a la pantalla de Logto (sin forzar un conector — Logto muestra GitHub y correo institucional)", () => {
+  it("Dado un inicio de login sin conector especificado, Cuando se llama /auth/login, Entonces guarda code_verifier+state en una cookie FIRMADA y HTTPOnly, y redirige a la pantalla de Logto (sin forzar un conector — Logto muestra GitHub y correo institucional)", () => {
     const res = mockResponse();
 
-    controller.login(res);
+    controller.login(undefined, res);
 
     expect(res.cookie).toHaveBeenCalledWith(
       "aeis_oidc_pending",
       expect.stringContaining("verifier-1"),
       expect.objectContaining({ httpOnly: true, signed: true, secure: true })
     );
-    expect(logto.authorizationUrl).toHaveBeenCalledWith({ codeChallenge: "challenge-1", state: "state-1" });
+    expect(logto.authorizationUrl).toHaveBeenCalledWith({
+      codeChallenge: "challenge-1",
+      state: "state-1",
+      directSignIn: undefined,
+    });
     expect(res.redirect).toHaveBeenCalledWith("https://logto.example/oidc/auth?direct_sign_in=social:github");
+  });
+
+  it("Dado ?connector=github (botón 'Continuar con GitHub' de Login.svelte), Cuando se llama /auth/login, Entonces pasa direct_sign_in=social:github para saltar el selector de Logto", () => {
+    const res = mockResponse();
+
+    controller.login("github", res);
+
+    expect(logto.authorizationUrl).toHaveBeenCalledWith({
+      codeChallenge: "challenge-1",
+      state: "state-1",
+      directSignIn: "social:github",
+    });
+  });
+
+  it("Dado un ?connector desconocido/no soportado, Cuando se llama /auth/login, Entonces lo ignora en vez de reenviarlo tal cual a Logto (un valor arbitrario no debe inyectar cualquier direct_sign_in)", () => {
+    const res = mockResponse();
+
+    controller.login("cualquier-cosa-inventada", res);
+
+    expect(logto.authorizationUrl).toHaveBeenCalledWith({
+      codeChallenge: "challenge-1",
+      state: "state-1",
+      directSignIn: undefined,
+    });
   });
 
   it("Dado que Logto no está configurado (credenciales placeholder), Cuando se llama /auth/login, Entonces redirige al frontend con una señal clara en vez de tirar un 500 crudo", () => {
@@ -70,7 +98,7 @@ describe("AuthController", () => {
       throw new Error("Logto no está configurado o no respondió al arrancar el backend — revisa LOGTO_ISSUER");
     });
 
-    controller.login(res);
+    controller.login(undefined, res);
 
     expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=logto_not_configured");
     expect(res.cookie).not.toHaveBeenCalled();

@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, Controller, Get, Query, Req, Res, UnauthorizedException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
@@ -33,12 +41,20 @@ export class AuthController {
   @Public()
   @Throttle({ short: { limit: 5, ttl: 10_000 } })
   @Get("login")
-  login(@Res() res: Response) {
+  login(@Query("connector") connector: string | undefined, @Res() res: Response) {
     const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();
+
+    // ?connector=github viene del botón "Continuar con GitHub" de
+    // Login.svelte — salta directo al conector social de GitHub en vez de
+    // mostrar el selector genérico de Logto (ver comentario en
+    // logto-oidc.client.ts). Solo se reconoce "github" a propósito: un
+    // valor arbitrario del query string no debería poder inyectar
+    // cualquier direct_sign_in sin que este backend lo valide primero.
+    const directSignIn = connector === "github" ? "social:github" : undefined;
 
     let authUrl: string;
     try {
-      authUrl = this.logto.authorizationUrl({ codeChallenge, state });
+      authUrl = this.logto.authorizationUrl({ codeChallenge, state, directSignIn });
     } catch {
       // Logto sigue con credenciales placeholder (ver LogtoOidcClient) —
       // esto es un estado esperado en desarrollo, no un 500 crudo que

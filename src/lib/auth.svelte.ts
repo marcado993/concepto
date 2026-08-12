@@ -44,8 +44,12 @@ export function getAccessToken(): string | null {
   return token;
 }
 
-export function login() {
-  window.location.href = `${API_BASE_URL}/auth/login`;
+/** connector opcional (ej. "github") — ver Login.svelte, que es quien
+ *  realmente decide el conector según qué botón tocó el estudiante. Sin
+ *  connector, el backend deja que Logto muestre su propio selector. */
+export function login(connector?: string) {
+  const qs = connector ? `?connector=${encodeURIComponent(connector)}` : "";
+  window.location.href = `${API_BASE_URL}/auth/login${qs}`;
 }
 
 export function logout() {
