@@ -60,7 +60,15 @@ export class LockerController {
   // limita a los 100 estudiantes DISTINTOS que puedan alquilar a la vez
   // (eso es carga legítima, resuelta por la restricción única de Prisma,
   // no por rate limiting) — limita a UN actor abusando, por IP.
-  @Throttle({ default: { limit: 3, ttl: 10_000 } })
+  //
+  // La clave del objeto DEBE ser el nombre de un throttler ya registrado
+  // en ThrottlerModule.forRoot() ("short"/"medium", ver rate-limit.module.ts)
+  // — "default" no existe ahí, así que un @Throttle({default:{...}}) es
+  // metadata que el guard real nunca lee (lo confirma su código fuente:
+  // itera this.throttlers, que son los NOMBRES configurados, y busca el
+  // override por ESE nombre). Con "default" este límite nunca se aplicaba
+  // — la ruta solo quedaba cubierta por los límites globales (5/s, 100/min).
+  @Throttle({ short: { limit: 3, ttl: 10_000 } })
   rent(@Body() dto: RentLockerDto, @Req() req: Request & { user: { id: string } }) {
     return this.lockerService.rent({
       userId: req.user.id,
@@ -74,7 +82,7 @@ export class LockerController {
   @Roles(Role.ESTUDIANTE)
   // Más laxo que "rent" (5 en vez de 3): una foto borrosa que hay que
   // volver a tomar y subir es un caso legítimo esperado, no un abuso.
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ short: { limit: 5, ttl: 60_000 } })
   @UseInterceptors(FileInterceptor("receipt"))
   confirmReceipt(
     @Param("rentalId") rentalId: string,
@@ -98,7 +106,7 @@ export class LockerController {
   // hace falta un :rentalId separado en la ruta.
   @Post("payphone/confirm")
   @Roles(Role.ESTUDIANTE)
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ short: { limit: 5, ttl: 60_000 } })
   confirmPayphone(@Body() dto: ConfirmPayphoneDto, @Req() req: Request & { user: { id: string } }) {
     return this.lockerService.confirmPayphonePayment(dto.clientTransactionId, dto.id, req.user.id, req.ip);
   }

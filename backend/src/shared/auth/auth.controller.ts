@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, Controller, Get, Query, Req, Res, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { Public } from "./public.decorator";
 import { LogtoOidcClient } from "./logto-oidc.client";
@@ -24,7 +25,13 @@ export class AuthController {
     private readonly config: ConfigService
   ) {}
 
+  // Más estricto que el global (5/s, 100/min) a propósito: cada hit real
+  // dispara un round-trip contra el authorization endpoint de Logto — un
+  // flood aquí no solo carga este backend, también gasta la cuota/anfitrión
+  // de un tercero que no controlamos. Un estudiante real nunca necesita
+  // reintentar login 5 veces en 10s.
   @Public()
+  @Throttle({ short: { limit: 5, ttl: 10_000 } })
   @Get("login")
   login(@Res() res: Response) {
     const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();
@@ -52,7 +59,12 @@ export class AuthController {
     return res.redirect(authUrl);
   }
 
+  // Mismo motivo que /auth/login: exchangeCode() hace un round-trip real
+  // contra el token endpoint de Logto (además de un upsert en la base de
+  // datos) — no es una lectura barata que el rate limit global (100/min)
+  // esté pensado para absorber en volumen.
   @Public()
+  @Throttle({ short: { limit: 5, ttl: 10_000 } })
   @Get("callback")
   async callback(
     @Query("code") code: string,

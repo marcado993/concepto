@@ -12,7 +12,7 @@ export class SubscriptionController {
 
   @Post()
   @Roles(Role.ESTUDIANTE)
-  @Throttle({ default: { limit: 3, ttl: 10_000 } })
+  @Throttle({ short: { limit: 3, ttl: 10_000 } })
   subscribe(@Body() dto: SubscribeDto, @Req() req: Request & { user: { id: string } }) {
     return this.subscriptionService.subscribe({
       userId: req.user.id,

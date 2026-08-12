@@ -13,6 +13,17 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 // de "cortafuego" contra ráfagas (script/bot golpeando el endpoint). Los
 // endpoints de dinero (locker/subscription) además tienen su propio límite
 // más estricto vía @Throttle() en el controller — ver locker.controller.ts.
+//
+// IMPORTANTE al escribir un @Throttle() en cualquier controller: la clave
+// del objeto que recibe DEBE ser uno de los nombres registrados aquí
+// ("short" o "medium"), nunca "default" — @nestjs/throttler NO registra un
+// throttler llamado "default" automáticamente. Un @Throttle({default:{...}})
+// compila sin error y no lanza ninguna excepción en runtime, pero el guard
+// real (ThrottlerGuard.canActivate) itera únicamente los throttlers
+// nombrados arriba y busca el override por ESE nombre — con "default" el
+// override es metadata que nunca se lee, y la ruta queda protegida SOLO
+// por estos dos límites globales (hallazgo real, corregido en las rutas de
+// dinero y en /auth/login y /auth/callback).
 @Module({
   imports: [
     ThrottlerModule.forRoot([

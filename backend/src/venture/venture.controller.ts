@@ -22,7 +22,7 @@ export class VentureController {
 
   @Post()
   @Roles(Role.ESTUDIANTE)
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ short: { limit: 5, ttl: 60_000 } })
   create(@Body() dto: CreateVentureDto, @Req() req: Request & { user: { id: string } }) {
     return this.ventures.create(req.user.id, dto, req.ip);
   }
