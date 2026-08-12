@@ -84,6 +84,17 @@ export class LogtoOidcClient implements OnModuleInit {
     this.assertReady();
     return this.client.authorizationUrl({
       scope: "openid profile email",
+      // resource: sin esto, Logto emite un access_token genérico cuyo
+      // "aud" NO es LOGTO_AUDIENCE — y jwt.strategy.ts valida audience de
+      // forma estricta a propósito (evitar el "confused deputy" de un
+      // token válido para OTRA app del mismo tenant, ver el comentario ahí).
+      // Sin este parámetro, el login se "veía" exitoso (Logto redirige con
+      // un token) pero CUALQUIER endpoint protegido (/auth/me, alquilar un
+      // casillero, etc.) habría respondido 401 por audiencia inválida —
+      // requiere que el API Resource con este identifier YA exista en
+      // Logto (Console → API Resources), si no existe Logto rechaza la
+      // petición de autorización.
+      resource: this.config.getOrThrow<string>("LOGTO_AUDIENCE"),
       code_challenge: params.codeChallenge,
       code_challenge_method: "S256",
       state: params.state,
