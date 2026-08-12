@@ -6,7 +6,7 @@
 // vivía hardcodeado en SecurityMap.svelte y data.ts — ver
 // backend/src/security/ y docs/dominio/05-metodologia-devsecops-pipeline.md.
 
-import type { SecurityIndicator, VenturePublic } from "./data";
+import type { SecurityIndicator, SubscriptionTierPublic, VenturePublic } from "./data";
 import { authHeader } from "./auth.svelte";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
@@ -201,7 +201,61 @@ export function fetchPayphoneConfig(): Promise<PayphonePublicConfig> {
 // con ?id=&clientTransactionId= — App.svelte captura esos parámetros y
 // llama aquí para que el backend verifique el pago contra la API real de
 // PayPhone (nunca se confía en el solo hecho de que el navegador volvió
-// con esos query params).
-export function confirmPayphonePayment(id: number, clientTransactionId: string) {
+// con esos query params). Dos dominios pueden originar un pago con
+// PayPhone (casillero o aportación) y cada uno tiene su propio endpoint
+// de confirmación — App.svelte prueba el de casilleros primero y cae al
+// de aportaciones si el id no corresponde a un alquiler.
+export function confirmLockerPayphonePayment(id: number, clientTransactionId: string) {
   return postJSON("/lockers/payphone/confirm", { id, clientTransactionId });
+}
+
+export function confirmSubscriptionPayphonePayment(id: number, clientTransactionId: string) {
+  return postJSON("/subscriptions/payphone/confirm", { id, clientTransactionId });
+}
+
+// Aportaciones (Bronce/Platino/Pantera) — mismo patrón de 3 pasos que
+// casilleros (identidad → método de pago → confirmación). Público el
+// listado de tiers (ver precios sin sesión no expone nada sensible).
+export function fetchSubscriptionTiers(): Promise<SubscriptionTierPublic[]> {
+  return getJSON<SubscriptionTierPublic[]>("/subscriptions/tiers");
+}
+
+export interface MySubscription {
+  id: string;
+  tierName: string;
+  amount: string;
+  method: "TRANSFER" | "PAYPHONE";
+  paymentStatus: "PENDING" | "CONFIRMED" | "REJECTED";
+}
+
+export function fetchMySubscription(): Promise<MySubscription | null> {
+  return getJSON<MySubscription | null>("/subscriptions/mine", { auth: true });
+}
+
+export interface SubscribeInput {
+  tierName: string;
+  method: "TRANSFER" | "PAYPHONE";
+}
+
+export interface SubscriptionFromApi {
+  id: string;
+  userId: string;
+  tierId: string;
+  periodId: string;
+  paymentId: string;
+  createdAt: string;
+}
+
+export function subscribeToTier(input: SubscribeInput): Promise<SubscriptionFromApi> {
+  return postJSON<SubscriptionFromApi>("/subscriptions", input);
+}
+
+export function confirmSubscriptionReceipt(subscriptionId: string, receipt: File) {
+  const form = new FormData();
+  form.append("receipt", receipt);
+  return postFormData(`/subscriptions/${encodeURIComponent(subscriptionId)}/confirm-receipt`, form);
+}
+
+export function fetchSubscriptionPayphoneConfig(): Promise<PayphonePublicConfig> {
+  return getJSON<PayphonePublicConfig>("/subscriptions/payphone/config");
 }

@@ -24,6 +24,10 @@
     onheaderpointerup?: (e: PointerEvent) => void;
     /** Se llama tras un alquiler exitoso, para que App.svelte vuelva a pedir /lockers. */
     onlockerrented?: () => void;
+    /** true si fetchSubscriptionTiers() falló — mismo patrón que lockersError. */
+    subscriptionTiersError?: boolean;
+    /** Se llama tras una aportación exitosa, para que App.svelte vuelva a pedir los tiers. */
+    onsubscribed?: () => void;
   }
 
   let {
@@ -38,6 +42,8 @@
     onheaderpointermove,
     onheaderpointerup,
     onlockerrented,
+    subscriptionTiersError = false,
+    onsubscribed,
   }: Props = $props();
 
   // import() dinámico, no un `import SecurityMapComp from "./SecurityMap.svelte"`
@@ -53,8 +59,28 @@
   // SecurityMapComp se monte/desmonte varias veces navegando.
   const securityMapModule = import("./SecurityMap.svelte");
   import RentLockerModal from "./RentLockerModal.svelte";
+  import SubscribeModal from "./SubscribeModal.svelte";
+  import type { SubscriptionBenefit } from "./data";
 
   let rentingLockerCode = $state<string | null>(null);
+  let subscribingTier = $state<{ name: string; amount: string } | null>(null);
+
+  // "descuento_casillero" con percent:0 no se muestra como "0% de
+  // descuento" — un beneficio sin efecto real es ruido, no información.
+  // `included` (ej. acceso_ps4) se muestra como línea aparte, sin número.
+  const BENEFIT_LABELS: Record<string, string> = {
+    descuento_casillero: "de descuento en casilleros",
+    descuento_billar: "de descuento en billar",
+    acceso_ps4: "Acceso a la sala de PS4",
+  };
+  function formatBenefit(b: SubscriptionBenefit): string | null {
+    if (typeof b.percent === "number") {
+      if (b.percent <= 0) return null;
+      return `${b.percent}% ${BENEFIT_LABELS[b.type] ?? b.type}`;
+    }
+    if (b.included) return BENEFIT_LABELS[b.type] ?? b.type;
+    return null;
+  }
 
   let mapReady = $state(false);
 
@@ -201,6 +227,26 @@
           </div>
         {/each}
       </div>
+    {:else if category.id === "subscriptions" && category.tiers}
+      {#if subscriptionTiersError}
+        <p class="fetch-error">No se pudo cargar la disponibilidad real de aportaciones — intenta más tarde.</p>
+      {/if}
+      <div class="tier-list">
+        {#each category.tiers as tier (tier.id)}
+          <button class="tier-card" onclick={() => (subscribingTier = { name: tier.name, amount: tier.amount })}>
+            <div class="tier-head">
+              <h3 class="tier-name">{tier.name}</h3>
+              <span class="tier-price">${tier.amount}</span>
+            </div>
+            <ul class="tier-benefits">
+              {#each tier.benefits as b}
+                {@const label = formatBenefit(b)}
+                {#if label}<li>{label}</li>{/if}
+              {/each}
+            </ul>
+          </button>
+        {/each}
+      </div>
     {:else if category.id === "community"}
       <!-- "Comunidad" reemplazado por Emprendimientos — vitrina +
            contacto WhatsApp, sin chat propio (docs/dominio/
@@ -329,6 +375,15 @@
     lockerCode={rentingLockerCode}
     onclose={() => (rentingLockerCode = null)}
     onrented={() => onlockerrented?.()}
+  />
+{/if}
+
+{#if subscribingTier}
+  <SubscribeModal
+    tierName={subscribingTier.name}
+    tierAmount={subscribingTier.amount}
+    onclose={() => (subscribingTier = null)}
+    onsubscribed={() => onsubscribed?.()}
   />
 {/if}
 
@@ -687,6 +742,79 @@
   .repo-updated {
     margin-left: auto;
     opacity: 0.7;
+  }
+
+  /* ---------- Aportaciones: tiers ---------- */
+  .tier-list {
+    padding: 8px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .tier-card {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      transform 0.15s ease;
+  }
+  .tier-card:hover {
+    border-color: var(--sheet-accent);
+    transform: translateY(-1px);
+  }
+
+  .tier-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .tier-name {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 16px;
+    letter-spacing: 0.02em;
+    color: #eafff5;
+  }
+
+  .tier-price {
+    font-family: var(--font-heading);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--sheet-accent);
+    flex-shrink: 0;
+  }
+
+  .tier-benefits {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .tier-benefits li {
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: rgba(234, 255, 245, 0.75);
+    padding-left: 16px;
+    position: relative;
+  }
+  .tier-benefits li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--sheet-accent);
+    font-size: 11px;
   }
 
   /* ---------- Comunidad: news feed ---------- */

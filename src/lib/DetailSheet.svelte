@@ -13,6 +13,8 @@
     venturesError?: boolean;
     lockersError?: boolean;
     onlockerrented?: () => void;
+    subscriptionTiersError?: boolean;
+    onsubscribed?: () => void;
   }
 
   let {
@@ -25,6 +27,8 @@
     venturesError = false,
     lockersError = false,
     onlockerrented,
+    subscriptionTiersError = false,
+    onsubscribed,
   }: Props = $props();
 
   // 1 = fully hidden below the screen, 0 = fully presented — a plain,
@@ -96,6 +100,8 @@
       {venturesError}
       {lockersError}
       {onlockerrented}
+      {subscriptionTiersError}
+      {onsubscribed}
       onheaderpointerdown={onPointerDown}
       onheaderpointermove={onPointerMove}
       onheaderpointerup={onPointerUp}

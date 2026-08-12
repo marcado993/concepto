@@ -50,6 +50,15 @@
           ...isoToScreen(0, 0, level, W, H, 30),
           face: 0.6 + level * 0.4,
         }));
+      case "subscriptions":
+        // Tres bloques apilados — un tier por bloque (Bronce/Platino/
+        // Pantera), cada uno más brillante que el de abajo. Sin PNG propio
+        // todavía (a diferencia del resto de íconos); si llega uno, va en
+        // photoMap más abajo y este case queda de respaldo sin tocar nada.
+        return [0, 1, 2].map((level) => ({
+          ...isoToScreen(0, 0, level, W, H, 22),
+          face: 0.45 + level * 0.275,
+        }));
       default:
         return [{ x: 0, y: 0, face: 1 }];
     }
