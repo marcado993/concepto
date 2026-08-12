@@ -11,7 +11,9 @@ import { PeriodService } from "../shared/period/period.service";
 // nunca lee la tabla Subscription directamente ni conoce la forma del JSON
 // de beneficios — solo pregunta "¿cuánto descuento tiene este estudiante en
 // casilleros?" y no le importa cómo se resuelve esa respuesta.
-@Injectable()
+// Puerto de solo lectura (findUnique), no muta ninguna tabla; no hay nada
+// que auditar.
+@Injectable() // nosemgrep: policy.money-mutation-must-call-audit-service
 export class SubscriptionBenefitsService {
   constructor(
     private readonly prisma: PrismaService,

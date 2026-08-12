@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { AuthController } from "./auth.controller";
 import { LogtoOidcClient } from "./logto-oidc.client";
+import { LogtoExperienceClient } from "./logto-experience.client";
 import { PrismaService } from "../prisma/prisma.service";
 
 function mockResponse() {
@@ -36,6 +37,7 @@ describe("AuthController", () => {
       controllers: [AuthController],
       providers: [
         { provide: LogtoOidcClient, useValue: logto },
+        { provide: LogtoExperienceClient, useValue: {} },
         { provide: PrismaService, useValue: prisma },
         {
           provide: ConfigService,
