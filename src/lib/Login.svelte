@@ -10,6 +10,7 @@
   // "Continuar con GitHub" pasa ?connector=github a /auth/login, que el
   // backend traduce a direct_sign_in=social:github — salta el selector de
   // Logto y va directo a la pantalla real de GitHub para autorizar la app.
+  import Background from "./Background.svelte";
   import { login } from "./auth.svelte";
 
   interface Props {
@@ -23,22 +24,22 @@
     login("github");
   }
 
-  function onScrimKeydown(e: KeyboardEvent) {
+  function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") onclose();
   }
 </script>
 
-<div class="scrim" onclick={onclose} onkeydown={onScrimKeydown} role="button" tabindex="-1" aria-label="Cerrar">
-  <div
-    class="panel"
-    onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => e.stopPropagation()}
-    role="dialog"
-    tabindex="-1"
-    aria-modal="true"
-    aria-label="Iniciar sesión"
-  >
-    <button class="close" onclick={onclose} aria-label="Cerrar">×</button>
+<svelte:window onkeydown={onKeydown} />
+
+<!-- Pantalla COMPLETA, no un modal con blur encima de la app — el
+     estudiante ve login o ve la app, nunca las dos superpuestas. Mismo
+     <Background> que usa el resto de AEIS-APP, para que se sienta como
+     otra sección de la app y no como un popup ajeno. -->
+<div class="page">
+  <Background tint="navy" />
+
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Iniciar sesión">
+    <button class="back" onclick={onclose} aria-label="Volver">‹ Volver</button>
 
     <div class="brand-row">
       <span class="brand-dot"></span>
@@ -84,43 +85,47 @@
 </div>
 
 <style>
-  .scrim {
+  /* position: fixed cubriendo TODO el viewport, opaco de verdad (el
+     <Background> de adentro ya pinta su propio fondo sólido) — no hay
+     "afuera" visible, así que esto se siente como entrar a otra pantalla,
+     no como un popup encima de la app. z-index alto: por encima de
+     cualquier otro modal que ya estuviera abierto (ej. RentLockerModal). */
+  .page {
     position: fixed;
     inset: 0;
-    z-index: 70;
-    background: rgba(2, 4, 10, 0.78);
-    backdrop-filter: blur(6px);
+    z-index: 100;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 20px;
+    overflow-y: auto;
   }
 
   .panel {
     position: relative;
+    z-index: 1;
     width: min(400px, 100%);
-    max-height: 90vh;
-    overflow-y: auto;
-    background: linear-gradient(180deg, rgba(20, 26, 40, 0.97), rgba(6, 9, 16, 0.99));
+    background: linear-gradient(180deg, rgba(20, 26, 40, 0.9), rgba(6, 9, 16, 0.94));
     border: 1px solid var(--line-strong, rgba(120, 200, 255, 0.16));
     border-radius: 22px;
     padding: 26px 24px 22px;
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
   }
 
-  .close {
+  .back {
     position: absolute;
     top: 14px;
     right: 14px;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.07);
+    background: none;
     border: none;
-    color: #eef4fb;
-    font-size: 18px;
-    line-height: 1;
+    color: rgba(238, 244, 251, 0.55);
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
     cursor: pointer;
+    padding: 4px 6px;
+  }
+  .back:hover {
+    color: var(--accent, #21e0a0);
   }
 
   .brand-row {
