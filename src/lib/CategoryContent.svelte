@@ -387,7 +387,7 @@
   }
 
   .sheet-header h2 {
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-weight: 500;
     font-size: 22px;
     letter-spacing: 0.08em;
@@ -504,7 +504,7 @@
   }
 
   .unit-number {
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 15px;
     letter-spacing: 0.06em;
     color: #eafff5;
@@ -556,7 +556,7 @@
   }
 
   .event-day {
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 20px;
     color: #eafff5;
   }
@@ -603,7 +603,7 @@
 
   .event-title {
     margin: 6px 0 2px;
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-weight: 500;
     font-size: 15px;
     color: #eafff5;
@@ -647,7 +647,7 @@
 
   .repo-name {
     margin: 0;
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 14px;
     font-weight: 500;
     color: #eafff5;
@@ -727,7 +727,7 @@
 
   .news-title {
     margin: 8px 0 4px;
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-weight: 500;
     font-size: 14.5px;
     color: #eafff5;
@@ -818,7 +818,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 28px;
     letter-spacing: 0.08em;
     color: hsl(var(--v-hue) 85% 72%);
@@ -851,7 +851,7 @@
 
   .venture-name {
     margin: 0;
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-weight: 600;
     font-size: 16px;
     line-height: 1.25;
@@ -974,7 +974,7 @@
   }
 
   .sec-value {
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 22px;
     font-weight: 500;
     color: #eafff5;
@@ -1070,7 +1070,7 @@
     border-radius: 16px;
     background: rgba(4, 6, 13, 0.88);
     color: var(--sheet-accent);
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 13px;
     letter-spacing: 0.04em;
     pointer-events: none;
@@ -1094,7 +1094,7 @@
     border: 1px dashed var(--line-strong);
     background: rgba(255, 255, 255, 0.04);
     color: var(--sheet-accent);
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 13px;
     letter-spacing: 0.04em;
   }

@@ -434,7 +434,7 @@
   }
 
   .brand-name {
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 13px;
     letter-spacing: 0.3em;
     color: var(--ink-1);
@@ -464,8 +464,16 @@
     flex: 0 0 auto;
   }
 
-  .label {
-    font-family: var(--font-display);
+  /* :global() a propósito — TypeText.svelte renderiza este elemento, y el
+     class="label" que le pasamos aquí llega como texto plano dentro de
+     SU template, no del de App.svelte. El hash de scoped-CSS de Svelte
+     solo se agrega a clases en elementos escritos literalmente en ESTE
+     componente, así que sin :global() esta regla compila mal-scopeada
+     (".label.svelte-XXXX") y nunca matchea nada — hallazgo real: llevaba
+     así desde que se agregó TypeText aquí, el tamaño de letra nunca
+     estuvo aplicando el clamp() de abajo. */
+  :global(.label) {
+    font-family: var(--font-heading);
     font-size: clamp(22px, 7vw, 28px);
     font-weight: 500;
     letter-spacing: 0.06em;
@@ -474,7 +482,7 @@
     text-shadow: 0 0 24px var(--accent-glow);
   }
 
-  .prompt-text {
+  :global(.prompt-text) {
     margin: 6px 0 0;
     font-size: 13px;
     letter-spacing: 0.02em;
@@ -691,7 +699,7 @@
   }
 
   .desktop-title {
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: clamp(26px, 2.4vw, 36px);
     font-weight: 500;
     letter-spacing: 0.05em;
