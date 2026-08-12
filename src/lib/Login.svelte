@@ -38,14 +38,17 @@
 <div class="page">
   <Background tint="navy" />
 
-  <div class="panel" role="dialog" aria-modal="true" aria-label="Iniciar sesión">
-    <button class="back" onclick={onclose} aria-label="Volver">‹ Volver</button>
+  <div class="login-stack">
+    <img src="/aso.png" alt="AEIS" class="logo" />
 
-    <div class="brand-row">
-      <span class="brand-dot"></span>
-      <span class="brand-name">AEIS</span>
-    </div>
-    <h2 class="title">Inicia sesión</h2>
+    <div class="panel" role="dialog" aria-modal="true" aria-label="Iniciar sesión">
+      <button class="back" onclick={onclose} aria-label="Volver">‹ Volver</button>
+
+      <div class="brand-row">
+        <span class="brand-dot"></span>
+        <span class="brand-name">AEIS</span>
+      </div>
+      <h2 class="title">Inicia sesión</h2>
     <p class="subtitle">Accede con tu cuenta para alquilar casilleros y aportar a AEIS</p>
 
     <button class="provider-btn github" onclick={continueWithGithub}>
@@ -81,6 +84,7 @@
     </button>
 
     <p class="footnote">🔒 Tu sesión la maneja Logto — AEIS-APP nunca ve ni guarda tu contraseña.</p>
+    </div>
   </div>
 </div>
 
@@ -101,14 +105,44 @@
     overflow-y: auto;
   }
 
+  .login-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: min(400px, 100%);
+  }
+
+  /* Se monta encima del borde superior del panel a propósito (margin
+     negativo) — mismo look que el mockup: la pantera "asoma" desde arriba
+     de la tarjeta en vez de flotar suelta y separada. */
+  .logo {
+    width: 92px;
+    height: 92px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 20px rgba(33, 224, 160, 0.5));
+    margin-bottom: -18px;
+    z-index: 2;
+    animation: logo-pulse 3.2s ease-in-out infinite;
+  }
+
+  @keyframes logo-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.04);
+    }
+  }
+
   .panel {
     position: relative;
     z-index: 1;
-    width: min(400px, 100%);
+    width: 100%;
     background: linear-gradient(180deg, rgba(20, 26, 40, 0.9), rgba(6, 9, 16, 0.94));
     border: 1px solid var(--line-strong, rgba(120, 200, 255, 0.16));
     border-radius: 22px;
-    padding: 26px 24px 22px;
+    padding: 42px 24px 22px;
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
   }
 
