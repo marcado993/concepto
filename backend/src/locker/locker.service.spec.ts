@@ -6,6 +6,8 @@ import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
 import { OcrService } from "../shared/ocr/ocr.service";
+import { PeriodService } from "../shared/period/period.service";
+import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
 
 describe("LockerService.rent", () => {
   let service: LockerService;
@@ -13,6 +15,7 @@ describe("LockerService.rent", () => {
   let audit: { record: jest.Mock };
   let payphone: { confirm: jest.Mock; getPublicConfig: jest.Mock };
   let ocr: { extractText: jest.Mock };
+  let subscriptionBenefits: { getLockerDiscountPercent: jest.Mock };
 
   const locker = { id: "locker-1", code: "A07", zone: "A", status: "AVAILABLE" };
   const params = { userId: "user-1", lockerCode: "A07", method: "TRANSFER" as const };
@@ -33,6 +36,7 @@ describe("LockerService.rent", () => {
     audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
     payphone = { confirm: jest.fn(), getPublicConfig: jest.fn() };
     ocr = { extractText: jest.fn().mockResolvedValue("") };
+    subscriptionBenefits = { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -41,6 +45,8 @@ describe("LockerService.rent", () => {
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: payphone },
         { provide: OcrService, useValue: ocr },
+        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
+        { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
       ],
     }).compile();
     service = moduleRef.get(LockerService);
@@ -98,6 +104,29 @@ describe("LockerService.rent", () => {
       prisma.__tx
     );
   });
+
+  // Cruce de dominio: un aportante con beneficio "descuento_casillero"
+  // paga menos por el casillero — pero LockerService nunca lee la tabla de
+  // Subscription, solo confía en lo que le devuelve
+  // SubscriptionBenefitsService (mockeado aquí, probado de verdad en
+  // subscription-benefits.service.spec.ts).
+  it("Dado un estudiante con 20% de descuento en casilleros (tier de Aportaciones), Cuando alquila por transferencia, Entonces el precio ya viene descontado", async () => {
+    subscriptionBenefits.getLockerDiscountPercent.mockResolvedValue(20);
+
+    await service.rent(params);
+
+    expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ amount: 5.2 }) }) // 6.50 × 0.8
+    );
+  });
+
+  it("Dado un estudiante sin aportación (0% de descuento), Cuando alquila, Entonces paga el precio de lista completo", async () => {
+    await service.rent(params);
+
+    expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ amount: 6.5 }) })
+    );
+  });
 });
 
 describe("LockerService.confirmReceipt", () => {
@@ -135,6 +164,11 @@ describe("LockerService.confirmReceipt", () => {
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
         { provide: OcrService, useValue: ocr },
+        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
+        {
+          provide: SubscriptionBenefitsService,
+          useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
+        },
       ],
     }).compile();
     service = moduleRef.get(LockerService);
@@ -253,6 +287,11 @@ describe("LockerService.confirmPayphonePayment", () => {
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: payphone },
         { provide: OcrService, useValue: { extractText: jest.fn() } },
+        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
+        {
+          provide: SubscriptionBenefitsService,
+          useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
+        },
       ],
     }).compile();
     service = moduleRef.get(LockerService);

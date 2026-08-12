@@ -27,4 +27,24 @@ describe("calculateLockerPrice", () => {
     const price = calculateLockerPrice(6.33, "PAYPHONE");
     expect(price.amount).toBe(6.73);
   });
+
+  // Descuento por aportación (ver subscription/subscription-benefits.service.ts)
+  it("Dado un descuento del 20% (tier de Aportaciones), Cuando se paga por transferencia, Entonces se aplica sobre el precio base ANTES de cualquier recargo", () => {
+    const price = calculateLockerPrice(6.5, "TRANSFER", 20);
+    expect(price.amount).toBe(5.2); // 6.50 × 0.8
+  });
+
+  it("Dado un descuento del 20%, Cuando se paga por PayPhone, Entonces el recargo fijo se suma DESPUÉS del descuento (el fee de la pasarela no cambia por el beneficio)", () => {
+    const price = calculateLockerPrice(6.5, "PAYPHONE", 20);
+    expect(price.amount).toBe(5.6); // (6.50 × 0.8) + 0.40
+  });
+
+  it("Dado un descuento del 0% (sin aportación), Cuando se calcula, Entonces el precio es idéntico al de siempre", () => {
+    expect(calculateLockerPrice(6.5, "TRANSFER", 0).amount).toBe(6.5);
+  });
+
+  it("Dado un descuento fuera de rango, Cuando se intenta calcular, Entonces rechaza en vez de cobrar de más o dar un casillero gratis por error", () => {
+    expect(() => calculateLockerPrice(6.5, "TRANSFER", -1)).toThrow();
+    expect(() => calculateLockerPrice(6.5, "TRANSFER", 101)).toThrow();
+  });
 });
