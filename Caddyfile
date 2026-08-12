@@ -16,3 +16,23 @@ api.aeis-app.online {
 	# Helmet — Caddy no duplica esas cabeceras, solo reenvía.
 	encode gzip
 }
+
+# Logto self-hosted (docker-compose.prod.yml) — dos hostnames porque Logto
+# sirve dos apps en dos puertos distintos:
+#   auth.  → :3001 — lo que ve el estudiante (páginas de login/registro) y
+#            lo que el backend usa como LOGTO_ISSUER.
+#   admin. → :3002 — consola de administración, donde se configura la app,
+#            el API resource y el conector de GitHub. Restringir el acceso
+#            a esta más adelante (ver docs/dominio/09-auditoria-pentest.md)
+#            es responsabilidad de quien administre el tenant, no de Caddy.
+# Mismo requisito de DNS que api.aeis-app.online: registros A para "auth" y
+# "admin" apuntando a la IP pública de la instancia, antes de levantar esto.
+auth.aeis-app.online {
+	reverse_proxy logto:3001
+	encode gzip
+}
+
+admin.aeis-app.online {
+	reverse_proxy logto:3002
+	encode gzip
+}

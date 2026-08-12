@@ -60,6 +60,39 @@ services:
     # Tampoco publica "ports:" al host — solo Caddy le habla, por la red
     # interna del compose. Nadie externo llega a :3000 directamente.
 
+  # Logto self-hosted (docs/dominio/02-necesidades-stakeholders.md §4.5,
+  # decisión: self-hosted, no Logto Cloud). Usa el MISMO Postgres que el
+  # backend, en una base de datos separada ("logto") — no se comparte
+  # esquema con aeis_app. Esa base NO se crea sola: la primera vez hay que
+  # correr, en la instancia:
+  #   docker compose -f docker-compose.prod.yml exec postgres \
+  #     psql -U aeis -c "CREATE DATABASE logto"
+  # (el init-script automático de la imagen de Postgres solo corre en un
+  # volumen nuevo, y aeis-postgres-data ya existe en producción).
+  #
+  # Dos hostnames porque Logto sirve dos apps distintas en dos puertos:
+  # ENDPOINT (3001) es lo que ve el estudiante (páginas de login) y lo que
+  # el backend usa como LOGTO_ISSUER; ADMIN_ENDPOINT (3002) es la consola
+  # de administración donde se configura la app, el API resource y el
+  # conector de GitHub — ver Caddyfile.
+  logto:
+    image: svhd/logto:latest
+    container_name: aeis-logto
+    restart: unless-stopped
+    environment:
+      TRUST_PROXY_HEADER: "1"
+      DB_URL: postgresql://aeis:${POSTGRES_PASSWORD:?}@postgres:5432/logto
+      ENDPOINT: https://auth.aeis-app.online
+      ADMIN_ENDPOINT: https://admin.aeis-app.online
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "3001"
+      - "3002"
+    # Sin "ports:" tampoco — mismo criterio que backend/postgres, Caddy es
+    # el único que le habla desde fuera de la red del compose.
+
   caddy:
     image: caddy:2-alpine
     container_name: aeis-caddy
@@ -76,6 +109,7 @@ services:
       - aeis-caddy-config:/config
     depends_on:
       - backend
+      - logto
 
 volumes:
   aeis-postgres-data:
