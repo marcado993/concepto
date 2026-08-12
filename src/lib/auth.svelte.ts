@@ -46,10 +46,19 @@ export function getAccessToken(): string | null {
 
 /** connector opcional (ej. "github") — ver Login.svelte, que es quien
  *  realmente decide el conector según qué botón tocó el estudiante. Sin
- *  connector, el backend deja que Logto muestre su propio selector. */
-export function login(connector?: string) {
-  const qs = connector ? `?connector=${encodeURIComponent(connector)}` : "";
-  window.location.href = `${API_BASE_URL}/auth/login${qs}`;
+ *  connector, el backend deja que Logto muestre su propio selector.
+ *
+ *  loginHint opcional — el correo institucional que el estudiante ya
+ *  escribió en NUESTRO formulario, para no hacer que lo vuelva a escribir
+ *  en la pantalla de Logto. Precarga el campo, no salta el paso (el
+ *  código de verificación lo sigue mostrando/pidiendo Logto — no hay
+ *  forma de recibir/validar ese código sin su propia pantalla). */
+export function login(connector?: string, loginHint?: string) {
+  const params = new URLSearchParams();
+  if (connector) params.set("connector", connector);
+  if (loginHint) params.set("email", loginHint);
+  const qs = params.toString();
+  window.location.href = `${API_BASE_URL}/auth/login${qs ? `?${qs}` : ""}`;
 }
 
 export function logout() {

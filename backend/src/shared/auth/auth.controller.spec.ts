@@ -53,7 +53,7 @@ describe("AuthController", () => {
   it("Dado un inicio de login sin conector especificado, Cuando se llama /auth/login, Entonces guarda code_verifier+state en una cookie FIRMADA y HTTPOnly, y redirige a la pantalla de Logto (sin forzar un conector — Logto muestra GitHub y correo institucional)", () => {
     const res = mockResponse();
 
-    controller.login(undefined, res);
+    controller.login(undefined, undefined, res);
 
     expect(res.cookie).toHaveBeenCalledWith(
       "aeis_oidc_pending",
@@ -64,6 +64,7 @@ describe("AuthController", () => {
       codeChallenge: "challenge-1",
       state: "state-1",
       directSignIn: undefined,
+      loginHint: undefined,
     });
     expect(res.redirect).toHaveBeenCalledWith("https://logto.example/oidc/auth?direct_sign_in=social:github");
   });
@@ -71,24 +72,52 @@ describe("AuthController", () => {
   it("Dado ?connector=github (botón 'Continuar con GitHub' de Login.svelte), Cuando se llama /auth/login, Entonces pasa direct_sign_in=social:github para saltar el selector de Logto", () => {
     const res = mockResponse();
 
-    controller.login("github", res);
+    controller.login("github", undefined, res);
 
     expect(logto.authorizationUrl).toHaveBeenCalledWith({
       codeChallenge: "challenge-1",
       state: "state-1",
       directSignIn: "social:github",
+      loginHint: undefined,
     });
   });
 
   it("Dado un ?connector desconocido/no soportado, Cuando se llama /auth/login, Entonces lo ignora en vez de reenviarlo tal cual a Logto (un valor arbitrario no debe inyectar cualquier direct_sign_in)", () => {
     const res = mockResponse();
 
-    controller.login("cualquier-cosa-inventada", res);
+    controller.login("cualquier-cosa-inventada", undefined, res);
 
     expect(logto.authorizationUrl).toHaveBeenCalledWith({
       codeChallenge: "challenge-1",
       state: "state-1",
       directSignIn: undefined,
+      loginHint: undefined,
+    });
+  });
+
+  it("Dado ?email=estudiante@epn.edu.ec (formulario de correo institucional de Login.svelte), Cuando se llama /auth/login, Entonces lo pasa como loginHint para precargar el campo en Logto", () => {
+    const res = mockResponse();
+
+    controller.login(undefined, "estudiante@epn.edu.ec", res);
+
+    expect(logto.authorizationUrl).toHaveBeenCalledWith({
+      codeChallenge: "challenge-1",
+      state: "state-1",
+      directSignIn: undefined,
+      loginHint: "estudiante@epn.edu.ec",
+    });
+  });
+
+  it("Dado un ?email con forma inválida (no es un correo real), Cuando se llama /auth/login, Entonces lo descarta en vez de reenviarlo tal cual a la URL de autorización", () => {
+    const res = mockResponse();
+
+    controller.login(undefined, "no-es-un-correo", res);
+
+    expect(logto.authorizationUrl).toHaveBeenCalledWith({
+      codeChallenge: "challenge-1",
+      state: "state-1",
+      directSignIn: undefined,
+      loginHint: undefined,
     });
   });
 
@@ -98,7 +127,7 @@ describe("AuthController", () => {
       throw new Error("Logto no está configurado o no respondió al arrancar el backend — revisa LOGTO_ISSUER");
     });
 
-    controller.login(undefined, res);
+    controller.login(undefined, undefined, res);
 
     expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=logto_not_configured");
     expect(res.cookie).not.toHaveBeenCalled();
