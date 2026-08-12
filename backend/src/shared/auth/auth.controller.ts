@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
+  Post,
   Query,
   Req,
   Res,
@@ -13,6 +15,7 @@ import { Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { Public } from "./public.decorator";
 import { LogtoOidcClient } from "./logto-oidc.client";
+import { ExperienceApiError, LogtoExperienceClient } from "./logto-experience.client";
 import { PrismaService } from "../prisma/prisma.service";
 
 // Flujo de login — 2 saltos de red (navegador → Logto → GitHub → Logto →
@@ -24,6 +27,25 @@ import { PrismaService } from "../prisma/prisma.service";
 // corta vida — nunca en el propio parámetro `state` visible en la URL, que
 // solo sirve para anti-CSRF, no para guardar el secreto de PKCE.
 const OIDC_COOKIE = "aeis_oidc_pending";
+
+// Login por correo institucional embebido — a diferencia de OIDC_COOKIE
+// (que solo guarda codeVerifier/state mientras el navegador está AFUERA,
+// en Logto), esta cookie vive durante TODO el intercambio con la
+// Experience API: el estudiante nunca navega a Logto, así que el estado
+// de la interacción (sus cookies internas, el verificationId pendiente)
+// tiene que sobrevivir entre el POST /auth/email/start y el POST
+// /auth/email/verify de este mismo backend. Ver logto-experience.client.ts
+// para el detalle de qué es cada campo.
+const EMAIL_COOKIE = "aeis_email_pending";
+
+interface EmailPending {
+  email: string;
+  codeVerifier: string;
+  state: string;
+  interactionEvent: "SignIn" | "Register";
+  interactionCookie: string;
+  verificationId: string;
+}
 
 // Restricción de dominio institucional — aplicada AQUÍ, en el backend, no
 // intentando configurarla del lado de Logto: Logto no tiene una forma
@@ -49,6 +71,7 @@ function isInstitutionalEmail(email: string | undefined): email is string {
 export class AuthController {
   constructor(
     private readonly logto: LogtoOidcClient,
+    private readonly logtoExperience: LogtoExperienceClient,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService
   ) {}
@@ -128,28 +151,17 @@ export class AuthController {
     const pending = JSON.parse(pendingRaw) as { codeVerifier: string; state: string };
     res.clearCookie(OIDC_COOKIE);
 
-    const tokenSet = await this.logto.exchangeCode({
+    const result = await this.finishTokenExchange({
       code,
       state,
       expectedState: pending.state,
       codeVerifier: pending.codeVerifier,
     });
 
-    const claims = tokenSet.claims();
-    const email = claims.email as string | undefined;
     const frontendOrigin = this.config.getOrThrow<string>("FRONTEND_ORIGIN").split(",")[0];
-
-    // Se rechaza ANTES de tocar la base de datos — nunca se crea un User
-    // "a medias" para un correo no institucional que después haya que
-    // limpiar a mano. Ni siquiera se emite el access_token: sin esto, el
-    // frontend igual habría recibido un token válido de Logto (la
-    // AUTENTICACIÓN sí fue real) para alguien que este backend nunca
-    // debió tratar como estudiante de la EPN.
-    if (!isInstitutionalEmail(email)) {
-      return res.redirect(`${frontendOrigin}/?auth_error=dominio_no_institucional`);
+    if (!result.ok) {
+      return res.redirect(`${frontendOrigin}/?auth_error=${result.reason}`);
     }
-
-    await this.provisionUser(claims.sub, email, claims.name as string | undefined);
 
     // El token nunca pasa por un log de servidor: viaja en el fragmento de
     // la URL, que el navegador NO envía en la petición HTTP — solo
@@ -160,7 +172,165 @@ export class AuthController {
     // plano, sin rutas registradas), así que una ruta aparte 404earía en
     // Vercel sin agregar una regla de rewrite solo para esto. Más simple:
     // el frontend revisa `location.hash` en cada carga (src/lib/auth.ts).
-    return res.redirect(`${frontendOrigin}/#access_token=${tokenSet.access_token}`);
+    return res.redirect(`${frontendOrigin}/#access_token=${result.accessToken}`);
+  }
+
+  // Compartido entre /auth/callback (GitHub, redirige) y /auth/email/verify
+  // (correo institucional embebido, responde JSON) — el intercambio de
+  // código + validación de dominio + aprovisionamiento es EXACTAMENTE el
+  // mismo trabajo sin importar qué conector produjo el `code`; solo cambia
+  // cómo cada endpoint le informa el resultado al frontend.
+  private async finishTokenExchange(params: {
+    code: string;
+    state: string;
+    expectedState: string;
+    codeVerifier: string;
+  }): Promise<{ ok: true; accessToken: string } | { ok: false; reason: "dominio_no_institucional" }> {
+    const tokenSet = await this.logto.exchangeCode(params);
+    const claims = tokenSet.claims();
+    const email = claims.email as string | undefined;
+
+    // Se rechaza ANTES de tocar la base de datos — nunca se crea un User
+    // "a medias" para un correo no institucional que después haya que
+    // limpiar a mano. Ni siquiera se emite el access_token: sin esto, el
+    // frontend igual habría recibido un token válido de Logto (la
+    // AUTENTICACIÓN sí fue real) para alguien que este backend nunca
+    // debió tratar como estudiante de la EPN.
+    if (!isInstitutionalEmail(email)) {
+      return { ok: false, reason: "dominio_no_institucional" };
+    }
+
+    await this.provisionUser(claims.sub, email, claims.name as string | undefined);
+    if (!tokenSet.access_token) throw new Error("Logto no devolvió access_token");
+    return { ok: true, accessToken: tokenSet.access_token };
+  }
+
+  // Login por correo institucional embebido en Login.svelte — habla con la
+  // Experience API de Logto (ver logto-experience.client.ts) en vez de
+  // redirigir el navegador a la pantalla hospedada de Logto. Paso 1 de 2:
+  // arranca la interacción y dispara el correo con el código.
+  @Public()
+  @Throttle({ short: { limit: 5, ttl: 10_000 } })
+  @Post("email/start")
+  async emailStart(@Body("email") email: string | undefined, @Res() res: Response) {
+    if (!isInstitutionalEmail(email)) {
+      throw new BadRequestException("Usa tu correo institucional @epn.edu.ec");
+    }
+
+    const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();
+    const authUrl = this.logto.authorizationUrl({ codeChallenge, state });
+
+    try {
+      let cookie = await this.logtoExperience.startInteraction(authUrl);
+      cookie = await this.logtoExperience.setInteractionEvent(cookie, "SignIn");
+      const { cookie: cookieWithCode, verificationId } = await this.logtoExperience.requestEmailCode(
+        cookie,
+        email,
+        "SignIn"
+      );
+
+      const pending: EmailPending = {
+        email,
+        codeVerifier,
+        state,
+        interactionEvent: "SignIn",
+        interactionCookie: cookieWithCode,
+        verificationId,
+      };
+      res.cookie(EMAIL_COOKIE, JSON.stringify(pending), {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        signed: true,
+        maxAge: 10 * 60 * 1000, // el código de Logto vence a los 10 minutos
+      });
+      return res.json({});
+    } catch (err) {
+      if (err instanceof ExperienceApiError) {
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
+  }
+
+  // Paso 2 de 2: valida el código que el estudiante escribió en
+  // Login.svelte. Si el correo no tiene cuenta todavía en Logto (primer
+  // login), reinicia la interacción como registro y le pide al frontend
+  // que muestre "te mandamos un código nuevo" — Logto no permite seguir
+  // con la misma verificación al cambiar de SignIn a Register a mitad de
+  // camino (ver comentario en submitIdentification()).
+  @Public()
+  @Throttle({ short: { limit: 5, ttl: 10_000 } })
+  @Post("email/verify")
+  async emailVerify(@Body("code") code: string | undefined, @Req() req: Request, @Res() res: Response) {
+    const pendingRaw = req.signedCookies?.[EMAIL_COOKIE];
+    if (!pendingRaw || !code) {
+      throw new BadRequestException("Sesión de verificación expirada o inválida — solicita un nuevo código");
+    }
+    const pending = JSON.parse(pendingRaw) as EmailPending;
+
+    let cookie: string;
+    try {
+      cookie = await this.logtoExperience.verifyEmailCode(
+        pending.interactionCookie,
+        pending.email,
+        code,
+        pending.verificationId
+      );
+    } catch (err) {
+      if (err instanceof ExperienceApiError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    const identification = await this.logtoExperience.submitIdentification(cookie, pending.verificationId);
+
+    if (identification.status !== 204) {
+      if (identification.errorCode === "user.user_not_exist" && pending.interactionEvent === "SignIn") {
+        const registerCookie = await this.logtoExperience.setInteractionEvent(identification.cookie, "Register");
+        const { cookie: cookieWithCode, verificationId } = await this.logtoExperience.requestEmailCode(
+          registerCookie,
+          pending.email,
+          "Register"
+        );
+        const nextPending: EmailPending = {
+          ...pending,
+          interactionEvent: "Register",
+          interactionCookie: cookieWithCode,
+          verificationId,
+        };
+        res.cookie(EMAIL_COOKIE, JSON.stringify(nextPending), {
+          httpOnly: true,
+          secure: true,
+          sameSite: "lax",
+          signed: true,
+          maxAge: 10 * 60 * 1000,
+        });
+        return res.status(202).json({
+          needsNewCode: true,
+          message: "Es tu primera vez con este correo — te mandamos un código nuevo para crear tu cuenta",
+        });
+      }
+      throw new BadRequestException("No se pudo verificar el código — intenta de nuevo");
+    }
+
+    const submitted = await this.logtoExperience.submitInteraction(identification.cookie);
+    const { code: authCode, state: authState } = await this.logtoExperience.completeAuthorization(
+      submitted.cookie,
+      submitted.redirectTo
+    );
+
+    const result = await this.finishTokenExchange({
+      code: authCode,
+      state: authState,
+      expectedState: pending.state,
+      codeVerifier: pending.codeVerifier,
+    });
+    res.clearCookie(EMAIL_COOKIE);
+
+    if (!result.ok) {
+      return res.status(403).json({ error: result.reason });
+    }
+    return res.json({ accessToken: result.accessToken });
   }
 
   // Provisiona el User en el primer login — mismo principio que aeis-app

@@ -61,6 +61,59 @@ export function login(connector?: string, loginHint?: string) {
   window.location.href = `${API_BASE_URL}/auth/login${qs ? `?${qs}` : ""}`;
 }
 
+// Login por correo institucional — a diferencia de login("github") (que
+// navega el navegador entero hacia afuera), este flujo se queda en
+// Login.svelte de principio a fin: el backend habla con la Experience API
+// de Logto por dentro (ver backend/src/shared/auth/logto-experience.client.ts)
+// y solo nos devuelve JSON. `credentials: "include"` es obligatorio en las
+// dos llamadas — el estado de la interacción vive en una cookie httpOnly
+// que pone /auth/email/start y que /auth/email/verify necesita releer.
+export class EmailLoginError extends Error {}
+
+export async function startEmailLogin(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/auth/email/start`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new EmailLoginError(body.message ?? "No se pudo enviar el código — intenta de nuevo");
+  }
+}
+
+export interface EmailVerifyResult {
+  /** true si Logto pidió reiniciar como registro (primera vez con este
+   *  correo) y mandó un código nuevo — Login.svelte debe pedir el nuevo
+   *  código sin volver a mostrar el paso de "escribe tu correo". */
+  needsNewCode: boolean;
+}
+
+export async function verifyEmailLogin(code: string): Promise<EmailVerifyResult> {
+  const res = await fetch(`${API_BASE_URL}/auth/email/verify`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const body = await res.json().catch(() => ({}));
+
+  if (res.status === 202 && body.needsNewCode) {
+    return { needsNewCode: true };
+  }
+  if (!res.ok) {
+    throw new EmailLoginError(body.message ?? body.error ?? "Código incorrecto o vencido — intenta de nuevo");
+  }
+  if (!body.accessToken) {
+    throw new EmailLoginError("Logto no devolvió una sesión válida — intenta de nuevo");
+  }
+
+  token = body.accessToken;
+  sessionStorage.setItem(STORAGE_KEY, body.accessToken);
+  return { needsNewCode: false };
+}
+
 export function logout() {
   token = null;
   sessionStorage.removeItem(STORAGE_KEY);
