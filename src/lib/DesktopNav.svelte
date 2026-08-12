@@ -95,10 +95,13 @@
   }
 
   .nav-label {
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 10.5px;
     font-weight: 600;
-    letter-spacing: 0.03em;
+    /* Más espaciado que el resto de títulos — Anton a este tamaño (10.5px)
+       es donde más se aprieta, así que necesita el empujón extra para
+       seguir siendo legible. */
+    letter-spacing: 0.06em;
     color: var(--ink-1);
   }
 

@@ -22,7 +22,14 @@
   --radius-md: 18px;
   --radius-sm: 10px;
 
+  /* --font-display: cuerpo de texto y copy — Atkinson Hyperlegible
+     (Braille Institute, hecha para legibilidad/dislexia/baja visión).
+     --font-heading: SOLO títulos cortos y etiquetas (nombres de sección,
+     "AEIS", números de casillero) — Anton, la misma que ya se usaba antes,
+     con más letter-spacing donde se aplica para que siga siendo legible
+     pese a ser condensada. Nunca para párrafos u oraciones largas. */
   --font-display: "Atkinson Hyperlegible", "Doto", "Segoe UI", sans-serif;
+  --font-heading: "Anton", "Atkinson Hyperlegible", "Segoe UI", sans-serif;
 }
 
 * {

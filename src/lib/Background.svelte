@@ -8,13 +8,12 @@
 </script>
 
 <div class="bg" class:accent={tint === "accent"} style={overrideStyle}>
-  <!-- The metal texture and the risk tint are always mounted and simply
-       cross-fade. Swapping the `background` shorthand between two different
+  <!-- El tint por riesgo se monta siempre y simplemente cross-fadea.
+       Swapping the `background` shorthand between two different
        radial-gradients can't animate (CSS has nothing to interpolate, so it
-       snaps), and tearing the texture layers out of the DOM made the change
-       land in one hard frame. Opacity is GPU-compositable, so this is both
+       snaps), and tearing the layer out of the DOM made the change land in
+       one hard frame. Opacity is GPU-compositable, so this is both
        smoother and cheaper than what it replaces. -->
-  <div class="brushed" class:hidden={!!override}></div>
   <div class="sheen" class:hidden={!!override}></div>
   <div class="risk-tint" class:on={!!override}></div>
   <svg class="grid" width="100%" height="100%" preserveAspectRatio="none">
@@ -66,45 +65,16 @@
     opacity: 1;
   }
 
-  .brushed,
   .sheen {
     transition: opacity 0.55s ease;
   }
 
-  .brushed.hidden,
   .sheen.hidden {
     opacity: 0;
     /* A running keyframe animation outranks a normal opacity declaration,
        so .sheen's breathing loop has to be cancelled or it would keep
        pulsing itself back to visible while "hidden". */
     animation: none;
-  }
-
-  /* Brushed metal: fine directional grain + macro steel gradient, tinted to the AEIS navy/green hue */
-  .brushed {
-    position: absolute;
-    inset: -10%;
-    background:
-      repeating-linear-gradient(
-        95deg,
-        rgba(210, 230, 255, 0.05) 0px,
-        rgba(210, 230, 255, 0.05) 1px,
-        rgba(0, 0, 0, 0.06) 1px,
-        rgba(0, 0, 0, 0.06) 2px,
-        transparent 2px,
-        transparent 4px
-      ),
-      linear-gradient(
-        152deg,
-        #222f52 0%,
-        #10182f 22%,
-        #0a1024 42%,
-        #060a17 58%,
-        #101a34 78%,
-        #263a4f 100%
-      );
-    mix-blend-mode: screen;
-    opacity: 0.9;
   }
 
   .sheen {
@@ -130,9 +100,8 @@
     animation: drift 40s linear infinite;
   }
   .grid-lines {
-    /* Kept faint — the brushed metal grain carries the surface now, this is
-       just a whisper of structure underneath it so it doesn't fight the
-       wheel's own metal finish. */
+    /* Kept faint — un tono de fondo plano y sencillo, esto es solo una
+       insinuación de estructura, no una textura que compita con nada. */
     opacity: 0.12;
   }
   @keyframes drift {

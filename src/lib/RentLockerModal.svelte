@@ -303,8 +303,9 @@
   }
 
   .modal-title {
-    font-family: var(--font-display, sans-serif);
+    font-family: var(--font-heading, sans-serif);
     font-size: 18px;
+    letter-spacing: 0.02em;
     margin: 0 0 4px;
     color: #eef4fb;
   }

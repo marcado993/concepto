@@ -11,12 +11,15 @@
   // backend traduce a direct_sign_in=social:github — salta el selector de
   // Logto y va directo a la pantalla real de GitHub para autorizar la app.
   import Background from "./Background.svelte";
+  import TypeText from "./TypeText.svelte";
   import { login } from "./auth.svelte";
 
   interface Props {
     onclose: () => void;
+    showBack?: boolean;
+    errorMessage?: string | null;
   }
-  let { onclose }: Props = $props();
+  let { onclose, showBack = true, errorMessage = null }: Props = $props();
 
   let institutionalEmail = $state("");
 
@@ -42,14 +45,20 @@
     <img src="/aso.png" alt="AEIS" class="logo" />
 
     <div class="panel" role="dialog" aria-modal="true" aria-label="Iniciar sesión">
-      <button class="back" onclick={onclose} aria-label="Volver">‹ Volver</button>
+      {#if showBack}
+        <button class="back" onclick={onclose} aria-label="Volver">‹ Volver</button>
+      {/if}
 
       <div class="brand-row">
         <span class="brand-dot"></span>
-        <span class="brand-name">AEIS</span>
+        <TypeText tag="span" class="login-brand-name" text="AEIS" speed={90} />
       </div>
-      <h2 class="title">Inicia sesión</h2>
+      <TypeText tag="h2" class="login-title" text="Inicia sesión" speed={38} startDelay={420} />
     <p class="subtitle">Accede con tu cuenta para alquilar casilleros y aportar a AEIS</p>
+
+    {#if errorMessage}
+      <p class="login-error">{errorMessage}</p>
+    {/if}
 
     <button class="provider-btn github" onclick={continueWithGithub}>
       <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
@@ -175,16 +184,22 @@
     background: var(--accent, #21e0a0);
     box-shadow: 0 0 10px var(--accent-glow, rgba(33, 224, 160, 0.5));
   }
-  .brand-name {
-    font-family: var(--font-display, sans-serif);
+  /* :global() a propósito — TypeText.svelte es quien renderiza estos
+     elementos, y class="brand-name"/"title" llega ahí como texto plano,
+     no como parte del template de Login.svelte. Sin :global() el hash de
+     scoped-CSS de Svelte nunca matchea (mismo hallazgo real que .label en
+     App.svelte). */
+  :global(.login-brand-name) {
+    font-family: var(--font-heading, sans-serif);
     font-size: 12px;
     letter-spacing: 0.3em;
     color: rgba(238, 244, 251, 0.75);
   }
 
-  .title {
-    font-family: var(--font-display, sans-serif);
+  :global(.login-title) {
+    font-family: var(--font-heading, sans-serif);
     font-size: 21px;
+    letter-spacing: 0.03em;
     margin: 0 0 6px;
     color: #eef4fb;
   }
@@ -194,6 +209,17 @@
     line-height: 1.5;
     color: rgba(238, 244, 251, 0.68);
     margin: 0 0 22px;
+  }
+
+  .login-error {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #ff8a8a;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 10px;
+    padding: 9px 12px;
+    margin: -10px 0 18px;
   }
 
   .provider-btn {
