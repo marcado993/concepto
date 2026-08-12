@@ -1,4 +1,4 @@
-export type IconKind = "lockers" | "events" | "resources" | "community" | "security";
+export type IconKind = "lockers" | "events" | "resources" | "community" | "security" | "subscriptions";
 export type LockerStatus = "available" | "occupied" | "reserved";
 
 export interface LockerUnit {
@@ -52,6 +52,25 @@ export interface SecurityIndicator {
   trend?: "up" | "down" | "flat";
 }
 
+/** Shape que devuelve GET /subscriptions/tiers — coincide con lo que
+ *  retorna SubscriptionService.listTiers() (backend/src/subscription/).
+ *  `amount` llega como string: Prisma serializa Decimal así por JSON, no
+ *  como number nativo. `benefits` es JSON libre en el schema (a propósito,
+ *  ver prisma/schema.prisma) — se tipa aquí solo lo que el frontend
+ *  necesita leer, sin asumir que es la lista completa de lo que trae. */
+export interface SubscriptionBenefit {
+  type: string;
+  percent?: number;
+  included?: boolean;
+}
+
+export interface SubscriptionTierPublic {
+  id: string;
+  name: string;
+  amount: string;
+  benefits: SubscriptionBenefit[];
+}
+
 /** Shape que devuelve GET /ventures — coincide con VenturePublic del
  *  backend (backend/src/venture/venture.service.ts). Nunca trae el número
  *  de WhatsApp crudo ni el ownerId, solo el link ya armado. */
@@ -75,7 +94,7 @@ export interface CategoryTheme {
 }
 
 export interface Category {
-  id: "lockers" | "events" | "resources" | "community" | "security";
+  id: "lockers" | "events" | "resources" | "community" | "security" | "subscriptions";
   label: string;
   sublabel: string;
   prompt: string;
@@ -88,6 +107,7 @@ export interface Category {
   news?: NewsItem[];
   security?: SecurityIndicator[];
   ventures?: VenturePublic[];
+  tiers?: SubscriptionTierPublic[];
 }
 
 function makeLockers(zone: string, count: number, seed: number): LockerUnit[] {
@@ -195,6 +215,20 @@ export const categories: Category[] = [
     // api.ts), igual que security. `news`/NewsItem se dejan sin usar aquí
     // a propósito, no se borra el tipo por si algún día vuelve a hacer
     // falta un feed real de noticias.
+  },
+  {
+    id: "subscriptions",
+    label: "Aportaciones",
+    sublabel: "Bronce · Platino · Pantera",
+    prompt: "Elige esto para apoyar a AEIS y ver tus beneficios",
+    icon: "subscriptions",
+    detailTitle: "Tiers de aportación",
+    theme: { accent: "#e0b23c", accentDim: "#5a4512", deep: "#2a2008", glow: "rgba(224, 178, 60, 0.4)", hue: 45 },
+    // `tiers` se pide al backend (fetchSubscriptionTiers en api.ts) — los
+    // 3 tiers reales (Bronce/Platino/Pantera) viven en la base de datos
+    // (SubscriptionTier), no hardcodeados aquí, porque el precio y los
+    // beneficios de cada uno son una decisión de negocio que ya cambió una
+    // vez en el histórico real (docs/dominio/03-analisis-financiero-costos.md §3).
   },
   {
     id: "security",

@@ -13,7 +13,9 @@
     fetchSecurityIndicators,
     fetchVentures,
     fetchLockers,
-    confirmPayphonePayment,
+    fetchSubscriptionTiers,
+    confirmLockerPayphonePayment,
+    confirmSubscriptionPayphonePayment,
     ApiError,
     type LockerFromApi,
   } from "./lib/api";
@@ -139,6 +141,23 @@
   }
   $effect(loadLockers);
 
+  // Tiers de Aportaciones — mismo patrón que casilleros: se piden al
+  // backend (no viven hardcodeados en data.ts), público, con estado de
+  // error explícito.
+  let subscriptionTiers = $state<import("./lib/data").SubscriptionTierPublic[] | null>(null);
+  let subscriptionTiersError = $state(false);
+  function loadSubscriptionTiers() {
+    fetchSubscriptionTiers()
+      .then((data) => {
+        subscriptionTiers = data;
+        subscriptionTiersError = false;
+      })
+      .catch(() => {
+        subscriptionTiersError = true;
+      });
+  }
+  $effect(loadSubscriptionTiers);
+
   // Tras pagar en el widget de PayPhone, la Cajita de Pagos redirige la
   // página COMPLETA (no una navegación de SPA) de vuelta con
   // ?id=&clientTransactionId= en la URL — configurado una sola vez en
@@ -155,16 +174,33 @@
     const ppClientTxId = params.get("clientTransactionId");
     if (ppId && ppClientTxId) {
       history.replaceState(null, "", window.location.pathname + window.location.hash);
-      confirmPayphonePayment(Number(ppId), ppClientTxId)
+      // clientTransactionId puede ser el id de un LockerRental o de una
+      // Subscription — la URL de respuesta de PayPhone es la MISMA para
+      // toda la app (se configura una vez en Payphone Developer, no por
+      // transacción), así que no hay forma de saber cuál es de antemano.
+      // Se intenta primero como casillero; si el backend responde que ese
+      // alquiler no existe, se reintenta como aportación.
+      confirmLockerPayphonePayment(Number(ppId), ppClientTxId)
         .then(() => {
           payphoneBanner = { ok: true, text: "¡Pago con PayPhone confirmado! Tu casillero ya es tuyo." };
           loadLockers();
         })
-        .catch((err) => {
-          payphoneBanner = {
-            ok: false,
-            text: err instanceof ApiError ? err.message : "No se pudo confirmar el pago con PayPhone.",
-          };
+        .catch((lockerErr) => {
+          if (!(lockerErr instanceof ApiError) || lockerErr.status !== 404) {
+            payphoneBanner = { ok: false, text: lockerErr instanceof ApiError ? lockerErr.message : "No se pudo confirmar el pago con PayPhone." };
+            return;
+          }
+          confirmSubscriptionPayphonePayment(Number(ppId), ppClientTxId)
+            .then(() => {
+              payphoneBanner = { ok: true, text: "¡Pago con PayPhone confirmado! Tu aportación ya quedó activa." };
+              loadSubscriptionTiers();
+            })
+            .catch((subErr) => {
+              payphoneBanner = {
+                ok: false,
+                text: subErr instanceof ApiError ? subErr.message : "No se pudo confirmar el pago con PayPhone.",
+              };
+            });
         });
     }
   }
@@ -174,6 +210,7 @@
       if (c.id === "security") return { ...c, theme: securityTheme, security: securityIndicators ?? undefined };
       if (c.id === "community") return { ...c, ventures: ventures ?? undefined };
       if (c.id === "lockers" && lockers) return { ...c, lockers };
+      if (c.id === "subscriptions" && subscriptionTiers) return { ...c, tiers: subscriptionTiers };
       return c;
     })
   );
@@ -284,6 +321,8 @@
                 {venturesError}
                 {lockersError}
                 onlockerrented={loadLockers}
+                {subscriptionTiersError}
+                onsubscribed={loadSubscriptionTiers}
                 wide
               />
             </div>
@@ -331,6 +370,8 @@
         {venturesError}
         {lockersError}
         onlockerrented={loadLockers}
+        {subscriptionTiersError}
+        onsubscribed={loadSubscriptionTiers}
       />
     {/if}
 
