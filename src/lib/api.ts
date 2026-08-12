@@ -179,3 +179,29 @@ export function confirmLockerReceipt(rentalId: string, receipt: File) {
   form.append("receipt", receipt);
   return postFormData(`/lockers/rentals/${encodeURIComponent(rentalId)}/confirm-receipt`, form);
 }
+
+// PayPhone (Cajita de Pagos) — el widget corre en el navegador con estos
+// valores (token/storeId), servidos por el backend en vez de vivir
+// hardcodeados aquí, para poder rotarlos sin redeploy del frontend (ver
+// backend/src/locker/locker.controller.ts). `configured:false` significa
+// que PAYPHONE_TOKEN/PAYPHONE_STORE_ID no están puestos todavía en el
+// backend — la UI debe deshabilitar esa opción de pago, no fingir que
+// funciona.
+export interface PayphonePublicConfig {
+  configured: boolean;
+  token: string;
+  storeId: string;
+}
+
+export function fetchPayphoneConfig(): Promise<PayphonePublicConfig> {
+  return getJSON<PayphonePublicConfig>("/lockers/payphone/config");
+}
+
+// Tras completar el pago en el widget, PayPhone redirige la página entera
+// con ?id=&clientTransactionId= — App.svelte captura esos parámetros y
+// llama aquí para que el backend verifique el pago contra la API real de
+// PayPhone (nunca se confía en el solo hecho de que el navegador volvió
+// con esos query params).
+export function confirmPayphonePayment(id: number, clientTransactionId: string) {
+  return postJSON("/lockers/payphone/confirm", { id, clientTransactionId });
+}

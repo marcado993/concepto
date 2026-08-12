@@ -20,6 +20,7 @@ import { Roles } from "../shared/auth/roles.decorator";
 import { Role } from "@prisma/client";
 import { LockerService } from "./locker.service";
 import { RentLockerDto } from "./dto/rent-locker.dto";
+import { ConfirmPayphoneDto } from "./dto/confirm-payphone.dto";
 
 // El periodo activo se resuelve dentro de LockerService.getCurrentPeriodId()
 // a partir de las fechas de Period — no viene del cliente. Es una
@@ -37,6 +38,18 @@ export class LockerController {
   @Get()
   list() {
     return this.lockerService.list();
+  }
+
+  // Config pública del widget de PayPhone (token + storeId) — servida
+  // desde el backend (no hardcodeada en el frontend) para poder rotarla
+  // sin redeploy. Si PAYPHONE_TOKEN/PAYPHONE_STORE_ID no están
+  // configurados, `configured:false` — el frontend deshabilita la opción
+  // PayPhone en vez de renderizar un widget roto (mismo patrón que
+  // auth_error=logto_not_configured).
+  @Public()
+  @Get("payphone/config")
+  payphoneConfig() {
+    return this.lockerService.getPayphoneConfig();
   }
 
   @Post("rent")
@@ -78,5 +91,15 @@ export class LockerController {
   ) {
     if (!file?.buffer) throw new BadRequestException("Falta el archivo del comprobante");
     return this.lockerService.confirmReceipt(rentalId, req.user.id, file.buffer, req.ip);
+  }
+
+  // clientTransactionId ES el id del LockerRental — nosotros lo elegimos
+  // así al renderizar el widget (ver RentLockerModal.svelte), así que no
+  // hace falta un :rentalId separado en la ruta.
+  @Post("payphone/confirm")
+  @Roles(Role.ESTUDIANTE)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  confirmPayphone(@Body() dto: ConfirmPayphoneDto, @Req() req: Request & { user: { id: string } }) {
+    return this.lockerService.confirmPayphonePayment(dto.clientTransactionId, dto.id, req.user.id, req.ip);
   }
 }

@@ -2,7 +2,6 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { Subscription } from "@prisma/client";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
-import { PayphoneClient } from "../shared/payment/payphone.client";
 import { executeMoneyMutation } from "../shared/payment/money-mutation.helper";
 import { PaymentMethod } from "../locker/rental-calculator";
 import { SubscriptionTierName } from "./dto/subscribe.dto";
@@ -25,8 +24,7 @@ export interface SubscribeParams {
 export class SubscriptionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService,
-    private readonly payphone: PayphoneClient
+    private readonly audit: AuditService
   ) {}
 
   async subscribe(params: SubscribeParams) {
@@ -47,7 +45,7 @@ export class SubscriptionService {
     const amount = Number(tier.amount);
 
     return executeMoneyMutation<Subscription>(
-      { prisma: this.prisma, audit: this.audit, payphone: this.payphone },
+      { prisma: this.prisma, audit: this.audit },
       {
         userId: params.userId,
         amount,

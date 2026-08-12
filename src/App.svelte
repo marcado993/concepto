@@ -8,7 +8,14 @@
   import TypeText from "./lib/TypeText.svelte";
   import { categories, type SecurityIndicator, type VenturePublic, type LockerStatus, type LockerUnit } from "./lib/data";
   import { riskForHour, themeForRisk } from "./lib/risk";
-  import { fetchSecurityIndicators, fetchVentures, fetchLockers, type LockerFromApi } from "./lib/api";
+  import {
+    fetchSecurityIndicators,
+    fetchVentures,
+    fetchLockers,
+    confirmPayphonePayment,
+    ApiError,
+    type LockerFromApi,
+  } from "./lib/api";
   import { consumeAuthCallback, isAuthenticated, login, logout } from "./lib/auth.svelte";
 
   // Si el backend acaba de redirigir tras un login (Logto → GitHub → Logto
@@ -123,6 +130,36 @@
   }
   $effect(loadLockers);
 
+  // Tras pagar en el widget de PayPhone, la Cajita de Pagos redirige la
+  // página COMPLETA (no una navegación de SPA) de vuelta con
+  // ?id=&clientTransactionId= en la URL — configurado una sola vez en
+  // Payphone Developer, no por transacción (ver docs oficiales de
+  // PayPhone y backend/src/shared/payment/payphone.client.ts). Se captura
+  // acá, una vez al montar, y se re-confirma contra el backend (que a su
+  // vez re-confirma contra la API real de PayPhone) antes de dar el pago
+  // por bueno — nunca basta con que el navegador "diga" que volvió con
+  // esos parámetros.
+  let payphoneBanner = $state<{ ok: boolean; text: string } | null>(null);
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    const ppId = params.get("id");
+    const ppClientTxId = params.get("clientTransactionId");
+    if (ppId && ppClientTxId) {
+      history.replaceState(null, "", window.location.pathname + window.location.hash);
+      confirmPayphonePayment(Number(ppId), ppClientTxId)
+        .then(() => {
+          payphoneBanner = { ok: true, text: "¡Pago con PayPhone confirmado! Tu casillero ya es tuyo." };
+          loadLockers();
+        })
+        .catch((err) => {
+          payphoneBanner = {
+            ok: false,
+            text: err instanceof ApiError ? err.message : "No se pudo confirmar el pago con PayPhone.",
+          };
+        });
+    }
+  }
+
   const displayCategories = $derived(
     categories.map((c) => {
       if (c.id === "security") return { ...c, theme: securityTheme, security: securityIndicators ?? undefined };
@@ -195,6 +232,13 @@
       <div class="auth-error-banner" role="alert">
         <span>{authError}</span>
         <button onclick={() => (authError = null)} aria-label="Cerrar aviso">×</button>
+      </div>
+    {/if}
+
+    {#if payphoneBanner}
+      <div class="auth-error-banner" class:ok={payphoneBanner.ok} role="alert">
+        <span>{payphoneBanner.text}</span>
+        <button onclick={() => (payphoneBanner = null)} aria-label="Cerrar aviso">×</button>
       </div>
     {/if}
 
@@ -370,6 +414,12 @@
     line-height: 1;
     cursor: pointer;
     padding: 0 2px;
+  }
+
+  .auth-error-banner.ok {
+    background: rgba(33, 224, 160, 0.14);
+    border-color: rgba(33, 224, 160, 0.35);
+    color: var(--accent, #21e0a0);
   }
 
   .brand-name {

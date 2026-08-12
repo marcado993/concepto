@@ -1,14 +1,23 @@
 import { mount } from 'svelte'
 import './app.css'
 import App from './App.svelte'
-// Importar ANTES del mount: crea el mapa MapLibre en un div off-screen
-// durante el splash. Workers WebGL, style JSON y tiles del viewport inicial
-// arrancan mientras el usuario ve la pantalla de carga.
-import './lib/mapWarm'
 
 const app = mount(App, {
   target: document.getElementById('app')!,
 })
+
+// import() dinámico, no un `import './lib/mapWarm'` estático — MapLibre GL
+// pesa ~1MB sin comprimir (es la única dependencia real de producción del
+// proyecto, ver package.json) y un import estático lo mete DENTRO del
+// bundle crítico de arranque: el splash y el resto de la app quedaban
+// esperando a que ese megabyte se descargue y parsee antes de volverse
+// interactivos, aunque el usuario nunca abra Seguridad (hallazgo real de
+// rendimiento, auditado con `npm run build` — antes de este cambio
+// dist/assets/index-*.js pesaba ~1MB). El import dinámico hace que Vite lo
+// separe en su propio chunk, cargado en paralelo apenas monta la app — el
+// mapa se sigue precalentando durante el splash (mismo efecto que antes),
+// pero ya no bloquea que el resto de la UI aparezca primero.
+import('./lib/mapWarm')
 
 // The boot screen lives in index.html so it paints before this bundle even
 // arrives. Hand off once Svelte has mounted, keeping it up for a beat so a

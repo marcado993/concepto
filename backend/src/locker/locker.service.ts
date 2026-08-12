@@ -65,7 +65,7 @@ export class LockerService {
     const price = calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, params.method);
 
     return executeMoneyMutation<LockerRental>(
-      { prisma: this.prisma, audit: this.audit, payphone: this.payphone },
+      { prisma: this.prisma, audit: this.audit },
       {
         userId: params.userId,
         amount: price.amount,
@@ -84,9 +84,14 @@ export class LockerService {
           const rental = await tx.lockerRental.create({
             data: { lockerId: locker.id, userId: params.userId, periodId, paymentId },
           });
+          // RESERVED para los dos métodos ahora — PAYPHONE ya no cobra de
+          // forma síncrona aquí (ver money-mutation.helper.ts), así que no
+          // hay forma de saber en este punto si el estudiante de verdad va
+          // a completar el pago en el widget. RENTED solo llega después,
+          // vía confirmPayphonePayment() o confirmReceipt().
           await tx.locker.update({
             where: { id: locker.id },
-            data: { status: params.method === "PAYPHONE" ? "RENTED" : "RESERVED" },
+            data: { status: "RESERVED" },
           });
           return rental;
         },
@@ -163,6 +168,109 @@ export class LockerService {
           entityId: rental.id,
           ipAddress,
           metadata: { amount },
+        },
+        tx
+      );
+      return { rental, locker: updatedLocker };
+    });
+  }
+
+  // Config pública del widget de PayPhone (token + storeId) — se sirve
+  // desde el backend, no se hardcodea en el bundle del frontend, para
+  // poder rotar credenciales o cambiar de comercio sin un redeploy del
+  // frontend. No es un secreto en el sentido clásico (ver comentario en
+  // payphone.client.ts) — PayPhone mismo lo pone en JS del navegador.
+  getPayphoneConfig() {
+    return this.payphone.getPublicConfig();
+  }
+
+  // Confirmación de pago con PayPhone (Cajita de Pagos) — el paso
+  // equivalente a confirmReceipt() pero para el otro método de pago. El
+  // widget corre en el navegador del estudiante; cuando termina, PayPhone
+  // redirige la página completa con ?id=&clientTransactionId= en la URL
+  // (App.svelte los captura). clientTransactionId es el id de ESTE
+  // LockerRental — lo usamos como tal desde que se creó en rent().
+  //
+  // Nunca se confía en que el navegador "diga" que el pago fue aprobado:
+  // siempre se re-confirma contra la API real de PayPhone antes de marcar
+  // nada como pagado — un query param se puede fabricar a mano.
+  async confirmPayphonePayment(
+    rentalId: string,
+    payphoneTransactionId: number,
+    userId: string,
+    ipAddress?: string
+  ) {
+    const rental = await this.prisma.lockerRental.findUnique({
+      where: { id: rentalId },
+      include: { payment: true, locker: true },
+    });
+    if (!rental) throw new NotFoundException("Alquiler no encontrado");
+    if (rental.userId !== userId) throw new ForbiddenException("Este alquiler no te pertenece");
+    if (rental.payment.method !== "PAYPHONE") {
+      throw new BadRequestException("Este alquiler no se paga con PayPhone");
+    }
+    if (rental.payment.status !== "PENDING") {
+      throw new BadRequestException("Este pago ya fue procesado");
+    }
+
+    const amount = Number(rental.payment.amount);
+    const expectedCents = Math.round(amount * 100);
+
+    let result;
+    try {
+      result = await this.payphone.confirm(payphoneTransactionId, rentalId);
+    } catch (err) {
+      await this.audit.record({
+        actorId: userId,
+        action: "locker.payphone.rejected",
+        entityType: "LockerRental",
+        entityId: rental.id,
+        ipAddress,
+        metadata: { reason: "confirm_api_error", message: (err as Error).message },
+      });
+      throw new BadRequestException("No se pudo confirmar el pago con PayPhone — intenta de nuevo");
+    }
+
+    if (!result.approved || result.amountCents !== expectedCents) {
+      await this.audit.record({
+        actorId: userId,
+        action: "locker.payphone.rejected",
+        entityType: "LockerRental",
+        entityId: rental.id,
+        ipAddress,
+        metadata: { reason: "no_aprobado_o_monto_no_coincide", expectedCents, got: result },
+      });
+      throw new BadRequestException("PayPhone no aprobó esta transacción");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Mismo patrón atómico que confirmReceipt() — updateMany + WHERE
+      // status:"PENDING" en vez de update() simple, para que un doble
+      // callback de PayPhone (o el usuario recargando la página de
+      // respuesta) no pueda confirmar el mismo pago dos veces.
+      const { count } = await tx.payment.updateMany({
+        where: { id: rental.paymentId, status: "PENDING" },
+        data: {
+          status: "CONFIRMED",
+          confirmedAt: new Date(),
+          providerRef: String(result.transactionId),
+        },
+      });
+      if (count === 0) {
+        throw new ConflictException("Este pago ya fue procesado por otra petición");
+      }
+      const updatedLocker = await tx.locker.update({
+        where: { id: rental.lockerId },
+        data: { status: "RENTED" },
+      });
+      await this.audit.record(
+        {
+          actorId: userId,
+          action: "locker.payphone.confirmed",
+          entityType: "LockerRental",
+          entityId: rental.id,
+          ipAddress,
+          metadata: { amount, providerRef: String(result.transactionId) },
         },
         tx
       );

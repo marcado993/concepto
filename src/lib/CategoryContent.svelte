@@ -40,9 +40,18 @@
     onlockerrented,
   }: Props = $props();
 
-  // SecurityMap se importa de forma estática — mapWarm.ts ya arrancó el
-  // mapa durante el splash, así que el componente puede usarlo de inmediato.
-  import SecurityMapComp from "./SecurityMap.svelte";
+  // import() dinámico, no un `import SecurityMapComp from "./SecurityMap.svelte"`
+  // estático — SecurityMap.svelte importa mapWarm.ts, que a su vez importa
+  // maplibre-gl (~1MB sin comprimir, hallazgo real de rendimiento: antes de
+  // este cambio dist/assets/index-*.js pesaba ~1MB porque esta cadena
+  // completa terminaba dentro del bundle de arranque, aunque el usuario
+  // nunca abriera Seguridad). El import() se dispara igual apenas se monta
+  // este componente (mismo momento que antes, durante el splash) — la
+  // diferencia es que Vite lo separa en su propio chunk, así que ya no
+  // bloquea el parseo del bundle principal. Es una promesa a nivel de
+  // módulo (no dentro de una función), así solo se pide una vez aunque
+  // SecurityMapComp se monte/desmonte varias veces navegando.
+  const securityMapModule = import("./SecurityMap.svelte");
   import RentLockerModal from "./RentLockerModal.svelte";
 
   let rentingLockerCode = $state<string | null>(null);
@@ -269,11 +278,13 @@
             cargando mapa 3d…
           </div>
           {#if isSecurityActive}
-            <SecurityMapComp
-              risk={securityRisk}
-              accent={securityCategory.theme.accent}
-              onready={() => (mapReady = true)}
-            />
+            {#await securityMapModule then { default: SecurityMapComp }}
+              <SecurityMapComp
+                risk={securityRisk}
+                accent={securityCategory.theme.accent}
+                onready={() => (mapReady = true)}
+              />
+            {/await}
           {/if}
         </div>
 

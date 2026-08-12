@@ -6,7 +6,15 @@
   // Nunca se le pide al estudiante escribir su nombre/código a mano — ya
   // está logueado, esos datos vienen de GET /auth/me (ver
   // backend/src/shared/auth/auth.controller.ts).
-  import { fetchMe, rentLocker, confirmLockerReceipt, ApiError, type MeResponse } from "./api";
+  import {
+    fetchMe,
+    rentLocker,
+    confirmLockerReceipt,
+    fetchPayphoneConfig,
+    ApiError,
+    type MeResponse,
+  } from "./api";
+  import { loadPayphoneSdk } from "./payphoneSdk";
   import { isAuthenticated, login } from "./auth.svelte";
 
   interface Props {
@@ -39,20 +47,22 @@
     PAYPHONE: "$6.90",
     TRANSFER: "$6.50",
   };
+  const PRICE_CENTS: Record<"PAYPHONE" | "TRANSFER", number> = {
+    PAYPHONE: 690,
+    TRANSFER: 650,
+  };
 
+  // Ambos métodos crean el alquiler (PENDING/RESERVED) de una vez — con
+  // PAYPHONE el cobro real todavía no pasó, pasa en el widget del paso 2
+  // (ver backend/src/locker/locker.service.ts confirmPayphonePayment). El
+  // casillero queda RESERVED mientras tanto, igual que TRANSFER.
   async function continueFromIdentity() {
     errorMessage = null;
-    if (method === "PAYPHONE") {
-      step = "payphone";
-      return;
-    }
-    // Transferencia: se crea el alquiler (PENDING) de una vez — el
-    // casillero queda RESERVED mientras se sube y valida el comprobante.
     busy = true;
     try {
-      const rental = await rentLocker({ lockerCode, method: "TRANSFER" });
+      const rental = await rentLocker({ lockerCode, method });
       rentalId = rental.id;
-      step = "receipt-upload";
+      step = method === "PAYPHONE" ? "payphone" : "receipt-upload";
     } catch (err) {
       errorMessage = err instanceof ApiError ? err.message : "No se pudo iniciar el alquiler";
     } finally {
@@ -60,25 +70,55 @@
     }
   }
 
-  async function payWithPayphone() {
-    errorMessage = null;
-    busy = true;
-    try {
-      await rentLocker({ lockerCode, method: "PAYPHONE" });
-      step = "confirmed";
-      onrented?.();
-    } catch (err) {
-      // PayPhoneClient es un stub a propósito (backend/src/shared/payment/payphone.client.ts)
-      // hasta tener credenciales reales de comercio — este mensaje es el
-      // esperado hoy, no un bug.
-      errorMessage =
-        err instanceof ApiError
-          ? err.message
-          : "PayPhone todavía no está conectado a un comercio real — pendiente de credenciales.";
-    } finally {
-      busy = false;
+  // Config del widget de PayPhone (token/storeId públicos) — se pide solo
+  // al entrar al paso 2, no en cada apertura del modal.
+  let payphoneConfig = $state<{ configured: boolean; token: string; storeId: string } | null>(null);
+  let payphoneConfigError = $state(false);
+  let payphoneContainer = $state<HTMLDivElement | null>(null);
+  let payphoneWidgetStarted = $state(false);
+
+  $effect(() => {
+    if (step !== "payphone" || payphoneConfig || payphoneConfigError) return;
+    fetchPayphoneConfig()
+      .then((c) => (payphoneConfig = c))
+      .catch(() => (payphoneConfigError = true));
+  });
+
+  // Renderiza el widget real de PayPhone en cuanto: estamos en el paso 2,
+  // la config llegó y está configured:true, el alquiler PENDING ya existe
+  // (clientTransactionId = rentalId) y el <div> contenedor ya está en el
+  // DOM. Solo se dispara una vez por apertura del modal (payphoneWidgetStarted).
+  $effect(() => {
+    if (
+      step !== "payphone" ||
+      !payphoneConfig?.configured ||
+      !rentalId ||
+      !payphoneContainer ||
+      payphoneWidgetStarted
+    ) {
+      return;
     }
-  }
+    payphoneWidgetStarted = true;
+    const containerId = payphoneContainer.id;
+    loadPayphoneSdk()
+      .then(() => {
+        const amountCents = PRICE_CENTS.PAYPHONE;
+        new window.PPaymentButtonBox!({
+          token: payphoneConfig!.token,
+          storeId: payphoneConfig!.storeId,
+          clientTransactionId: rentalId!,
+          amount: amountCents,
+          amountWithoutTax: amountCents,
+          currency: "USD",
+          reference: `Alquiler casillero ${lockerCode}`,
+          lang: "es",
+        }).render(containerId);
+      })
+      .catch(() => {
+        errorMessage = "No se pudo cargar el widget de PayPhone — intenta con transferencia.";
+        payphoneWidgetStarted = false;
+      });
+  });
 
   function onFileChange(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
@@ -168,11 +208,25 @@
       {/if}
     {:else if step === "payphone"}
       <div class="step-badge">Paso 2 de 3 · Pago con PayPhone</div>
-      <p class="modal-copy">Vas a pagar {PRICE.PAYPHONE} con PayPhone por el casillero {lockerCode}.</p>
-      {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
-      <button class="cta payphone" disabled={busy} onclick={payWithPayphone}>
-        {busy ? "Procesando…" : "Pagar con PayPhone"}
-      </button>
+      {#if payphoneConfigError}
+        <p class="modal-copy error">
+          No se pudo cargar la configuración de PayPhone — intenta de nuevo en un momento.
+        </p>
+      {:else if !payphoneConfig}
+        <p class="modal-copy">Cargando PayPhone…</p>
+      {:else if !payphoneConfig.configured}
+        <p class="modal-copy error">
+          PayPhone todavía no está conectado (faltan credenciales de comercio) — usa comprobante de
+          transferencia por ahora.
+        </p>
+      {:else}
+        <p class="modal-copy">
+          Vas a pagar {PRICE.PAYPHONE} con PayPhone por el casillero {lockerCode}. Se abrirá el formulario
+          seguro de PayPhone — al terminar, vuelves aquí y confirmamos el pago automáticamente.
+        </p>
+        {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
+        <div id="pp-button-{lockerCode}" bind:this={payphoneContainer} class="payphone-widget"></div>
+      {/if}
     {:else if step === "receipt-upload"}
       <div class="step-badge">Paso 2 de 3 · Comprobante</div>
       <p class="modal-copy">
@@ -362,8 +416,8 @@
     opacity: 0.55;
     cursor: not-allowed;
   }
-  .cta.payphone {
-    background: #6c2eb5;
-    color: #f4ecff;
+
+  .payphone-widget {
+    min-height: 52px;
   }
 </style>

@@ -14,6 +14,12 @@ dist-ssr
 .env
 coverage
 
+# Artefactos de Playwright — vídeos/trazas/capturas de cada corrida, no
+# código fuente de los tests (e2e/*.spec.ts sí se commitea).
+test-results
+playwright-report
+blob-report
+
 # Llaves privadas y secretos — nunca deberian vivir dentro del repo, pero
 # esta capa extra evita un commit accidental si algun dia se prueba algo
 # aqui mismo (ver docs/dominio/11-hardening-servidor.md)

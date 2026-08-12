@@ -4,13 +4,11 @@ import { Prisma } from "@prisma/client";
 import { AlreadySubscribedError, SubscriptionService } from "./subscription.service";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
-import { PayphoneClient } from "../shared/payment/payphone.client";
 
 describe("SubscriptionService.subscribe", () => {
   let service: SubscriptionService;
   let prisma: any;
   let audit: { record: jest.Mock };
-  let payphone: { charge: jest.Mock };
 
   const tier = { id: "tier-platino", name: "Platino", amount: new Prisma.Decimal(19.99), periodId: "period-1" };
   const params = {
@@ -31,14 +29,12 @@ describe("SubscriptionService.subscribe", () => {
       __tx: tx,
     };
     audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
-    payphone = { charge: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         SubscriptionService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
-        { provide: PayphoneClient, useValue: payphone },
       ],
     }).compile();
     service = moduleRef.get(SubscriptionService);
