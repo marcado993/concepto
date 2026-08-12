@@ -155,7 +155,7 @@ export class LogtoExperienceClient {
   // aceptarlo con un POST) antes de llegar al callback real de este
   // backend con ?code=&state=, que es lo único que exchangeCode() (el
   // mismo método que ya usa el flujo de GitHub) necesita para terminar.
-  async completeAuthorization(cookie: string, redirectTo: string): Promise<{ code: string; state: string }> {
+  async completeAuthorization(cookie: string, redirectTo: string): Promise<{ code: string; state: string; iss?: string }> {
     let currentCookie = cookie;
     let url = redirectTo;
     const redirectUri = this.config.getOrThrow<string>("LOGTO_REDIRECT_URI");
@@ -165,8 +165,9 @@ export class LogtoExperienceClient {
         const parsed = new URL(url);
         const code = parsed.searchParams.get("code");
         const state = parsed.searchParams.get("state");
+        const iss = parsed.searchParams.get("iss") ?? undefined;
         if (!code || !state) throw new Error("Logto no devolvió code/state en el callback");
-        return { code, state };
+        return { code, state, iss };
       }
 
       if (url.includes("/consent")) {

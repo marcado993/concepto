@@ -139,7 +139,7 @@ describe("AuthController", () => {
     const req = { signedCookies: {} } as any;
     const res = mockResponse();
 
-    await expect(controller.callback("code-x", "state-x", req, res)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.callback("code-x", "state-x", "https://tenant.logto.app/oidc", req, res)).rejects.toBeInstanceOf(BadRequestException);
     expect(logto.exchangeCode).not.toHaveBeenCalled();
   });
 
@@ -153,11 +153,12 @@ describe("AuthController", () => {
       claims: () => ({ sub: "github|42", email: "estudiante@epn.edu.ec", name: "Estudiante EPN" }),
     });
 
-    await controller.callback("code-1", "state-1", req, res);
+    await controller.callback("code-1", "state-1", "https://tenant.logto.app/oidc", req, res);
 
     expect(logto.exchangeCode).toHaveBeenCalledWith({
       code: "code-1",
       state: "state-1",
+      iss: "https://tenant.logto.app/oidc",
       expectedState: "state-1",
       codeVerifier: "verifier-1",
     });
@@ -180,7 +181,7 @@ describe("AuthController", () => {
       claims: () => ({ sub: "github|42", email: "estudiante@epn.edu.ec" }),
     });
 
-    await controller.callback("code-2", "state-1", req, res);
+    await controller.callback("code-2", "state-1", "https://tenant.logto.app/oidc", req, res);
 
     expect(prisma.user.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ update: {} })
@@ -197,7 +198,7 @@ describe("AuthController", () => {
       claims: () => ({ sub: "github|99", email: "cualquiera@gmail.com", name: "No EPN" }),
     });
 
-    await controller.callback("code-3", "state-1", req, res);
+    await controller.callback("code-3", "state-1", "https://tenant.logto.app/oidc", req, res);
 
     expect(prisma.user.upsert).not.toHaveBeenCalled();
     expect(res.redirect).toHaveBeenCalledWith(
@@ -215,7 +216,7 @@ describe("AuthController", () => {
       claims: () => ({ sub: "github|100" }),
     });
 
-    await controller.callback("code-4", "state-1", req, res);
+    await controller.callback("code-4", "state-1", "https://tenant.logto.app/oidc", req, res);
 
     expect(prisma.user.upsert).not.toHaveBeenCalled();
     expect(res.redirect).toHaveBeenCalledWith(
@@ -233,7 +234,7 @@ describe("AuthController", () => {
       claims: () => ({ sub: "github|101", email: "Estudiante@EPN.EDU.EC" }),
     });
 
-    await controller.callback("code-5", "state-1", req, res);
+    await controller.callback("code-5", "state-1", "https://tenant.logto.app/oidc", req, res);
 
     expect(prisma.user.upsert).toHaveBeenCalled();
   });
