@@ -88,6 +88,20 @@
     startRotation = $rotation;
   }
 
+  // En gama baja, un touchscreen puede entregar pointermove muchas más
+  // veces por segundo de las que la pantalla en realidad repinta — cada
+  // evento aquí antes disparaba rotation.set()+dragPull.set() de inmediato,
+  // que a su vez reescribía el transform inline de CADA ícono del disco
+  // (categories.length × 2 escrituras de estilo) más el filtro
+  // drop-shadow de cada uno — mucho más trabajo del que un frame puede
+  // absorber en un celular flojo. rAF-batching colapsa todos los eventos
+  // que lleguen dentro de un mismo frame a UNA sola actualización — el
+  // dedo se sigue sintiendo 1:1 (nunca se pierde el gesto, solo se aplica
+  // como máximo una vez por frame en vez de N veces), pero el trabajo baja
+  // al ritmo real de repintado del dispositivo.
+  let pendingEvent: PointerEvent | null = null;
+  let frameScheduled = false;
+
   function onPointerMove(e: PointerEvent) {
     if (!dragging || locked) return;
     const dx = e.clientX - startX;
@@ -108,21 +122,36 @@
     }
 
     if (axisLocked === "x") {
-      const deltaDeg = (dx / R) * (180 / Math.PI) * 1.1;
-      rotation.set(startRotation + deltaDeg, { hard: true });
-      dragPull.set(Math.max(-1, Math.min(1, dx / 130)));
-
-      const now = performance.now();
-      const dt = now - lastT || 16;
-      velocity = ((e.clientX - lastX) / dt) * 16.6;
-      lastX = e.clientX;
-      lastT = now;
+      pendingEvent = e;
+      if (!frameScheduled) {
+        frameScheduled = true;
+        requestAnimationFrame(applyPendingMove);
+      }
     }
+  }
+
+  function applyPendingMove() {
+    frameScheduled = false;
+    const e = pendingEvent;
+    pendingEvent = null;
+    if (!e || !dragging) return;
+
+    const dx = e.clientX - startX;
+    const deltaDeg = (dx / R) * (180 / Math.PI) * 1.1;
+    rotation.set(startRotation + deltaDeg, { hard: true });
+    dragPull.set(Math.max(-1, Math.min(1, dx / 130)));
+
+    const now = performance.now();
+    const dt = now - lastT || 16;
+    velocity = ((e.clientX - lastX) / dt) * 16.6;
+    lastX = e.clientX;
+    lastT = now;
   }
 
   function onPointerUp() {
     if (!dragging) return;
     dragging = false;
+    pendingEvent = null;
     dragPull.set(0);
     if (axisLocked !== "x") return;
 
@@ -156,6 +185,7 @@
 
 <div
   class="stage"
+  class:dragging
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
@@ -297,6 +327,12 @@
     overflow: hidden;
     -webkit-mask-image: linear-gradient(to bottom, black 0%, black 82%, transparent 100%);
     mask-image: linear-gradient(to bottom, black 0%, black 82%, transparent 100%);
+    /* Le dice al navegador que nada de lo que pasa aquí adentro (el disco
+       girando, los íconos) puede afectar el layout/paint de fuera de esta
+       caja — evita que cada frame del arrastre dispare un chequeo de
+       repintado contra el resto de la página. Ganancia gratis, sin tocar
+       nada visual. */
+    contain: layout style paint;
   }
 
   .disc {
@@ -387,6 +423,11 @@
     width: 0;
     height: 0;
     cursor: pointer;
+    /* Promueve cada ícono a su propia capa de composición — el navegador
+       puede mover/escalar esa capa en la GPU sin tener que re-calcular el
+       drop-shadow desde cero en cada frame (que es lo caro), solo cuando
+       el contenido de adentro realmente cambia. */
+    will-change: transform;
   }
 
   .icon-counter {
@@ -398,10 +439,26 @@
     justify-content: center;
     transition: opacity 0.3s ease;
     filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+    will-change: transform;
   }
 
   .icon-spot.active .icon-counter {
     filter: drop-shadow(0 0 14px var(--accent-glow));
+  }
+
+  /* Mientras se arrastra activamente el disco es cuando más importa que
+     cada frame sea barato — drop-shadow y mix-blend-mode son de los
+     efectos CSS más caros de repintar en GPUs de gama baja porque casi
+     nunca pueden resolverse en la capa compuesta sola, hay que re-rasterizar.
+     Se apagan solo durante el gesto (imperceptible con el disco girando a
+     velocidad) y vuelven en cuanto se suelta — la función (seleccionar,
+     ver qué ícono está activo) no cambia en nada, solo el brillo decorativo. */
+  .stage.dragging .icon-counter {
+    filter: none;
+  }
+  .stage.dragging .metal-sheen {
+    mix-blend-mode: normal;
+    opacity: 0.4;
   }
 
   .dots {
