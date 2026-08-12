@@ -1,0 +1,83 @@
+# Despliegue en la instancia (Oracle Cloud Always Free, VM.Standard.A1.Flex
+# 2 OCPU/12GB, Oracle Linux 9 — ver docs/dominio/10-despliegue-vps-vercel.md
+# para la guía completa paso a paso). Diferencias clave contra
+# docker-compose.yml (desarrollo):
+#
+#   - backend usa el target "runtime" del Dockerfile (sin devDependencies,
+#     usuario no root, imagen ~5x más liviana) en vez de "builder".
+#   - Sin bind mounts de código — la imagen ya tiene el build compilado.
+#   - Postgres NO publica ningún puerto al host — ni siquiera a 127.0.0.1.
+#     Solo el propio backend, dentro de la red del compose, puede hablarle
+#     (hallazgo de la auditoría, docs/dominio/09-auditoria-pentest.md §2).
+#   - Caddy al frente: TLS automático (Let's Encrypt) + reverse proxy a
+#     backend:3000. Es la única pieza que publica un puerto al exterior.
+#
+# POSTGRES_PASSWORD sale de un .env en la raíz del repo, en el VPS (nunca
+# commiteado — ya cubierto por el .gitignore raíz). Mismo patrón que ya usa
+# backend/.env para el resto de secretos (COOKIE_SECRET, LOGTO_APP_SECRET):
+# archivo plano gitignored, sin añadir Docker secrets como mecanismo
+# aparte solo para esta variable — coherencia > "más seguro en el papel".
+# Debe ser EL MISMO valor que la contraseña dentro de DATABASE_URL en
+# backend/.env — no hay nada que las sincronice automáticamente.
+#
+# Uso en el VPS:
+#   cp backend/.env.example backend/.env   # y rellenar con secretos reales
+#   echo "POSTGRES_PASSWORD=<mismo valor que en backend/.env>" > .env
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml exec backend npx prisma migrate deploy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aeis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aeis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?debes definir POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: aeis_app
+    volumes:
+      - aeis-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aeis -d aeis_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Sin "ports:" — solo alcanzable desde otros servicios de este compose.
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    container_name: aeis-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "3000"
+    # Tampoco publica "ports:" al host — solo Caddy le habla, por la red
+    # interna del compose. Nadie externo llega a :3000 directamente.
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: aeis-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # ":Z" relabela el archivo para SELinux (Oracle Linux 9 corre con
+      # SELinux Enforcing) — sin esto, Caddy no puede leer el bind mount
+      # y falla con "permission denied" aunque los permisos Unix esten bien.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - aeis-caddy-data:/data
+      - aeis-caddy-config:/config
+    depends_on:
+      - backend
+
+volumes:
+  aeis-postgres-data:
+  aeis-caddy-data:
+  aeis-caddy-config:

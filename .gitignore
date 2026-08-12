@@ -11,6 +11,28 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+coverage
+
+# Artefactos de Playwright — vídeos/trazas/capturas de cada corrida, no
+# código fuente de los tests (e2e/*.spec.ts sí se commitea).
+test-results
+playwright-report
+blob-report
+
+# Llaves privadas y secretos — nunca deberian vivir dentro del repo, pero
+# esta capa extra evita un commit accidental si algun dia se prueba algo
+# aqui mismo (ver docs/dominio/11-hardening-servidor.md)
+*.key
+*.pem
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519_*
+id_ed25519-*
+!id_ed25519.pub
+!id_ed25519_*.pub
+!id_ed25519-*.pub
 
 # Editor directories and files
 .vscode/*

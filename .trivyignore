@@ -1,0 +1,25 @@
+# Excepciones documentadas — nunca un ignore en blanco. Mismo criterio que
+# el descarte razonado de p/nodejsscan en Semgrep
+# (docs/dominio/05-metodologia-devsecops-pipeline.md §3): cada entrada
+# tiene que justificar por qué NO es explotable en este código, no solo
+# "molesta el gate".
+#
+# Las tres CVEs de abajo viven dentro de /usr/local/lib/node_modules/npm/
+# — dependencias internas del propio binario `npm` que trae la imagen
+# base node:22-alpine, actualizado a la última versión disponible
+# (backend/Dockerfile) pero que aún así arrastra estas copias vendored sin
+# parchear río arriba. AEIS-APP nunca invoca `npm`/`npx` contra input de
+# usuario en runtime — solo se usa una vez, manualmente, para
+# `prisma migrate deploy` durante el despliegue. Ninguna es alcanzable
+# desde una petición HTTP real.
+
+# brace-expansion: ReDoS vía patrones glob maliciosos — el código de
+# AEIS-APP nunca pasa input de usuario a brace-expansion (es una
+# dependencia interna de npm, no algo que la app importe).
+CVE-2026-14257
+CVE-2026-69152
+
+# ip-address: parseo inconsistente de IPs — usado internamente por npm
+# para resolver registries, no por el código de AEIS-APP (que usa
+# `req.ip` de Express directamente, sin esta librería).
+CVE-2026-69192

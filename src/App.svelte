@@ -6,8 +6,36 @@
   import DesktopNav from "./lib/DesktopNav.svelte";
   import CategoryContent from "./lib/CategoryContent.svelte";
   import TypeText from "./lib/TypeText.svelte";
-  import { categories } from "./lib/data";
+  import { categories, type SecurityIndicator, type VenturePublic, type LockerStatus, type LockerUnit } from "./lib/data";
   import { riskForHour, themeForRisk } from "./lib/risk";
+  import {
+    fetchSecurityIndicators,
+    fetchVentures,
+    fetchLockers,
+    confirmPayphonePayment,
+    ApiError,
+    type LockerFromApi,
+  } from "./lib/api";
+  import { consumeAuthCallback, isAuthenticated, login, logout } from "./lib/auth.svelte";
+
+  // Si el backend acaba de redirigir tras un login (Logto → GitHub → Logto
+  // → backend → aquí), el access_token viene en location.hash — se
+  // consume una sola vez, al montar, antes de cualquier otra cosa.
+  consumeAuthCallback();
+  let authed = $state(isAuthenticated());
+
+  // auth.controller.ts redirige aquí con ?auth_error=... cuando Logto
+  // rechaza el intento (ej. credenciales placeholder en desarrollo, ver
+  // docs/dominio/10-despliegue-vps-vercel.md) — mensaje claro en vez de
+  // dejar que el usuario se quede mirando un 500 crudo en otra pestaña.
+  let authError = $state<string | null>(null);
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("auth_error") === "logto_not_configured") {
+      authError = "El login todavía no está disponible — Logto está pendiente de configurar.";
+      history.replaceState(null, "", window.location.pathname + window.location.hash);
+    }
+  }
 
   // The wheel is a touch gesture wearing a UI — dragging a disc with a
   // mouse (or worse, tabbing to it with a keyboard) is a parlor trick, not
@@ -38,8 +66,107 @@
   });
   const securityTheme = $derived(themeForRisk(riskForHour(currentHour)));
 
+  // Los indicadores de seguridad ya no viven hardcodeados en data.ts — se
+  // piden una vez al backend (mismo dato real, ahora en un solo lugar:
+  // backend/src/security/indicators.ts). Si el backend no responde, la
+  // sección de indicadores muestra el estado de error explícito de
+  // CategoryContent en vez de romper — el mapa (SecurityMap) no depende de
+  // este fetch en absoluto.
+  let securityIndicators = $state<SecurityIndicator[] | null>(null);
+  let securityIndicatorsError = $state(false);
+  $effect(() => {
+    fetchSecurityIndicators()
+      .then((data) => {
+        securityIndicators = data;
+      })
+      .catch(() => {
+        securityIndicatorsError = true;
+      });
+  });
+
+  // Directorio de emprendimientos — mismo patrón que los indicadores de
+  // seguridad: se pide una vez al backend, con estado de error explícito
+  // en vez de dejar la sección en blanco sin explicación.
+  let ventures = $state<VenturePublic[] | null>(null);
+  let venturesError = $state(false);
+  $effect(() => {
+    fetchVentures()
+      .then((data) => {
+        ventures = data;
+      })
+      .catch(() => {
+        venturesError = true;
+      });
+  });
+
+  // Casilleros reales — reemplaza los 9 casilleros MOCK que generaba
+  // makeLockers() en data.ts. Mismo patrón de error explícito que
+  // security/ventures arriba. El backend usa AVAILABLE/RESERVED/RENTED
+  // (vocabulario de negocio); el frontend usa available/reserved/occupied
+  // (vocabulario ya establecido en LockerStatus) — RENTED se traduce a
+  // "occupied" porque para el estudiante que mira el mapa, "alguien ya lo
+  // tiene" es lo mismo esté RESERVED-transferencia-pendiente o RENTED.
+  const LOCKER_STATUS_MAP: Record<LockerFromApi["status"], LockerStatus> = {
+    AVAILABLE: "available",
+    RESERVED: "reserved",
+    RENTED: "occupied",
+  };
+  let lockers = $state<LockerUnit[] | null>(null);
+  let lockersError = $state(false);
+  function loadLockers() {
+    fetchLockers()
+      .then((data) => {
+        lockers = data.map((l) => ({
+          id: l.id,
+          number: l.code,
+          zone: l.zone,
+          status: LOCKER_STATUS_MAP[l.status],
+        }));
+        lockersError = false;
+      })
+      .catch(() => {
+        lockersError = true;
+      });
+  }
+  $effect(loadLockers);
+
+  // Tras pagar en el widget de PayPhone, la Cajita de Pagos redirige la
+  // página COMPLETA (no una navegación de SPA) de vuelta con
+  // ?id=&clientTransactionId= en la URL — configurado una sola vez en
+  // Payphone Developer, no por transacción (ver docs oficiales de
+  // PayPhone y backend/src/shared/payment/payphone.client.ts). Se captura
+  // acá, una vez al montar, y se re-confirma contra el backend (que a su
+  // vez re-confirma contra la API real de PayPhone) antes de dar el pago
+  // por bueno — nunca basta con que el navegador "diga" que volvió con
+  // esos parámetros.
+  let payphoneBanner = $state<{ ok: boolean; text: string } | null>(null);
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    const ppId = params.get("id");
+    const ppClientTxId = params.get("clientTransactionId");
+    if (ppId && ppClientTxId) {
+      history.replaceState(null, "", window.location.pathname + window.location.hash);
+      confirmPayphonePayment(Number(ppId), ppClientTxId)
+        .then(() => {
+          payphoneBanner = { ok: true, text: "¡Pago con PayPhone confirmado! Tu casillero ya es tuyo." };
+          loadLockers();
+        })
+        .catch((err) => {
+          payphoneBanner = {
+            ok: false,
+            text: err instanceof ApiError ? err.message : "No se pudo confirmar el pago con PayPhone.",
+          };
+        });
+    }
+  }
+
   const displayCategories = $derived(
-    categories.map((c) => (c.id === "security" ? { ...c, theme: securityTheme } : c))
+    categories.map((c) => {
+      if (c.id === "security") return { ...c, theme: securityTheme, security: securityIndicators ?? undefined };
+      if (c.id === "community") return { ...c, ventures: ventures ?? undefined };
+      if (c.id === "lockers" && lockers) return { ...c, lockers };
+      return c;
+    })
   );
 
   const activeCategory = $derived(displayCategories[selectedIndex]);
@@ -92,7 +219,28 @@
       <span class="brand-dot"></span>
       <span class="brand-name">AEIS</span>
       <img src="/aso.png" alt="AEIS" class="brand-mark" />
+      <button
+        class="auth-button"
+        onclick={() => (authed ? logout() : login())}
+        aria-label={authed ? "Cerrar sesión" : "Iniciar sesión"}
+      >
+        {authed ? "Cerrar sesión" : "Iniciar sesión"}
+      </button>
     </div>
+
+    {#if authError}
+      <div class="auth-error-banner" role="alert">
+        <span>{authError}</span>
+        <button onclick={() => (authError = null)} aria-label="Cerrar aviso">×</button>
+      </div>
+    {/if}
+
+    {#if payphoneBanner}
+      <div class="auth-error-banner" class:ok={payphoneBanner.ok} role="alert">
+        <span>{payphoneBanner.text}</span>
+        <button onclick={() => (payphoneBanner = null)} aria-label="Cerrar aviso">×</button>
+      </div>
+    {/if}
 
     {#if isDesktop}
       <main class="desktop-main">
@@ -123,6 +271,10 @@
                 category={activeCategory}
                 {securityCategory}
                 securityRisk={riskForHour(currentHour)}
+                {securityIndicatorsError}
+                {venturesError}
+                {lockersError}
+                onlockerrented={loadLockers}
                 wide
               />
             </div>
@@ -166,6 +318,10 @@
         bind:open={sheetOpen}
         {securityCategory}
         securityRisk={riskForHour(currentHour)}
+        {securityIndicatorsError}
+        {venturesError}
+        {lockersError}
+        onlockerrented={loadLockers}
       />
     {/if}
 
@@ -214,6 +370,56 @@
     object-fit: contain;
     margin-left: auto;
     filter: drop-shadow(0 0 6px var(--accent-glow));
+  }
+
+  .auth-button {
+    margin-left: 10px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ink-1);
+    font-family: var(--font-display, inherit);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .auth-button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .auth-error-banner {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 14px 4px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #ffb4b4;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .auth-error-banner button {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+  }
+
+  .auth-error-banner.ok {
+    background: rgba(33, 224, 160, 0.14);
+    border-color: rgba(33, 224, 160, 0.35);
+    color: var(--accent, #21e0a0);
   }
 
   .brand-name {

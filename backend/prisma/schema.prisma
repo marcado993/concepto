@@ -1,0 +1,202 @@
+// AEIS-APP — esquema de datos
+//
+// Principio rector (docs/dominio/05-metodologia-devsecops-pipeline.md §3.1):
+// "ningún dato desacoplado" — todo pago, alquiler y aportación tiene una
+// llave foránea NOT NULL real a su dueño y a su contexto de negocio. La
+// base de datos rechaza el registro huérfano aunque la app tenga un bug;
+// esto es lo que habría hecho visible, no oculto, el déficit de caja de
+// 01-analisis-negocio-mision.md §2.1 (277 registros → 91 concretados, sin
+// rastro de los otros 186).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ESTUDIANTE
+  PRESIDENTE
+  DIRECTOR
+}
+
+enum LockerStatus {
+  AVAILABLE
+  RESERVED // pago iniciado, esperando confirmación (transferencia+OCR o PayPhone pendiente)
+  RENTED
+}
+
+enum PaymentMethod {
+  PAYPHONE
+  TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model User {
+  id         String   @id @default(uuid())
+  logtoSub   String   @unique // subject claim del JWT de Logto — nunca la cédula como PK (ver aeis-app/docs §6)
+  uniqueCode String   @unique // código único de estudiante EPN
+  fullName   String
+  role       Role     @default(ESTUDIANTE)
+  createdAt  DateTime @default(now())
+
+  payments      Payment[]
+  rentals       LockerRental[]
+  subscriptions Subscription[]
+  auditLogs     AuditLog[] @relation("AuditActor")
+  ventures      Venture[]
+
+  @@map("users")
+}
+
+enum VentureStatus {
+  PENDING // recién enviado, no visible en el directorio público todavía
+  APPROVED
+  REJECTED
+}
+
+// Emprendimientos — reemplaza el dominio "Comunidad" del prototipo original
+// (docs/dominio/01-analisis-negocio-mision.md §4): vitrina/directorio +
+// contacto por WhatsApp, SIN chat propio ni pago in-app (ver
+// aeis-app/docs/arquitectura-nuevos-modulos.md §3.4, diseño reutilizado
+// tal cual). El número de WhatsApp no se expone crudo al público — el
+// controller arma el link wa.me server-side (VentureController).
+model Venture {
+  id              String        @id @default(uuid())
+  ownerId         String
+  owner           User          @relation(fields: [ownerId], references: [id])
+  name            String
+  description     String
+  category        String
+  photoUrl        String?
+  whatsappNumber  String
+  status          VentureStatus @default(PENDING)
+  createdAt       DateTime      @default(now())
+
+  @@index([status])
+  @@map("ventures")
+}
+
+model Period {
+  id        String   @id @default(uuid())
+  label     String   @unique // ej. "2026-A"
+  startsAt  DateTime
+  endsAt    DateTime
+
+  rentals            LockerRental[]
+  subscriptionTiers  SubscriptionTier[]
+  subscriptions      Subscription[]
+
+  @@map("periods")
+}
+
+model Locker {
+  id     String       @id @default(uuid())
+  code   String       @unique // ej. "A07"
+  zone   String
+  status LockerStatus @default(AVAILABLE)
+
+  rentals LockerRental[]
+
+  @@map("lockers")
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  method      PaymentMethod
+  amount      Decimal       @db.Decimal(10, 2)
+  currency    String        @default("USD")
+  status      PaymentStatus @default(PENDING)
+  providerRef String? // id de transacción de PayPhone, o nombre de archivo del comprobante
+  createdAt   DateTime      @default(now())
+  confirmedAt DateTime?
+
+  rental       LockerRental?
+  subscription Subscription?
+
+  @@map("payments")
+}
+
+model LockerRental {
+  id        String   @id @default(uuid())
+  lockerId  String
+  locker    Locker   @relation(fields: [lockerId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  periodId  String
+  period    Period   @relation(fields: [periodId], references: [id])
+  paymentId String   @unique
+  payment   Payment  @relation(fields: [paymentId], references: [id])
+  createdAt DateTime @default(now())
+
+  // Un mismo casillero no puede tener dos alquileres activos en el mismo
+  // periodo — es la restricción de base de datos detrás del escenario BDD
+  // "condición de carrera" de 05-metodologia-devsecops-pipeline.md §2.
+  @@unique([lockerId, periodId])
+  @@map("locker_rentals")
+}
+
+model SubscriptionTier {
+  id       String   @id @default(uuid())
+  periodId String
+  period   Period   @relation(fields: [periodId], references: [id])
+  name     String // "Bronce" | "Platino" | "Pantera" — ver nota de montos abajo
+  amount   Decimal  @db.Decimal(10, 2)
+  benefits Json // estructura libre: [{ "type": "descuento_casillero", "value": 0 }, ...]
+
+  subscriptions Subscription[]
+
+  // El mismo nombre de tier no se repite dentro de un periodo, pero SÍ puede
+  // tener montos/beneficios distintos entre periodos — el histórico real ya
+  // cambió de esquema una vez (03-analisis-financiero-costos.md §3).
+  @@unique([periodId, name])
+  @@map("subscription_tiers")
+}
+
+model Subscription {
+  id        String              @id @default(uuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id])
+  tierId    String
+  tier      SubscriptionTier    @relation(fields: [tierId], references: [id])
+  periodId  String
+  period    Period              @relation(fields: [periodId], references: [id])
+  paymentId String              @unique
+  payment   Payment             @relation(fields: [paymentId], references: [id])
+  status    SubscriptionStatus  @default(ACTIVE)
+  createdAt DateTime            @default(now())
+
+  @@unique([userId, periodId]) // un aportante tiene un solo tier activo por periodo
+  @@map("subscriptions")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
+  action     String // ej. "locker.rental.created", "subscription.created"
+  entityType String // ej. "LockerRental"
+  entityId   String
+  ipAddress  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}

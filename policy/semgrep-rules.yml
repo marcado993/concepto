@@ -1,0 +1,127 @@
+# Policy as Code — AEIS-APP
+#
+# Estas reglas son la política de seguridad del proyecto expresada como
+# código versionado (no un documento que alguien tiene que recordar leer).
+# El pipeline (.github/workflows/devsecops.yml, job "policy-and-sast") las
+# ejecuta en cada PR junto al ruleset público p/owasp-top-ten de Semgrep.
+#
+# Ver docs/dominio/05-metodologia-devsecops-pipeline.md para la justificación
+# de cada regla contra el hallazgo de negocio y el OWASP Top 10.
+#
+# Convención de severidad: ERROR bloquea el merge (policy-gate falla),
+# WARNING queda visible en la pestaña Security pero no bloquea.
+
+rules:
+  # -------------------------------------------------------------
+  # Activas hoy — aplican al frontend Svelte/TS ya existente
+  # -------------------------------------------------------------
+
+  - id: no-eval-or-dynamic-function
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      No usar eval() ni new Function() con contenido dinámico — ejecución de
+      código arbitrario, prohibido por diseño (OWASP A03: Injection).
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+
+  - id: no-unsafe-svelte-html
+    languages: [generic]
+    paths:
+      include: ["*.svelte"]
+    severity: ERROR
+    message: >
+      {@html ...} inyecta HTML sin sanitizar — XSS directo (OWASP A03) si el
+      contenido viene de datos de usuario o de un backend no confiable.
+      Sanitizar con DOMPurify (u equivalente) antes de usar {@html}, o usar
+      interpolación normal de texto si no se necesita HTML real.
+    pattern-regex: '\{@html\s'
+
+  - id: no-disabled-tls-verification
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      Deshabilitar la verificación TLS anula la protección contra
+      man-in-the-middle (OWASP A02: Cryptographic Failures). No aceptable ni
+      siquiera en desarrollo — usar certificados locales válidos.
+    patterns:
+      - pattern-either:
+          - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+          - pattern: $OPTS.rejectUnauthorized = false
+
+  - id: no-console-of-sensitive-fields
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      Posible dato sensible (contraseña, token, cédula/código único, dato
+      biométrico) enviado a console.* — en producción esto termina en logs
+      del servidor sin control de acceso (OWASP A09: Security Logging and
+      Monitoring Failures, y directamente el hallazgo de auditoría de
+      01-analisis-negocio-mision.md §2.1: los logs deben ser confiables, no
+      una fuga).
+    pattern-regex: 'console\.(log|debug|info|warn|error)\([^)]*\b(password|token|secret|cedula|c[eé]dula|biometric|selfie|apiKey|api_key)\b'
+
+  # -------------------------------------------------------------
+  # Backend NestJS — validadas contra el código real de locker/ y
+  # subscription/ (2026-08-10): la primera versión de estas reglas asumía
+  # @UseGuards(...) por endpoint y matching por texto de la ruta ("rent" no
+  # contiene "locker"), y con el código real puesto en frente no disparó
+  # nada — falso negativo silencioso, el peor tipo de regla de policy as
+  # code. Corregidas para matchear por carpeta del dominio y exigir
+  # @Roles(...), que es el mecanismo real usado aquí (guard global +
+  # metadata de rol, ver shared/auth/roles.guard.ts).
+  # -------------------------------------------------------------
+
+  - id: money-endpoint-requires-roles-decorator
+    languages: [typescript]
+    severity: ERROR
+    paths:
+      include: ["**/locker/**", "**/subscription/**"]
+    message: >
+      Endpoint que muta casilleros/aportaciones sin @Roles(...) — el guard
+      global (shared/auth/roles.guard.ts) deja pasar a CUALQUIER usuario
+      autenticado cuando no hay metadata de rol declarada; para rutas de
+      dinero eso equivale a no tener control de acceso. Es precisamente el
+      tipo de vacío que dejó sin explicar la brecha de 277 registros → 91
+      casilleros concretados (01-analisis-negocio-mision.md §2.1).
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @Post(...)
+              $METHOD(...) { ... }
+          - pattern: |
+              @Patch(...)
+              $METHOD(...) { ... }
+      - pattern-not-inside: |
+          @Roles(...)
+          @Post(...)
+          $METHOD(...) { ... }
+      - pattern-not-inside: |
+          @Roles(...)
+          @Patch(...)
+          $METHOD(...) { ... }
+
+  - id: money-mutation-must-call-audit-service
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include: ["**/locker/**", "**/subscription/**"]
+      exclude: ["**/*.spec.ts", "**/*.controller.ts"]
+    message: >
+      Método de servicio en locker/ o subscription/ que no menciona
+      AuditService/audit.record — todo cambio de estado en casilleros o
+      aportaciones debe dejar rastro (quién, qué, cuándo, por qué medio),
+      no solo actualizar la tabla. Si este método de verdad no muta nada
+      (una consulta de solo lectura), está bien que no aplique — revisar
+      caso por caso, por eso es WARNING y no ERROR.
+    patterns:
+      - pattern: |
+          class $SERVICE {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: $SERVICE
+          regex: ".*Service$"
+      - pattern-not-regex: "AuditService|audit\\.record"

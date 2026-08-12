@@ -1,0 +1,339 @@
+name: DevSecOps
+
+# Pipeline de referencia para AEIS-APP, alineado con
+# docs/dominio/05-metodologia-devsecops-pipeline.md.
+#
+# Orden deliberado: gates baratos y rápidos primero (lint, tipos, tests,
+# secretos) para fallar rápido; escaneos más pesados (dependencias,
+# contenedores, SAST) después. Frontend (Svelte + Vite, raíz del repo,
+# despliega a Vercel) y backend (NestJS, backend/, despliega a un VPS vía
+# Docker) son dos package.json separados a propósito — monolito modular en
+# código, desacoplado en despliegue (ver docs/dominio/01 §5). Los jobs de
+# secretos/SAST/dependencias/SBOM escanean el repo completo; los de
+# lint-test-build corren uno por proyecto.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  security-events: write # requerido para subir resultados SARIF a la pestaña Security
+
+jobs:
+  # ---------------------------------------------------------------
+  # 1a. TDD/BDD gate — frontend (Svelte + Vite + Vitest)
+  # ---------------------------------------------------------------
+  frontend-build-and-test:
+    name: Frontend · Lint · Tipos · Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Type check + svelte-check
+        run: npm run check
+      - name: Tests unitarios (TDD)
+        run: npm run test
+      - name: Build de producción
+        run: npm run build
+
+  # ---------------------------------------------------------------
+  # 1b. TDD/BDD gate — backend (NestJS + Prisma + Jest)
+  # ---------------------------------------------------------------
+  backend-build-and-test:
+    name: Backend · Tests (TDD/BDD) · Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Prisma generate
+        run: npx prisma generate
+      - name: Tests unitarios (TDD/BDD — Given/When/Then)
+        run: npm test
+      - name: Build de producción
+        run: npm run build
+
+  # ---------------------------------------------------------------
+  # 2. Escaneo de secretos — Gitleaks
+  # ---------------------------------------------------------------
+  secret-scan:
+    name: Escaneo de secretos (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # Gitleaks necesita el historial completo, no solo el último commit
+      - uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------
+  # 3a. Policy as Code + SAST — Semgrep, cadena completa de rulesets para
+  #     cubrir las 10 categorías de OWASP Top 10 2021, no solo un paquete
+  #     genérico. Ver docs/dominio/05-metodologia-devsecops-pipeline.md §3
+  #     para la matriz categoría → regla/paquete, verificada localmente
+  #     antes de comprometerse en el pipeline (los 5 paquetes se probaron
+  #     con `semgrep scan` real, no se asumió que existían).
+  # ---------------------------------------------------------------
+  policy-and-sast:
+    name: Policy as Code + SAST (Semgrep — OWASP Top 10 completo)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Semgrep — policy propia + 4 paquetes OWASP/seguridad
+        # p/nodejsscan se probó y se descartó a propósito: sus reglas
+        # "ajinabraham.njsscan.good.*" no son vulnerabilidades — CONFIRMAN
+        # buenas prácticas (ej. "good_helmet_checks": helmet está bien
+        # configurado) y Semgrep las reporta igual como "finding", lo que
+        # bloquearía el gate por código correcto. Verificado localmente
+        # (docs/dominio/05-metodologia-devsecops-pipeline.md §3): con estos
+        # 4 paquetes + policy propia, 0 falsos positivos contra el código
+        # real, 247 reglas ejecutadas con nodejsscan (6 "good"), 134 sin él
+        # (0 findings, limpio de verdad).
+        run: |
+          semgrep scan \
+            --config=policy/semgrep-rules.yml \
+            --config=p/owasp-top-ten \
+            --config=p/security-audit \
+            --config=p/secrets \
+            --config=p/typescript \
+            --error \
+            --sarif --output=semgrep.sarif
+      - name: Subir resultados a Security tab
+        uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  # ---------------------------------------------------------------
+  # 3b. SAST independiente — CodeQL (motor de GitHub, distinto al de
+  #     Semgrep). Defensa en profundidad real: dos motores de análisis
+  #     estático con heurísticas distintas encuentran cosas distintas: un
+  #     patrón que Semgrep no modela puede caer en el data-flow tracking de
+  #     CodeQL, y viceversa. Gratis en repos públicos, cero configuración
+  #     adicional más allá de este job.
+  # ---------------------------------------------------------------
+  codeql-analysis:
+    name: SAST independiente (CodeQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: github/codeql-action/init@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
+        with:
+          category: codeql
+
+  # ---------------------------------------------------------------
+  # 4. Dependencias y CVEs — OSV-Scanner. La acción v1 (paso directo) fue
+  #    descontinuada por el propio proyecto en favor del workflow
+  #    reusable — "Not intended to be used directly" según su propio
+  #    action.yml a partir de v2. Se llama distinto (job-level `uses:`,
+  #    no step-level), por eso requiere permissions explícitos aquí.
+  # ---------------------------------------------------------------
+  dependency-scan:
+    name: Dependencias y CVEs (OSV-Scanner)
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
+    with:
+      scan-args: |-
+        --recursive
+        --skip-git
+        ./
+
+  # ---------------------------------------------------------------
+  # 5a. Filesystem — Trivy sobre todo el repo (frontend + backend fuente)
+  # ---------------------------------------------------------------
+  trivy-fs-scan:
+    name: Escaneo de filesystem (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Mismo patrón que trivy-image-scan: "table" es el gate real, el
+      # SARIF de abajo es solo para la pestaña Security y no bloquea —
+      # trivy-action tiene un bug confirmado generando SARIF con 0
+      # hallazgos que produce exit code 1 espurio.
+      - name: Trivy fs scan (gate)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          format: "table"
+      - name: Trivy fs scan (SARIF para Security tab, no bloquea)
+        if: always()
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          format: "sarif"
+          output: "trivy-fs.sarif"
+      - uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  # ---------------------------------------------------------------
+  # 5b. Imagen de contenedor del backend — Trivy sobre la imagen que
+  #     realmente correría en el VPS (backend/Dockerfile). Este es el paso
+  #     que docs/dominio/05 §6 dejó pendiente "para cuando exista el
+  #     Dockerfile" — ya existe.
+  # ---------------------------------------------------------------
+  trivy-image-scan:
+    name: Escaneo de imagen del backend (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build imagen backend
+        run: docker build -t aeis-app-backend:ci ./backend
+      # Gate real — formato tabla, es el que decide si el job falla.
+      # Diagnosticado: aquasecurity/trivy-action tiene un bug de verdad
+      # generando SARIF cuando el resultado son 0 hallazgos (exit code 1
+      # espurio pese a tabla limpia, confirmado corriendo ambos formatos
+      # en paralelo contra la misma imagen). Por eso el gate usa "table",
+      # no "sarif" — el SARIF de abajo es solo para la pestaña Security,
+      # nunca decide pass/fail.
+      - name: Trivy image scan (gate)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: "aeis-app-backend:ci"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          format: "table"
+          trivyignores: ".trivyignore"
+      - name: Trivy image scan (SARIF para Security tab, no bloquea)
+        if: always()
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: "aeis-app-backend:ci"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          format: "sarif"
+          output: "trivy-image.sarif"
+          trivyignores: ".trivyignore"
+      - uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+  # ---------------------------------------------------------------
+  # 6. SBOM — inventario de dependencias (CycloneDX) de cada proyecto, se
+  #    archiva como artefacto de cada corrida para trazabilidad de supply
+  #    chain (frontend y backend por separado — son dos árboles de
+  #    dependencias distintos).
+  # ---------------------------------------------------------------
+  sbom:
+    name: Generar SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      # cyclonedx-npm corre "npm ls" internamente para resolver el árbol de
+      # dependencias — sin node_modules instalado, npm ls falla con
+      # ELSPROBLEMS ("missing" para cada paquete) y el SBOM sale vacío/roto.
+      - run: npm ci
+      - run: npx @cyclonedx/cyclonedx-npm --output-file sbom-frontend.json
+      - run: npm ci
+        working-directory: backend
+      - run: npx @cyclonedx/cyclonedx-npm --output-file sbom-backend.json
+        working-directory: backend
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: |
+            sbom-frontend.json
+            backend/sbom-backend.json
+          retention-days: 90
+
+  # ---------------------------------------------------------------
+  # 7. Policy gate — punto único que decide si el PR puede fusionarse.
+  #    Configurar como "required status check" en la protección de rama
+  #    (branch protection) para que sea la puerta real, no solo un reporte.
+  # ---------------------------------------------------------------
+  policy-gate:
+    name: Policy Gate
+    needs:
+      [
+        frontend-build-and-test,
+        backend-build-and-test,
+        secret-scan,
+        policy-and-sast,
+        codeql-analysis,
+        dependency-scan,
+        trivy-fs-scan,
+        trivy-image-scan,
+      ]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Todos los gates de DevSecOps pasaron — PR listo para revisión humana."
+
+  # ---------------------------------------------------------------
+  # 8. Deploy automático — SOLO en push a main (nunca en pull_request, ni
+  #    siquiera de un fork propio) y SOLO si policy-gate ya paso. El
+  #    servidor no tiene SSH publico (docs/dominio/11-hardening-servidor.md
+  #    §1) — el runner se une al tailnet con una authkey efimera/reusable
+  #    (se limpia sola al desconectar, no se acumulan nodos fantasma de
+  #    corridas viejas) y entra por la IP privada de Tailscale, nunca por
+  #    la IP publica. La llave SSH (DEPLOY_SSH_KEY) es una dedicada solo
+  #    para CI, generada aparte — nunca la llave personal del sponsor.
+  #    Deliberadamente sin acciones de terceros para el paso de SSH (menos
+  #    superficie de supply chain): solo el cliente `ssh` real dentro del
+  #    runner, la unica accion de terceros es la oficial de Tailscale.
+  # ---------------------------------------------------------------
+  deploy:
+    name: Deploy a produccion (Oracle Cloud)
+    needs: [policy-gate]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conectar al tailnet
+        uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade # v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+      - name: Desplegar por SSH (via Tailscale, no IP publica)
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_TS_IP: "100.74.53.122"
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new opc@"$SERVER_TS_IP" '
+            set -e
+            cd ~/aeis-app
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+            sudo docker compose -f docker-compose.prod.yml up -d --build
+            sudo docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy
+          '

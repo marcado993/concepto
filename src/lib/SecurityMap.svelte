@@ -5,6 +5,7 @@
   // navega muy rápido antes de que el mapa haya terminado de crear).
   import * as maplibregl from "maplibre-gl";
   import { warmMap, warmShell, mapLoaded, onWarmReady, state as warmState } from "./mapWarm";
+  import { fetchSecurityMapData, type GeoJSONFeatureCollection } from "./api";
 
   interface Props {
     risk?: number; // 0..1, current hour's illustrative risk level
@@ -12,86 +13,36 @@
     onready?: () => void;
   }
 
-  type FeatureCollection = {
-    type: "FeatureCollection";
-    features: Array<{
-      type: "Feature";
-      properties: Record<string, string>;
-      geometry: { type: "Point"; coordinates: [number, number] };
-    }>;
-  };
-
   let { risk = 0.5, accent = "#f5b942", onready }: Props = $props();
 
   let container: HTMLDivElement | undefined = $state();
   let ready = $state(false);
 
-  const PEAK_INCIDENTS = 14842;
-  const ZONES = [
-    { name: "Centro Histórico", lng: -78.5125, lat: -0.2201, incidents: 14842, estimated: false },
-    { name: "La Mariscal",      lng: -78.4863, lat: -0.1985, incidents: 7444,  estimated: false },
-    { name: "Itchimbía",        lng: -78.503,  lat: -0.2168, incidents: 6200,  estimated: true  },
-    { name: "La Floresta (EPN)",lng: -78.4886, lat: -0.2073, incidents: 4100,  estimated: true  },
-    { name: "El Ejido / La Carolina", lng: -78.493, lat: -0.187, incidents: 3600, estimated: true },
-    { name: "González Suárez",  lng: -78.479,  lat: -0.204,  incidents: 2400,  estimated: true  },
-  ];
+  // Las 6 zonas, el conteo de incidentes y las fórmulas de riesgo YA NO
+  // viven aquí — se pidieron al backend (backend/src/security/map-data.ts)
+  // tras auditar que este componente las computaba en el cliente en cada
+  // render. Ver docs/dominio/05-metodologia-devsecops-pipeline.md §7 y
+  // App.svelte para el mismo cambio en los indicadores.
+  const EMPTY_FC: GeoJSONFeatureCollection = { type: "FeatureCollection", features: [] };
 
-  function baseFor(z: { incidents: number }) {
-    return Math.min(1, z.incidents / PEAK_INCIDENTS);
-  }
-
-  function combinedRisk(base: number, riskFactor: number) {
-    return Math.min(1, base * 0.62 + riskFactor * 0.38);
-  }
-
-  function riskColor(r: number) {
-    if (r > 0.66) return "#ef4444";
-    if (r > 0.4)  return "#f5b942";
-    return "#21e0a0";
-  }
-
-  function pointsGeoJSON(riskFactor: number): FeatureCollection {
-    const features: FeatureCollection["features"] = [];
-    for (const z of ZONES) {
-      const c = combinedRisk(baseFor(z), riskFactor);
-      const count = Math.round(14 + c * 70);
-      for (let i = 0; i < count; i++) {
-        features.push({
-          type: "Feature",
-          properties: {},
-          geometry: {
-            type: "Point",
-            coordinates: [z.lng + (Math.random() - 0.5) * 0.006, z.lat + (Math.random() - 0.5) * 0.006],
-          },
-        });
-      }
+  /** Pide al backend el heatmap+etiquetas para el `riskFactor` dado y actualiza
+   *  las fuentes del mapa si ya existen. No lanza — si el backend no responde,
+   *  el mapa se queda con los últimos datos que sí llegaron (o vacío). */
+  async function syncMapData(m: maplibregl.Map, riskFactor: number) {
+    try {
+      const { points, labels } = await fetchSecurityMapData(riskFactor);
+      (m.getSource("risk-points") as maplibregl.GeoJSONSource | undefined)?.setData(points);
+      (m.getSource("zone-labels") as maplibregl.GeoJSONSource | undefined)?.setData(labels);
+    } catch (err) {
+      console.warn("SecurityMap: no se pudo cargar el mapa de seguridad del backend", err);
     }
-    return { type: "FeatureCollection", features };
   }
 
-  function labelsGeoJSON(riskFactor: number): FeatureCollection {
-    return {
-      type: "FeatureCollection",
-      features: ZONES.map((z) => {
-        const c = combinedRisk(baseFor(z), riskFactor);
-        const count = z.incidents.toLocaleString("es-EC");
-        return {
-          type: "Feature",
-          properties: {
-            name: z.name,
-            detail: z.estimated ? `~${count} inc. (est.)` : `${count} inc. · 2025`,
-            color: riskColor(c),
-          },
-          geometry: { type: "Point", coordinates: [z.lng, z.lat] },
-        };
-      }),
-    };
-  }
-
-  /** Agrega sources/layers si es la primera vez, actualiza datos si ya existen. */
+  /** Agrega sources/layers si es la primera vez (vacías — se llenan en
+   *  syncMapData), o no hace nada si ya existen (solo syncMapData las toca). */
   function setupSources(m: maplibregl.Map) {
     if (!m.getSource("risk-points")) {
-      m.addSource("risk-points", { type: "geojson", data: pointsGeoJSON(risk) });
+      m.addSource("risk-points", { type: "geojson", data: EMPTY_FC });
       m.addLayer({
         id: "risk-heat",
         type: "heatmap",
@@ -112,7 +63,7 @@
           ],
         },
       });
-      m.addSource("zone-labels", { type: "geojson", data: labelsGeoJSON(risk) });
+      m.addSource("zone-labels", { type: "geojson", data: EMPTY_FC });
       m.addLayer({
         id: "zone-dot",
         type: "circle",
@@ -142,17 +93,18 @@
           "text-halo-width": 1.4,
         },
       });
-    } else {
-      // Remount: solo sincroniza datos
-      (m.getSource("risk-points") as maplibregl.GeoJSONSource).setData(pointsGeoJSON(risk));
-      (m.getSource("zone-labels") as maplibregl.GeoJSONSource).setData(labelsGeoJSON(risk));
     }
-
     if (!warmState.navControlAdded) {
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
       warmState.navControlAdded = true;
     }
 
+    // NO llamar syncMapData() aquí — poner `ready = true` ya dispara el
+    // $effect de abajo (lee `ready`), que llama a syncMapData() una vez.
+    // Antes se llamaba desde los dos lados: cada montaje pedía el heatmap
+    // al backend DOS veces y reconstruía la capa WebGL dos veces seguidas
+    // (hallazgo de auditoría de rendimiento — un `setData()` de heatmap no
+    // es gratis, son ~500 puntos re-tesselados en GPU cada vez).
     ready = true;
     onready?.();
   }
@@ -221,8 +173,7 @@
   $effect(() => {
     const r = risk;
     if (!ready || !warmMap) return;
-    (warmMap.getSource("risk-points") as maplibregl.GeoJSONSource | undefined)?.setData(pointsGeoJSON(r));
-    (warmMap.getSource("zone-labels") as maplibregl.GeoJSONSource | undefined)?.setData(labelsGeoJSON(r));
+    void syncMapData(warmMap, r);
   });
 </script>
 

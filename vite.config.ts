@@ -1,4 +1,8 @@
-import { defineConfig } from 'vite'
+// defineConfig from 'vitest/config', not 'vite' — the plain Vite one
+// doesn't type the `test` property below, which made `tsc` (npm run check)
+// fail even though Vitest itself ran fine. vitest/config re-exports a
+// version merged with Vitest's config types.
+import { defineConfig } from 'vitest/config'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 
 // https://vite.dev/config/
@@ -12,5 +16,11 @@ export default defineConfig({
   // that worker path resolves correctly.
   optimizeDeps: {
     exclude: ['maplibre-gl'],
+  },
+  test: {
+    // TDD unit tests (fast, no browser) — e2e/BDD-flavored specs stay in
+    // Playwright (e2e/*.spec.ts), which already covers user-facing flows.
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
 })
