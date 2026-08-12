@@ -103,12 +103,24 @@ export class LogtoOidcClient implements OnModuleInit {
     });
   }
 
-  async exchangeCode(params: { code: string; state: string; expectedState: string; codeVerifier: string }) {
+  async exchangeCode(params: {
+    code: string;
+    state: string;
+    iss?: string;
+    expectedState: string;
+    codeVerifier: string;
+  }) {
     this.assertReady();
     const redirectUri = this.config.getOrThrow<string>("LOGTO_REDIRECT_URI");
+    // openid-client valida el parámetro `iss` del callback (RFC 9207,
+    // protección anti mix-up) cuando el issuer lo soporta — Logto SIEMPRE lo
+    // manda en la URL real de vuelta, pero si no se lo reenviamos acá
+    // explícitamente, openid-client lo trata como "faltante" y lanza RPError
+    // aunque el login haya sido legítimo (hallazgo en producción: rompía
+    // TODO login, GitHub y correo, no solo uno de los dos conectores).
     const tokenSet = await this.client.callback(
       redirectUri,
-      { code: params.code, state: params.state },
+      { code: params.code, state: params.state, iss: params.iss },
       { code_verifier: params.codeVerifier, state: params.expectedState }
     );
     if (!tokenSet.access_token || !tokenSet.claims().sub) {

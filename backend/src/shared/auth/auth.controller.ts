@@ -141,6 +141,7 @@ export class AuthController {
   async callback(
     @Query("code") code: string,
     @Query("state") state: string,
+    @Query("iss") iss: string | undefined,
     @Req() req: Request,
     @Res() res: Response
   ) {
@@ -154,6 +155,7 @@ export class AuthController {
     const result = await this.finishTokenExchange({
       code,
       state,
+      iss,
       expectedState: pending.state,
       codeVerifier: pending.codeVerifier,
     });
@@ -183,6 +185,7 @@ export class AuthController {
   private async finishTokenExchange(params: {
     code: string;
     state: string;
+    iss?: string;
     expectedState: string;
     codeVerifier: string;
   }): Promise<{ ok: true; accessToken: string } | { ok: false; reason: "dominio_no_institucional" }> {
@@ -314,14 +317,16 @@ export class AuthController {
     }
 
     const submitted = await this.logtoExperience.submitInteraction(identification.cookie);
-    const { code: authCode, state: authState } = await this.logtoExperience.completeAuthorization(
-      submitted.cookie,
-      submitted.redirectTo
-    );
+    const {
+      code: authCode,
+      state: authState,
+      iss: authIss,
+    } = await this.logtoExperience.completeAuthorization(submitted.cookie, submitted.redirectTo);
 
     const result = await this.finishTokenExchange({
       code: authCode,
       state: authState,
+      iss: authIss,
       expectedState: pending.state,
       codeVerifier: pending.codeVerifier,
     });
