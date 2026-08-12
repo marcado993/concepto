@@ -61,7 +61,11 @@ export class AuthController {
   @Public()
   @Throttle({ short: { limit: 5, ttl: 10_000 } })
   @Get("login")
-  login(@Query("connector") connector: string | undefined, @Res() res: Response) {
+  login(
+    @Query("connector") connector: string | undefined,
+    @Query("email") email: string | undefined,
+    @Res() res: Response
+  ) {
     const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();
 
     // ?connector=github viene del botón "Continuar con GitHub" de
@@ -72,9 +76,18 @@ export class AuthController {
     // cualquier direct_sign_in sin que este backend lo valide primero.
     const directSignIn = connector === "github" ? "social:github" : undefined;
 
+    // ?email=... viene del campo de correo institucional en Login.svelte
+    // — precarga el campo en la pantalla de Logto (login_hint), nunca
+    // salta el paso del código de verificación. Un chequeo de forma
+    // mínimo (no una validación de dominio real — eso ya lo hace
+    // isInstitutionalEmail() en el callback) antes de reenviarlo, para no
+    // meter cualquier string arbitrario del query string a la URL de
+    // autorización sin pasar por este backend primero.
+    const loginHint = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
+
     let authUrl: string;
     try {
-      authUrl = this.logto.authorizationUrl({ codeChallenge, state, directSignIn });
+      authUrl = this.logto.authorizationUrl({ codeChallenge, state, directSignIn, loginHint });
     } catch {
       // Logto sigue con credenciales placeholder (ver LogtoOidcClient) —
       // esto es un estado esperado en desarrollo, no un 500 crudo que

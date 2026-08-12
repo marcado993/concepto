@@ -22,9 +22,19 @@
   let { onclose, showBack = true, errorMessage = null }: Props = $props();
 
   let institutionalEmail = $state("");
+  const EMAIL_RE = /^[^\s@]+@epn\.edu\.ec$/i;
+  const isValidInstitutionalEmail = $derived(EMAIL_RE.test(institutionalEmail.trim()));
 
   function continueWithGithub() {
     login("github");
+  }
+
+  // Precarga el correo en la pantalla de Logto (login_hint) — el código de
+  // verificación lo sigue mostrando/pidiendo Logto, no hay forma de saltar
+  // ese paso sin reimplementar el envío/validación de OTP nosotros mismos.
+  function continueWithEmail() {
+    if (!isValidInstitutionalEmail) return;
+    login(undefined, institutionalEmail.trim());
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -87,9 +97,15 @@
       placeholder="tu.nombre@epn.edu.ec"
       bind:value={institutionalEmail}
       autocomplete="email"
+      onkeydown={(e) => e.key === "Enter" && continueWithEmail()}
     />
-    <button class="cta" disabled title="El login por correo institucional todavía no está disponible — usa GitHub por ahora">
-      Continuar con correo (próximamente)
+    <button
+      class="cta"
+      disabled={!isValidInstitutionalEmail}
+      title={isValidInstitutionalEmail ? undefined : "Escribe tu correo @epn.edu.ec completo"}
+      onclick={continueWithEmail}
+    >
+      Continuar con correo
     </button>
 
     <p class="footnote">🔒 Tu sesión la maneja Logto — AEIS-APP nunca ve ni guarda tu contraseña.</p>

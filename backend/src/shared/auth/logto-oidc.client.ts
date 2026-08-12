@@ -80,10 +80,11 @@ export class LogtoOidcClient implements OnModuleInit {
   // mágico para el dominio institucional (@epn.edu.ec) — configuración
   // del lado de Logto, no de este código (ver docs/dominio/
   // 10-despliegue-vps-vercel.md, pendiente de credenciales reales).
-  authorizationUrl(params: { codeChallenge: string; state: string; directSignIn?: string }) {
+  authorizationUrl(params: { codeChallenge: string; state: string; directSignIn?: string; loginHint?: string }) {
     this.assertReady();
     return this.client.authorizationUrl({
       scope: "openid profile email",
+      ...(params.loginHint ? { login_hint: params.loginHint } : {}),
       // resource: sin esto, Logto emite un access_token genérico cuyo
       // "aud" NO es LOGTO_AUDIENCE — y jwt.strategy.ts valida audience de
       // forma estricta a propósito (evitar el "confused deputy" de un
