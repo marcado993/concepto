@@ -146,7 +146,7 @@ describe("AuthController", () => {
     const res = mockResponse();
     logto.exchangeCode.mockResolvedValue({
       access_token: "at-999",
-      claims: () => ({ sub: "github|42" }),
+      claims: () => ({ sub: "github|42", email: "estudiante@epn.edu.ec" }),
     });
 
     await controller.callback("code-2", "state-1", req, res);
@@ -154,6 +154,57 @@ describe("AuthController", () => {
     expect(prisma.user.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ update: {} })
     );
+  });
+
+  it("Dado un correo que NO es @epn.edu.ec, Cuando se llama /auth/callback, Entonces rechaza SIN crear el usuario ni emitir token — la autenticación con Logto fue real, pero este backend no lo trata como estudiante de la EPN", async () => {
+    const req = {
+      signedCookies: { aeis_oidc_pending: JSON.stringify({ codeVerifier: "verifier-1", state: "state-1" }) },
+    } as any;
+    const res = mockResponse();
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-123",
+      claims: () => ({ sub: "github|99", email: "cualquiera@gmail.com", name: "No EPN" }),
+    });
+
+    await controller.callback("code-3", "state-1", req, res);
+
+    expect(prisma.user.upsert).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(
+      "https://aeis-app.vercel.app/?auth_error=dominio_no_institucional"
+    );
+  });
+
+  it("Dado un login de GitHub sin correo público/verificado (claims.email undefined), Cuando se llama /auth/callback, Entonces rechaza igual — sin correo no hay forma de verificar el dominio", async () => {
+    const req = {
+      signedCookies: { aeis_oidc_pending: JSON.stringify({ codeVerifier: "verifier-1", state: "state-1" }) },
+    } as any;
+    const res = mockResponse();
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-123",
+      claims: () => ({ sub: "github|100" }),
+    });
+
+    await controller.callback("code-4", "state-1", req, res);
+
+    expect(prisma.user.upsert).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(
+      "https://aeis-app.vercel.app/?auth_error=dominio_no_institucional"
+    );
+  });
+
+  it("Dado un correo institucional con mayúsculas (EPN a veces manda EstudiantE@EPN.EDU.EC), Cuando se llama /auth/callback, Entonces lo acepta — la comparación de dominio no distingue mayúsculas/minúsculas", async () => {
+    const req = {
+      signedCookies: { aeis_oidc_pending: JSON.stringify({ codeVerifier: "verifier-1", state: "state-1" }) },
+    } as any;
+    const res = mockResponse();
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-123",
+      claims: () => ({ sub: "github|101", email: "Estudiante@EPN.EDU.EC" }),
+    });
+
+    await controller.callback("code-5", "state-1", req, res);
+
+    expect(prisma.user.upsert).toHaveBeenCalled();
   });
 
   it("Dado un usuario autenticado, Cuando pide /auth/me, Entonces retorna solo nombre/código/rol, nunca el logtoSub ni otros campos internos", async () => {

@@ -29,11 +29,19 @@
   // rechaza el intento (ej. credenciales placeholder en desarrollo, ver
   // docs/dominio/10-despliegue-vps-vercel.md) — mensaje claro en vez de
   // dejar que el usuario se quede mirando un 500 crudo en otra pestaña.
+  const AUTH_ERROR_MESSAGES: Record<string, string> = {
+    logto_not_configured: "El login todavía no está disponible — Logto está pendiente de configurar.",
+    // Puede salir con GitHub aunque el estudiante SÍ sea de la EPN, si su
+    // cuenta no tiene el correo público/verificado — ver auth.controller.ts.
+    dominio_no_institucional:
+      "Solo se puede entrar con tu correo institucional (@epn.edu.ec). Si usaste GitHub, revisa que tu correo esté verificado y público en tu perfil de GitHub.",
+  };
   let authError = $state<string | null>(null);
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("auth_error") === "logto_not_configured") {
-      authError = "El login todavía no está disponible — Logto está pendiente de configurar.";
+    const code = params.get("auth_error");
+    if (code && AUTH_ERROR_MESSAGES[code]) {
+      authError = AUTH_ERROR_MESSAGES[code];
       history.replaceState(null, "", window.location.pathname + window.location.hash);
     }
   }
@@ -211,13 +219,18 @@
     firstVisit = false;
   }
 
-  // "Iniciar sesión" ya no manda al estudiante derecho a la pantalla
-  // hospedada de Logto — abre la pantalla propia de AEIS-APP
-  // (Login.svelte) primero; recién ahí, al tocar un método concreto (ej.
-  // GitHub), se sale de la app hacia el backend/Logto de verdad.
-  let showLogin = $state(false);
+  // Puerta de entrada: sin sesión, lo ÚNICO que se ve es Login.svelte — la
+  // app (rueda, casilleros, mapa, etc.) queda detrás, ni se monta. Antes
+  // Login era un overlay opcional que se abría con un botón; ahora es la
+  // pantalla por defecto para cualquiera que no haya iniciado sesión
+  // todavía, y la app real recién aparece al autenticarse (ver `authed`
+  // más arriba — se recalcula solo en cada carga real de página, que es
+  // justo lo que pasa tras el redirect de vuelta de Logto/GitHub).
 </script>
 
+{#if !authed}
+  <Login onclose={() => {}} showBack={false} errorMessage={authError} />
+{:else}
 <div class="phone-frame" class:desktop={isDesktop}>
   <div class="screen" class:desktop={isDesktop}>
     <Background tint={sheetOpen ? "accent" : "navy"} override={bgOverride} />
@@ -226,25 +239,10 @@
       <span class="brand-dot"></span>
       <span class="brand-name">AEIS</span>
       <img src="/aso.png" alt="AEIS" class="brand-mark" />
-      <button
-        class="auth-button"
-        onclick={() => (authed ? logout() : (showLogin = true))}
-        aria-label={authed ? "Cerrar sesión" : "Iniciar sesión"}
-      >
-        {authed ? "Cerrar sesión" : "Iniciar sesión"}
+      <button class="auth-button" onclick={() => logout()} aria-label="Cerrar sesión">
+        Cerrar sesión
       </button>
     </div>
-
-    {#if showLogin}
-      <Login onclose={() => (showLogin = false)} />
-    {/if}
-
-    {#if authError}
-      <div class="auth-error-banner" role="alert">
-        <span>{authError}</span>
-        <button onclick={() => (authError = null)} aria-label="Cerrar aviso">×</button>
-      </div>
-    {/if}
 
     {#if payphoneBanner}
       <div class="auth-error-banner" class:ok={payphoneBanner.ok} role="alert">
@@ -338,6 +336,7 @@
 
   </div>
 </div>
+{/if}
 
 <style>
   .phone-frame {

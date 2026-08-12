@@ -16,8 +16,10 @@
 
   interface Props {
     onclose: () => void;
+    showBack?: boolean;
+    errorMessage?: string | null;
   }
-  let { onclose }: Props = $props();
+  let { onclose, showBack = true, errorMessage = null }: Props = $props();
 
   let institutionalEmail = $state("");
 
@@ -43,7 +45,9 @@
     <img src="/aso.png" alt="AEIS" class="logo" />
 
     <div class="panel" role="dialog" aria-modal="true" aria-label="Iniciar sesión">
-      <button class="back" onclick={onclose} aria-label="Volver">‹ Volver</button>
+      {#if showBack}
+        <button class="back" onclick={onclose} aria-label="Volver">‹ Volver</button>
+      {/if}
 
       <div class="brand-row">
         <span class="brand-dot"></span>
@@ -51,6 +55,10 @@
       </div>
       <TypeText tag="h2" class="login-title" text="Inicia sesión" speed={38} startDelay={420} />
     <p class="subtitle">Accede con tu cuenta para alquilar casilleros y aportar a AEIS</p>
+
+    {#if errorMessage}
+      <p class="login-error">{errorMessage}</p>
+    {/if}
 
     <button class="provider-btn github" onclick={continueWithGithub}>
       <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
@@ -201,6 +209,17 @@
     line-height: 1.5;
     color: rgba(238, 244, 251, 0.68);
     margin: 0 0 22px;
+  }
+
+  .login-error {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #ff8a8a;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 10px;
+    padding: 9px 12px;
+    margin: -10px 0 18px;
   }
 
   .provider-btn {

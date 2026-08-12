@@ -25,6 +25,26 @@ import { PrismaService } from "../prisma/prisma.service";
 // solo sirve para anti-CSRF, no para guardar el secreto de PKCE.
 const OIDC_COOKIE = "aeis_oidc_pending";
 
+// Restricción de dominio institucional — aplicada AQUÍ, en el backend, no
+// intentando configurarla del lado de Logto: Logto no tiene una forma
+// nativa y confiable de "solo permitir este dominio de correo" que cubra
+// A LA VEZ el conector de correo institucional Y GitHub (un conector
+// social no sabe nada de dominios EPN). Chequear claims.email acá cubre
+// los dos casos con una sola regla, sin importar qué conector se usó.
+//
+// Con GitHub esto tiene una limitación real que hay que comunicar a los
+// estudiantes: si su cuenta de GitHub no tiene el correo público/verificado
+// habilitado en su perfil, Logto no puede entregarnos ese claim aunque el
+// estudiante SÍ sea de la EPN — el login se rechaza igual, porque no hay
+// forma de verificar el dominio sin ese dato. La alternativa (confiar en
+// el login sin verificar dominio) es peor: cualquiera con cuenta de GitHub
+// entraría como si fuera estudiante de Sistemas.
+const ALLOWED_EMAIL_DOMAIN = "epn.edu.ec";
+
+function isInstitutionalEmail(email: string | undefined): email is string {
+  return !!email && email.toLowerCase().endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
+}
+
 @Controller("auth")
 export class AuthController {
   constructor(
@@ -103,7 +123,20 @@ export class AuthController {
     });
 
     const claims = tokenSet.claims();
-    await this.provisionUser(claims.sub, claims.email as string | undefined, claims.name as string | undefined);
+    const email = claims.email as string | undefined;
+    const frontendOrigin = this.config.getOrThrow<string>("FRONTEND_ORIGIN").split(",")[0];
+
+    // Se rechaza ANTES de tocar la base de datos — nunca se crea un User
+    // "a medias" para un correo no institucional que después haya que
+    // limpiar a mano. Ni siquiera se emite el access_token: sin esto, el
+    // frontend igual habría recibido un token válido de Logto (la
+    // AUTENTICACIÓN sí fue real) para alguien que este backend nunca
+    // debió tratar como estudiante de la EPN.
+    if (!isInstitutionalEmail(email)) {
+      return res.redirect(`${frontendOrigin}/?auth_error=dominio_no_institucional`);
+    }
+
+    await this.provisionUser(claims.sub, email, claims.name as string | undefined);
 
     // El token nunca pasa por un log de servidor: viaja en el fragmento de
     // la URL, que el navegador NO envía en la petición HTTP — solo
@@ -114,7 +147,6 @@ export class AuthController {
     // plano, sin rutas registradas), así que una ruta aparte 404earía en
     // Vercel sin agregar una regla de rewrite solo para esto. Más simple:
     // el frontend revisa `location.hash` en cada carga (src/lib/auth.ts).
-    const frontendOrigin = this.config.getOrThrow<string>("FRONTEND_ORIGIN").split(",")[0];
     return res.redirect(`${frontendOrigin}/#access_token=${tokenSet.access_token}`);
   }
 
