@@ -34,13 +34,21 @@ entrante salvo el puerto 22 (SSH) por defecto — se debe abrir manualmente 80/4
 también (Networking → Virtual Cloud Networks → tu VCN → Security Lists → Add Ingress
 Rules, Source `0.0.0.0/0`, puertos TCP 80 y 443), o Caddy nunca va a recibir tráfico.
 
-**1.2 DNS:** dominio real ya comprado — `aeis-app.online`. Crear un registro `A` para
-`api.aeis-app.online` apuntando a la IP pública de la instancia OCI, en el panel del
-proveedor de DNS del dominio (fuera de este repo — cada registrador tiene su propia
-interfaz). El `Caddyfile` (raíz del repo) ya usa ese hostname — no requiere cambios antes
-de desplegar. Caddy no emite el certificado TLS hasta que el DNS resuelva correctamente;
-verificar con `dig api.aeis-app.online` o `nslookup api.aeis-app.online` antes de levantar
-el compose de producción.
+**1.2 DNS:** dominio real ya comprado — `aeis-app.online`. Crear TRES registros `A`,
+todos apuntando a la IP pública de la instancia OCI, en el panel del proveedor de DNS del
+dominio (fuera de este repo — cada registrador tiene su propia interfaz):
+
+- `api.aeis-app.online` — backend NestJS.
+- `auth.aeis-app.online` — Logto self-hosted, lo que ve el estudiante (login/registro) y
+  lo que el backend usa como `LOGTO_ISSUER`.
+- `admin.aeis-app.online` — consola de administración de Logto (configurar la app, el API
+  resource, el conector de GitHub).
+
+El `Caddyfile` (raíz del repo) ya usa los tres hostnames — no requiere cambios antes de
+desplegar. Caddy no emite certificado TLS para ninguno hasta que su DNS resuelva
+correctamente; verificar con `nslookup <hostname> 1.1.1.1` antes de levantar el compose de
+producción (el resolver por defecto puede tardar más en ver un registro nuevo que
+Cloudflare/Google).
 
 **1.3 Instalar Docker** (Oracle Linux 9 no lo trae preinstalado, a diferencia de las
 imágenes "Docker on Ubuntu" de DigitalOcean):
@@ -86,6 +94,30 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec backend npx prisma migrate deploy
 docker compose -f docker-compose.prod.yml exec backend npx prisma db seed   # opcional, datos mock
 ```
+
+**1.5b Logto self-hosted — base de datos propia (una sola vez):** el contenedor `logto`
+espera una base de datos `logto` en el mismo Postgres del compose — no se crea sola en un
+volumen que ya existe (el init-script automático de la imagen de Postgres solo corre en un
+volumen nuevo):
+
+```bash
+docker compose -f docker-compose.prod.yml exec postgres psql -U aeis -c "CREATE DATABASE logto"
+docker compose -f docker-compose.prod.yml restart logto
+```
+
+Después, entrar a `https://admin.aeis-app.online` para terminar la configuración a mano
+(no automatizable desde aquí — vive en la UI de Logto):
+
+1. Crear cuenta de administrador del tenant (primera vez que se abre la consola).
+2. Applications → Create Application → **Traditional Web** → Redirect URI
+   `https://api.aeis-app.online/auth/callback`. Copiar App ID y App Secret a
+   `LOGTO_APP_ID`/`LOGTO_APP_SECRET` en `backend/.env`.
+3. API Resources → Create → identifier `https://api.aeis-app.online` (debe ser idéntico a
+   `LOGTO_AUDIENCE` en `backend/.env`).
+4. Connectors → Social Connectors → GitHub (requiere una OAuth App en GitHub aparte —
+   Settings → Developer settings → OAuth Apps).
+5. `docker compose -f docker-compose.prod.yml up -d --build backend` para que el backend
+   recoja las credenciales nuevas.
 
 `migrate deploy` (no `migrate dev`) porque en producción nunca se generan migraciones
 nuevas al vuelo — solo se aplican las que ya vinieron commiteadas desde el desarrollo

@@ -150,7 +150,9 @@ ambos), alcance temporal de Eventos/Recursos, nombres de tiers de Aportaciones
 3. Rol "Administración": ¿es un cuarto rol operativo o lo cubren Presidente/Director?
 4. Naturaleza del "contrato" de alquiler — **RESUELTO**: clickwrap + KYC (ver
    `01-analisis-negocio-mision.md` § Datos personales).
-5. Logto: modo de despliegue (cloud/self-hosted) y modelo de tenant/organización.
+5. Logto: modo de despliegue — **RESUELTO**: self-hosted, en la misma instancia OCI
+   (`docker-compose.prod.yml`, imagen `svhd/logto`), no Logto Cloud. Modelo de
+   tenant/organización sigue sin definir (un solo tenant alcanza para el alcance actual).
 6. Retención y marco regulatorio de datos personales (código único, nombre real, y ahora
    datos **biométricos** por CompreFace) — LOPDP Ecuador; `aeis-app` ya identificó un
    riesgo similar con la cédula como PK.

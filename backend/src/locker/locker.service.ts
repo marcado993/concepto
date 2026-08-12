@@ -4,9 +4,11 @@ import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
 import { OcrService } from "../shared/ocr/ocr.service";
+import { PeriodService } from "../shared/period/period.service";
+import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
 import { executeMoneyMutation } from "../shared/payment/money-mutation.helper";
 import { calculateLockerPrice, PaymentMethod } from "./rental-calculator";
-import { receiptMentionsAmount } from "./receipt-validator";
+import { receiptMentionsAmount } from "../shared/payment/receipt-validator";
 
 // Precio base semestral — configurable porque el sponsor puede fijarlo
 // entre $5.50 y $9.00 según utilidad objetivo (ver rental-calculator.ts).
@@ -32,23 +34,10 @@ export class LockerService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly payphone: PayphoneClient,
-    private readonly ocr: OcrService
+    private readonly ocr: OcrService,
+    private readonly period: PeriodService,
+    private readonly subscriptionBenefits: SubscriptionBenefitsService
   ) {}
-
-  // Resolución mínima del periodo activo — hasta que exista un PeriodService
-  // real (ver TODO en locker.controller.ts), se toma el periodo vigente o
-  // más próximo por fecha en vez de exigir que el cliente lo mande. "Vigente
-  // o próximo" (no solo "vigente") a propósito: el alquiler para el
-  // semestre 2026-B debe poder abrirse antes de que arranque el 1 de
-  // septiembre, no solo durante sus fechas exactas.
-  private async getCurrentPeriodId(): Promise<string> {
-    const period = await this.prisma.period.findFirst({
-      where: { endsAt: { gte: new Date() } },
-      orderBy: { startsAt: "asc" },
-    });
-    if (!period) throw new NotFoundException("No hay un periodo activo configurado para alquilar casilleros");
-    return period.id;
-  }
 
   list() {
     return this.prisma.locker.findMany({
@@ -61,8 +50,14 @@ export class LockerService {
     const locker = await this.prisma.locker.findUnique({ where: { code: params.lockerCode } });
     if (!locker) throw new NotFoundException(`Casillero ${params.lockerCode} no existe`);
 
-    const periodId = await this.getCurrentPeriodId();
-    const price = calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, params.method);
+    const periodId = await this.period.getCurrentPeriodId();
+    // Cruce de dominio real, no una lectura directa a la tabla de
+    // Subscription: le preguntamos al dominio de Aportaciones "¿cuánto
+    // descuento tiene este estudiante?" y confiamos en su respuesta (0 si
+    // no aporta o su tier no trae ese beneficio) — ver
+    // subscription/subscription-benefits.service.ts.
+    const discountPercent = await this.subscriptionBenefits.getLockerDiscountPercent(params.userId);
+    const price = calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, params.method, discountPercent);
 
     return executeMoneyMutation<LockerRental>(
       { prisma: this.prisma, audit: this.audit },
@@ -74,7 +69,7 @@ export class LockerService {
         auditAction: "locker.rental.created",
         auditEntityType: "LockerRental",
         entityId: (rental) => rental.id,
-        auditMetadata: () => ({ lockerCode: params.lockerCode }),
+        auditMetadata: () => ({ lockerCode: params.lockerCode, discountPercent }),
         // La restricción @@unique([lockerId, periodId]) en el esquema es la
         // que de verdad impide la doble-reserva bajo concurrencia real —
         // el chequeo de `locker.status` de arriba es solo el camino feliz,
