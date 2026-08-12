@@ -61,25 +61,33 @@ export class LogtoOidcClient implements OnModuleInit {
     return { codeVerifier, codeChallenge, state };
   }
 
-  // Sin direct_sign_in — Logto muestra su propia pantalla con TODOS los
-  // conectores habilitados en el tenant (GitHub + correo institucional),
-  // y decide sola si es un registro nuevo o un login existente. Un solo
-  // botón en AEIS-APP ("Iniciar sesión"), sin que el frontend tenga que
-  // preguntar antes "¿ya tienes cuenta?" ni distinguir método — eso es
-  // exactamente lo que Logto ya resuelve del otro lado.
+  // El frontend ahora tiene su PROPIA pantalla de login (Login.svelte, en
+  // el estilo visual de AEIS-APP) en vez de mandar al estudiante derecho a
+  // la pantalla genérica hospedada por Logto — esa pantalla de Logto sigue
+  // existiendo (Logto la necesita para el handshake OAuth real), pero deja
+  // de ser lo primero que ve el estudiante. `directSignIn` (opcional) es
+  // justamente el mecanismo de Logto para saltarse su propio selector de
+  // conectores cuando el frontend YA sabe qué botón tocó el estudiante —
+  // ej. "social:github" cuando toca "Continuar con GitHub", en vez de
+  // aterrizar en una pantalla de Logto que vuelve a preguntar el método.
+  //
+  // Sin directSignIn (undefined), cae al comportamiento anterior: Logto
+  // muestra su propio selector con todos los conectores del tenant — sigue
+  // sirviendo como fallback genérico si el frontend no especifica método.
   //
   // Requiere que el tenant de Logto tenga configurado, además del
   // conector social de GitHub, un conector de correo/contraseña o enlace
   // mágico para el dominio institucional (@epn.edu.ec) — configuración
   // del lado de Logto, no de este código (ver docs/dominio/
   // 10-despliegue-vps-vercel.md, pendiente de credenciales reales).
-  authorizationUrl(params: { codeChallenge: string; state: string }) {
+  authorizationUrl(params: { codeChallenge: string; state: string; directSignIn?: string }) {
     this.assertReady();
     return this.client.authorizationUrl({
       scope: "openid profile email",
       code_challenge: params.codeChallenge,
       code_challenge_method: "S256",
       state: params.state,
+      ...(params.directSignIn ? { direct_sign_in: params.directSignIn } : {}),
     });
   }
 

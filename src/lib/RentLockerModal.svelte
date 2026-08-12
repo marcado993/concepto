@@ -15,7 +15,8 @@
     type MeResponse,
   } from "./api";
   import { loadPayphoneSdk } from "./payphoneSdk";
-  import { isAuthenticated, login } from "./auth.svelte";
+  import { isAuthenticated } from "./auth.svelte";
+  import Login from "./Login.svelte";
 
   interface Props {
     lockerCode: string;
@@ -38,6 +39,7 @@
       .catch(() => (meError = true));
   });
 
+  let showLogin = $state(false);
   let busy = $state(false);
   let errorMessage = $state<string | null>(null);
   let rentalId = $state<string | null>(null);
@@ -167,7 +169,10 @@
 
     {#if !isAuthenticated()}
       <p class="modal-copy">Inicia sesión para alquilar un casillero.</p>
-      <button class="cta" onclick={() => login()}>Iniciar sesión</button>
+      <button class="cta" onclick={() => (showLogin = true)}>Iniciar sesión</button>
+      {#if showLogin}
+        <Login onclose={() => (showLogin = false)} />
+      {/if}
     {:else if step === "identity"}
       <div class="step-badge">Paso 1 de 3 · Identidad y método</div>
 

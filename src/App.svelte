@@ -6,6 +6,7 @@
   import DesktopNav from "./lib/DesktopNav.svelte";
   import CategoryContent from "./lib/CategoryContent.svelte";
   import TypeText from "./lib/TypeText.svelte";
+  import Login from "./lib/Login.svelte";
   import { categories, type SecurityIndicator, type VenturePublic, type LockerStatus, type LockerUnit } from "./lib/data";
   import { riskForHour, themeForRisk } from "./lib/risk";
   import {
@@ -16,7 +17,7 @@
     ApiError,
     type LockerFromApi,
   } from "./lib/api";
-  import { consumeAuthCallback, isAuthenticated, login, logout } from "./lib/auth.svelte";
+  import { consumeAuthCallback, isAuthenticated, logout } from "./lib/auth.svelte";
 
   // Si el backend acaba de redirigir tras un login (Logto → GitHub → Logto
   // → backend → aquí), el access_token viene en location.hash — se
@@ -209,6 +210,12 @@
   function dismissOnboarding() {
     firstVisit = false;
   }
+
+  // "Iniciar sesión" ya no manda al estudiante derecho a la pantalla
+  // hospedada de Logto — abre la pantalla propia de AEIS-APP
+  // (Login.svelte) primero; recién ahí, al tocar un método concreto (ej.
+  // GitHub), se sale de la app hacia el backend/Logto de verdad.
+  let showLogin = $state(false);
 </script>
 
 <div class="phone-frame" class:desktop={isDesktop}>
@@ -221,12 +228,16 @@
       <img src="/aso.png" alt="AEIS" class="brand-mark" />
       <button
         class="auth-button"
-        onclick={() => (authed ? logout() : login())}
+        onclick={() => (authed ? logout() : (showLogin = true))}
         aria-label={authed ? "Cerrar sesión" : "Iniciar sesión"}
       >
         {authed ? "Cerrar sesión" : "Iniciar sesión"}
       </button>
     </div>
+
+    {#if showLogin}
+      <Login onclose={() => (showLogin = false)} />
+    {/if}
 
     {#if authError}
       <div class="auth-error-banner" role="alert">
