@@ -19,6 +19,7 @@
   import { loadPayphoneSdk } from "./payphoneSdk";
   import { isAuthenticated } from "./auth.svelte";
   import Login from "./Login.svelte";
+  import { fade, scale } from "svelte/transition";
 
   interface Props {
     lockerCode: string;
@@ -192,7 +193,15 @@
   }
 </script>
 
-<div class="scrim" onclick={onclose} onkeydown={onScrimKeydown} role="button" tabindex="-1" aria-label="Cerrar">
+<div
+  class="scrim"
+  onclick={onclose}
+  onkeydown={onScrimKeydown}
+  role="button"
+  tabindex="-1"
+  aria-label="Cerrar"
+  transition:fade={{ duration: 150 }}
+>
   <div
     class="modal"
     onclick={(e) => e.stopPropagation()}
@@ -201,6 +210,8 @@
     tabindex="-1"
     aria-modal="true"
     aria-label="Alquilar casillero {lockerCode}"
+    in:scale={{ duration: 220, start: 0.9, opacity: 0.4 }}
+    out:scale={{ duration: 150, start: 0.96, opacity: 0 }}
   >
     <button class="close" onclick={onclose} aria-label="Cerrar">×</button>
     <h3 class="modal-title">Casillero {lockerCode}</h3>
@@ -217,7 +228,7 @@
       {#if meError}
         <p class="modal-copy error">No se pudo cargar tu perfil — intenta de nuevo.</p>
       {:else if !me}
-        <p class="modal-copy">Cargando tu perfil…</p>
+        <p class="modal-copy loading-row"><span class="loading-spinner">◎</span> Cargando tu perfil…</p>
       {:else}
         <div class="identity-card">
           <div class="identity-row"><span>Nombre</span><strong>{me.fullName}</strong></div>
@@ -295,7 +306,7 @@
           No se pudo cargar la configuración de PayPhone — intenta de nuevo en un momento.
         </p>
       {:else if !payphoneConfig}
-        <p class="modal-copy">Cargando PayPhone…</p>
+        <p class="modal-copy loading-row"><span class="loading-spinner">◎</span> Cargando PayPhone…</p>
       {:else if !payphoneConfig.configured}
         <p class="modal-copy error">
           PayPhone todavía no está conectado (faltan credenciales de comercio) — usa comprobante de
@@ -375,6 +386,30 @@
     border-radius: 20px;
     padding: 22px 20px 20px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  }
+
+  /* El "pop" de entrada (in:scale en el markup) ya avisa que el tap
+     registró — pero mientras /auth/me y el precio siguen en vuelo, un
+     texto estático ("Cargando…") no se distingue de la app trabada. Un
+     spinner girando (mismo lenguaje visual que .sec-map-icon.spin en
+     CategoryContent.svelte) deja claro que sigue vivo. */
+  .loading-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .loading-spinner {
+    display: inline-block;
+    font-size: 15px;
+    line-height: 1;
+    animation: rl-spin 1.1s linear infinite;
+  }
+
+  @keyframes rl-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .close {
