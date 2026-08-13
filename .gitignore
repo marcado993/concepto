@@ -34,6 +34,11 @@ id_ed25519-*
 !id_ed25519_*.pub
 !id_ed25519-*.pub
 
+# tesseract.js descarga el modelo de idioma acá si corre local sin uno
+# presente (ej. probando OCR a mano fuera de Docker) — cache de runtime,
+# no código fuente; el contenedor de producción ya lo trae empaquetado.
+backend/*.traineddata
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

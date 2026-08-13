@@ -166,10 +166,25 @@
     receiptFile = input.files?.[0] ?? null;
   }
 
+  // El OCR real (tesseract.js, backend/src/shared/ocr/ocr.service.ts)
+  // reintenta hasta 2 veces si falla — un comprobante genuino puede tardar
+  // unos segundos en confirmarse si el primer intento se cae. Sin feedback
+  // visual, ese lapso se siente como que la app no reaccionó al tap
+  // (mismo hallazgo que ya se resolvió para el modal en sí). Los mensajes
+  // rotan para que se note que sigue vivo, no solo un spinner fijo.
+  const OCR_MESSAGES = ["Leyendo el comprobante…", "Verificando el monto…", "Un momento más…"];
+  let ocrMessage = $state(OCR_MESSAGES[0]);
+
   async function submitReceipt() {
     if (!rentalId || !receiptFile) return;
     errorMessage = null;
     busy = true;
+    ocrMessage = OCR_MESSAGES[0];
+    let msgIndex = 0;
+    const rotate = setInterval(() => {
+      msgIndex = (msgIndex + 1) % OCR_MESSAGES.length;
+      ocrMessage = OCR_MESSAGES[msgIndex];
+    }, 1400);
     try {
       await confirmLockerReceipt(rentalId, receiptFile);
       step = "confirmed";
@@ -178,6 +193,7 @@
       errorMessage = err instanceof ApiError ? err.message : "No se pudo validar el comprobante";
       step = "rejected";
     } finally {
+      clearInterval(rotate);
       busy = false;
     }
   }
@@ -335,13 +351,38 @@
         Casillero reservado — sube una foto legible del comprobante de transferencia de {PRICE.TRANSFER}. La
         validamos automáticamente.
       </p>
-      <label class="file-drop">
-        <input type="file" accept="image/jpeg,image/png,image/webp" onchange={onFileChange} />
-        {receiptFile ? receiptFile.name : "Elegir imagen del comprobante"}
-      </label>
+      {#if busy}
+        <!-- El OCR real puede reintentar y tardar unos segundos — sin esto
+             la app se veía "trabada" justo en el momento más ansioso del
+             flujo (¿me cobraron o no?). -->
+        <div class="ocr-processing">
+          <div class="ocr-doc">
+            <svg class="ocr-doc-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linejoin="round"
+                d="M6 2.5h8.5L19 7v14a0.5 0.5 0 0 1-0.5 0.5h-12a0.5 0.5 0 0 1-0.5-0.5V3a0.5 0.5 0 0 1 0.5-0.5Z"
+              />
+              <path fill="none" stroke="currentColor" stroke-width="1.2" d="M14.5 2.5V7H19" opacity="0.6" />
+              <line x1="8" y1="11" x2="16" y2="11" stroke="currentColor" stroke-width="1.1" />
+              <line x1="8" y1="14" x2="16" y2="14" stroke="currentColor" stroke-width="1.1" />
+              <line x1="8" y1="17" x2="12.5" y2="17" stroke="currentColor" stroke-width="1.1" />
+            </svg>
+            <span class="ocr-scan-line"></span>
+          </div>
+          <p class="ocr-status">{ocrMessage}</p>
+        </div>
+      {:else}
+        <label class="file-drop">
+          <input type="file" accept="image/jpeg,image/png,image/webp" onchange={onFileChange} />
+          {receiptFile ? receiptFile.name : "Elegir imagen del comprobante"}
+        </label>
+      {/if}
       {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
       <button class="cta" disabled={busy || !receiptFile} onclick={submitReceipt}>
-        {busy ? "Validando…" : "Subir y confirmar"}
+        {busy ? ocrMessage : "Subir y confirmar"}
       </button>
     {:else if step === "rejected"}
       <div class="step-badge">Paso 3 de 3 · No se pudo confirmar</div>
@@ -442,6 +483,67 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* Mismo tamaño/borde que .identity-card/.loading-box — un documento con
+     un barrido de luz cruzándolo, mismo lenguaje visual que .scan-sweep en
+     IsoIcon.svelte (las fotos de categoría "se escanean" al aparecer), acá
+     aplicado a algo que literalmente se está leyendo de verdad. */
+  .ocr-processing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 120px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 14px;
+    padding: 20px 14px;
+    margin-bottom: 14px;
+  }
+
+  .ocr-doc {
+    position: relative;
+    width: 52px;
+    height: 52px;
+    color: var(--accent, #21e0a0);
+    overflow: hidden;
+    border-radius: 6px;
+  }
+
+  .ocr-doc-icon {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .ocr-scan-line {
+    position: absolute;
+    left: -10%;
+    right: -10%;
+    height: 34%;
+    background: linear-gradient(180deg, transparent 0%, var(--accent, #21e0a0) 50%, transparent 100%);
+    opacity: 0.85;
+    mix-blend-mode: screen;
+    animation: ocr-scan 1.7s ease-in-out infinite;
+  }
+
+  @keyframes ocr-scan {
+    0% {
+      top: -34%;
+    }
+    100% {
+      top: 100%;
+    }
+  }
+
+  .ocr-status {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--ink-1, #9db0d1);
+    text-align: center;
+    min-height: 16px;
   }
 
   .close {
