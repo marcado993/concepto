@@ -72,6 +72,24 @@ export class LockerService {
     });
   }
 
+  // La lista pública (list(), arriba) es @Public() y nunca dice de QUIÉN es
+  // un casillero RESERVED — con buena razón, exponer eso a cualquiera
+  // filtraría quién está tramitando qué. Pero un estudiante cuyo comprobante
+  // falló (red caída, foto ilegible) necesita poder volver a su PROPIA
+  // reserva para resubir la foto sin quedar bloqueado — este método (detrás
+  // de @Roles(ESTUDIANTE), filtrado por userId real del JWT, nunca por algo
+  // que mande el cliente) es la única forma de saber "esto es mío" sin
+  // filtrar nada de nadie más.
+  async getMyPendingReceipt(userId: string) {
+    const rental = await this.prisma.lockerRental.findFirst({
+      where: { userId, payment: { method: "TRANSFER", status: "PENDING" } },
+      include: { locker: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!rental) return null;
+    return { rentalId: rental.id, lockerCode: rental.locker.code };
+  }
+
   // Preview del precio ANTES de alquilar — el frontend lo usa para mostrar
   // el monto real (con descuento de aportante ya aplicado) en el paso de
   // identidad, sin que el estudiante tenga que declarar si es aportante ni

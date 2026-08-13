@@ -25,12 +25,17 @@
     lockerCode: string;
     onclose: () => void;
     onrented?: () => void;
+    /** Si viene, este casillero ya es TUYO (reserva por transferencia
+        verificada por el backend contra la sesión, ver App.svelte
+        myPendingReceipt) — el modal salta directo a subir el comprobante
+        en vez de empezar un alquiler nuevo desde el paso de identidad. */
+    resumeRentalId?: string | null;
   }
 
-  let { lockerCode, onclose, onrented }: Props = $props();
+  let { lockerCode, onclose, onrented, resumeRentalId = null }: Props = $props();
 
   type Step = "identity" | "payphone" | "receipt-upload" | "confirmed" | "rejected";
-  let step = $state<Step>("identity");
+  let step = $state<Step>(resumeRentalId ? "receipt-upload" : "identity");
   let method = $state<"PAYPHONE" | "TRANSFER">("TRANSFER");
 
   let me = $state<MeResponse | null>(null);
@@ -74,7 +79,7 @@
   let showLogin = $state(false);
   let busy = $state(false);
   let errorMessage = $state<string | null>(null);
-  let rentalId = $state<string | null>(null);
+  let rentalId = $state<string | null>(resumeRentalId);
   let receiptFile = $state<File | null>(null);
 
   const PRICE = $derived<Record<"PAYPHONE" | "TRANSFER", string>>({
@@ -346,7 +351,7 @@
         <div id="pp-button-{lockerCode}" bind:this={payphoneContainer} class="payphone-widget"></div>
       {/if}
     {:else if step === "receipt-upload"}
-      <div class="step-badge">Paso 2 de 3 · Comprobante</div>
+      <div class="step-badge">{resumeRentalId ? "Tu reserva · Comprobante" : "Paso 2 de 3 · Comprobante"}</div>
       <p class="modal-copy">
         Casillero reservado — sube una foto legible del comprobante de transferencia de {PRICE.TRANSFER}. La
         validamos automáticamente.

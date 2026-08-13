@@ -587,3 +587,50 @@ describe("LockerService.releaseExpiredTransferReservations", () => {
     expect(released).toBe(0);
   });
 });
+
+describe("LockerService.getMyPendingReceipt", () => {
+  let service: LockerService;
+  let prisma: any;
+
+  beforeEach(async () => {
+    prisma = { lockerRental: { findFirst: jest.fn() } };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        LockerService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditService, useValue: { record: jest.fn() } },
+        { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
+        { provide: OcrService, useValue: { extractText: jest.fn() } },
+        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn() } },
+        { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountInfo: jest.fn() } },
+      ],
+    }).compile();
+    service = moduleRef.get(LockerService);
+  });
+
+  it("Dado un estudiante con una reserva por transferencia sin comprobante todavía, Cuando pide su reserva pendiente, Entonces devuelve el rentalId y el código del casillero — SOLO filtrado por su propio userId (nunca por algo que mande el cliente)", async () => {
+    prisma.lockerRental.findFirst.mockResolvedValue({
+      id: "rental-1",
+      userId: "user-1",
+      locker: { code: "E08" },
+    });
+
+    const result = await service.getMyPendingReceipt("user-1");
+
+    expect(prisma.lockerRental.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", payment: { method: "TRANSFER", status: "PENDING" } },
+      })
+    );
+    expect(result).toEqual({ rentalId: "rental-1", lockerCode: "E08" });
+  });
+
+  it("Dado un estudiante sin ninguna reserva pendiente, Cuando pide su reserva pendiente, Entonces devuelve null (no puede tocar ningún casillero reservado ajeno)", async () => {
+    prisma.lockerRental.findFirst.mockResolvedValue(null);
+
+    const result = await service.getMyPendingReceipt("user-1");
+
+    expect(result).toBeNull();
+  });
+});
