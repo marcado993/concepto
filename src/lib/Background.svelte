@@ -21,9 +21,21 @@
       <pattern id="iso-grid" width="64" height="37" patternUnits="userSpaceOnUse" patternTransform="translate(0,0)">
         <path d="M0 18.5 L32 0 L64 18.5 L32 37 Z" fill="none" stroke="currentColor" stroke-width="1" />
       </pattern>
-      <radialGradient id="vignette" cx="50%" cy="30%" r="75%">
+      <!-- r=75% (antes) significa que CUALQUIER punto a más de 75% de
+           distancia del centro se pinta con el último color-stop SÓLIDO —
+           sin más degradado. Con el centro en cy=30% y contenido que ahora
+           llega hasta el final de la rueda + la píldora "desliza arriba",
+           la mitad inferior de la pantalla caía entera en esa zona plana:
+           un bloque de opacidad 0.65 uniforme, sin textura, que se veía
+           como una "tarjeta" negra pegada debajo de la rueda en vez de un
+           degradado continuo (hallazgo real, reportado en un celular).
+           r=130% (mayor que la distancia a cualquier esquina de la caja)
+           más un stop intermedio hace que el oscurecimiento sea gradual
+           en TODA la pantalla, sin llegar nunca a la meseta plana. -->
+      <radialGradient id="vignette" cx="50%" cy="25%" r="130%">
         <stop offset="0%" stop-color="black" stop-opacity="0" />
-        <stop offset="100%" stop-color="black" stop-opacity="0.65" />
+        <stop offset="55%" stop-color="black" stop-opacity="0.22" />
+        <stop offset="100%" stop-color="black" stop-opacity="0.5" />
       </radialGradient>
     </defs>
     <rect width="100%" height="100%" fill="url(#iso-grid)" class="grid-lines" />
