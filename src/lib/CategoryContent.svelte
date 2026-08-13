@@ -313,6 +313,22 @@
               aria-label="Alquilar casillero {unit.number}"
               style="--unit-hue: {unitHue(i)}; animation-delay: {unitDelay(i)}ms"
             >
+              {#if unit.status !== "available"}
+                <!-- El texto "Ocupado"/"Reservado" ya distingue el estado
+                     exacto, pero a 10px y entre hasta 108 unidades es fácil
+                     de pasar por alto en un vistazo rápido — un candado en
+                     la esquina se reconoce sin tener que leer nada,
+                     apoyándose en el mismo principio que ya usa .dim
+                     (reconocimiento en vez de recuerdo). -->
+                <span class="unit-lock" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path
+                      fill="currentColor"
+                      d="M6 22q-.825 0-1.413-.588T4 20V10q0-.825.588-1.413T6 8h1V6q0-2.075 1.463-3.538T12 1t3.538 1.463T17 6v2h1q.825 0 1.413.588T20 10v10q0 .825-.588 1.413T18 22zm6-5q.825 0 1.413-.588T14 15t-.588-1.413T12 13t-1.413.588T10 15t.588 1.413T12 17M9 8h6V6q0-1.25-.875-2.125T12 3t-2.125.875T9 6z"
+                    />
+                  </svg>
+                </span>
+              {/if}
               <IsoIcon unit status={unit.status} size={64} />
               <span class="unit-number">{unit.number}</span>
               <span class="unit-status status-{unit.status}">{statusLabel[unit.status]}</span>
@@ -509,6 +525,7 @@
   }
 
   .unit {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -569,6 +586,26 @@
   }
   .unit.dim:hover {
     box-shadow: none;
+  }
+
+  .unit-lock {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.35);
+    color: rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+  }
+
+  .unit-lock svg {
+    width: 11px;
+    height: 11px;
   }
 
   @media (prefers-reduced-motion: reduce) {

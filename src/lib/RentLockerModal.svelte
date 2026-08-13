@@ -228,7 +228,17 @@
       {#if meError}
         <p class="modal-copy error">No se pudo cargar tu perfil — intenta de nuevo.</p>
       {:else if !me}
-        <p class="modal-copy loading-row"><span class="loading-spinner">◎</span> Cargando tu perfil…</p>
+        <!-- Antes era una línea de texto suelta — en una red móvil real con
+             latencia, ese instante entre tocar el casillero y ver contenido
+             se sentía como que la app no había reaccionado al tap. Una caja
+             con el mismo tamaño/borde que .identity-card (la que reemplaza
+             al llegar los datos) hace que el "está cargando" sea imposible
+             de pasar por alto, y evita que el modal salte de tamaño cuando
+             el contenido real aparece. -->
+        <div class="loading-box">
+          <span class="loading-spinner">◎</span>
+          Cargando tu perfil…
+        </div>
       {:else}
         <div class="identity-card">
           <div class="identity-row"><span>Nombre</span><strong>{me.fullName}</strong></div>
@@ -397,6 +407,29 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* Mismo tamaño/borde que .identity-card (lo que la reemplaza al llegar
+     los datos) — para que el modal no salte de alto y el estado de carga
+     se lea como una caja real, no como una línea de texto que se puede
+     pasar por alto. */
+  .loading-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 64px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    color: var(--ink-1, #9db0d1);
+    font-size: 13px;
+  }
+
+  .loading-box .loading-spinner {
+    font-size: 18px;
   }
 
   .loading-spinner {

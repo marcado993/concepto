@@ -96,9 +96,26 @@
     subscriptions: { src: "/aportaciones.png", alt: "Aportaciones" },
   };
   const photo = $derived(photoMap[kind]);
+
+  // Ícono dedicado para cada una de las hasta 108 celdas de la grilla de
+  // casilleros — antes era el mismo cubo isométrico abstracto usado en
+  // toda la app, sin relación visual con "esto es un locker real". El
+  // estado (libre/ocupado/reservado) se sigue leyendo con CSS (glow vs.
+  // escala de grises), igual que el resto de la grilla — no se recolorea
+  // el PNG en sí, solo se atenúa.
+  const isLockerUnit = $derived(unit && kind === "lockers");
 </script>
 
-{#if photo && !unit}
+{#if isLockerUnit}
+  <span
+    class="photo-wrap unit-photo"
+    class:unit-glow={tone.glow}
+    class:unit-dim-photo={!tone.glow}
+    style="width: {size}px; height: {size}px"
+  >
+    <img src="/locker-mini.png" alt="" class="kind-photo" draggable="false" decoding="async" />
+  </span>
+{:else if photo && !unit}
   {#key photo.src}
     <span class="photo-wrap" style="width: {size}px; height: {size}px">
       <img
@@ -194,6 +211,15 @@
     filter: drop-shadow(0 0 3px var(--accent-glow, rgba(33, 224, 160, 0.55)));
   }
 
+  /* Ocupado/reservado: el candado (CategoryContent.svelte) ya dice el
+     estado exacto — esto solo hace que la foto en sí no compita por
+     atención con las libres, mismo principio que ya aplicaba .unit.dim al
+     fondo de la tarjeta. */
+  .unit-dim-photo {
+    filter: grayscale(0.85) brightness(0.6);
+    opacity: 0.75;
+  }
+
   /* "Materializes" in once on mount — a clip-path wipe plus a scanning
      highlight line, like the image is being scanned into existence rather
      than just popping in. pointer-events stay off the whole photo: without
@@ -219,6 +245,16 @@
 
   :global(.icon-spot.active) .kind-photo {
     filter: drop-shadow(0 0 12px var(--accent-glow));
+  }
+
+  /* Sin el "materialize" (clip-path + filter animados) acá — ese keyframe
+     ya causó un lag real de móvil una vez, cuando corría ~108 veces a la
+     vez en la grilla (auditoría de rendimiento de esta sesión). La entrada
+     de cada casillero ya la resuelve la propia animación del botón
+     (unit-enter, solo opacity+transform, barata) — esta foto no necesita
+     una segunda capa de animación encima. */
+  .unit-photo .kind-photo {
+    animation: none;
   }
 
   .scan-sweep {
