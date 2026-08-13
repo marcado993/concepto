@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { gotoApp } from './test-utils';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ async function goToSecurity(page: Page) {
 test.describe('AEIS App — splash & navigation', () => {
 
   test('la app carga y el splash desaparece en < 3 s', async ({ page }) => {
-    await page.goto('/');
+    await gotoApp(page);
 
     // El splash puede haber desaparecido antes de que Playwright lo capture
     // en localhost (muy rápido). Solo verificamos que la app montó.
@@ -44,7 +45,7 @@ test.describe('AEIS App — splash & navigation', () => {
   });
 
   test('la app no queda congelada: el DOM cambia tras el splash', async ({ page }) => {
-    await page.goto('/');
+    await gotoApp(page);
     await waitForSplash(page);
 
     // La app debe mostrar algo interactivo (no una pantalla en blanco)
@@ -62,7 +63,7 @@ test.describe('AEIS App — splash & navigation', () => {
     const workersCounts: number[] = [];
 
     // Intercepta las métricas de workers antes y después del splash
-    await page.goto('/');
+    await gotoApp(page);
     await waitForSplash(page);
 
     // Espera 500 ms para que los rAF de mapWarm ejecuten
@@ -85,7 +86,7 @@ test.describe('AEIS App — splash & navigation', () => {
 test.describe('AEIS App — sección Seguridad', () => {
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await gotoApp(page);
     await waitForSplash(page);
     // Dar tiempo al mapa para pre-calentarse
     await page.waitForTimeout(800);

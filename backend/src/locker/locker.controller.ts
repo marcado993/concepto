@@ -52,6 +52,16 @@ export class LockerController {
     return this.lockerService.getPayphoneConfig();
   }
 
+  // Precio real (con descuento de aportante ya resuelto) para el paso de
+  // identidad de RentLockerModal.svelte — requiere sesión porque el
+  // descuento depende de QUIÉN pregunta, no es un dato público como la
+  // lista de casilleros.
+  @Get("my-price")
+  @Roles(Role.ESTUDIANTE)
+  myPrice(@Req() req: Request & { user: { id: string } }) {
+    return this.lockerService.getPricePreview(req.user.id);
+  }
+
   @Post("rent")
   @Roles(Role.ESTUDIANTE)
   // Límite propio, más estricto que el global (rate-limit.module.ts): un
@@ -74,6 +84,9 @@ export class LockerController {
       userId: req.user.id,
       lockerCode: dto.lockerCode,
       method: dto.method,
+      cedula: dto.cedula,
+      phone: dto.phone,
+      acceptedTerms: dto.acceptedTerms,
       ipAddress: req.ip,
     });
   }

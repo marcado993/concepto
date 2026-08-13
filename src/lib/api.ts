@@ -132,6 +132,8 @@ export interface MeResponse {
   fullName: string;
   uniqueCode: string;
   role: string;
+  cedula: string | null;
+  phone: string | null;
 }
 
 export function fetchMe(): Promise<MeResponse> {
@@ -159,6 +161,9 @@ export function fetchLockers(): Promise<LockerFromApi[]> {
 export interface RentLockerInput {
   lockerCode: string;
   method: "TRANSFER" | "PAYPHONE";
+  cedula: string;
+  phone: string;
+  acceptedTerms: boolean;
 }
 
 export interface LockerRental {
@@ -172,6 +177,22 @@ export interface LockerRental {
 
 export function rentLocker(input: RentLockerInput): Promise<LockerRental> {
   return postJSON<LockerRental>("/lockers/rent", input);
+}
+
+// Precio real (con descuento de aportante ya resuelto por el backend) para
+// el paso de identidad del modal — reemplaza las preguntas "¿eres
+// aportante?" / "¿qué plan tienes?" del formulario en papel: el backend ya
+// sabe la respuesta con solo la sesión del estudiante (ver
+// backend/src/locker/locker.service.ts::getPricePreview).
+export interface LockerPricePreview {
+  basePrice: number;
+  discountPercent: number;
+  tierName: string | null;
+  price: { TRANSFER: number; PAYPHONE: number };
+}
+
+export function fetchLockerPricePreview(): Promise<LockerPricePreview> {
+  return getJSON<LockerPricePreview>("/lockers/my-price", { auth: true });
 }
 
 export function confirmLockerReceipt(rentalId: string, receipt: File) {

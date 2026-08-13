@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { gotoApp } from './test-utils';
 
 // Caja negra de verdad — contra el build de producción real (npm run
 // preview, ver playwright.config.ts) y el backend real corriendo en
@@ -25,7 +26,7 @@ async function openLockersSheet(page: Page) {
     { timeout: 10_000 }
   );
 
-  await page.goto('/');
+  await gotoApp(page);
   await waitForSplash(page);
   await lockersResponse;
 
@@ -61,19 +62,17 @@ test.describe('AEIS App — casilleros (directorio real + modal de alquiler)', (
     await expect(page.getByText(/Casillero /)).toBeVisible();
   });
 
-  test('sin sesión iniciada, el modal pide login en vez de mostrar el formulario de pago', async ({ page }) => {
-    await openLockersSheet(page);
+  test('sin sesión iniciada, se ve la pantalla de login en vez de la app', async ({ page }) => {
+    // A diferencia de openLockersSheet() (que siembra un token falso para
+    // poder probar el resto de la app), acá se navega SIN sesión a
+    // propósito — App.svelte gatea toda la app detrás de <Login/> cuando
+    // !isAuthenticated(), así que ni la grilla de casilleros ni ningún
+    // otro contenido debería ser alcanzable.
+    await page.goto('/');
+    await waitForSplash(page);
 
-    const firstAvailable = page.locator('.unit:not([disabled])').first();
-    await firstAvailable.click();
-
-    // Scoped al dialog — el brandbar de arriba también tiene un botón
-    // "Iniciar sesión" propio, getByRole sin scope matcheaba los dos.
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByRole('button', { name: 'Iniciar sesión' })).toBeVisible();
-    // El formulario de método de pago (PayPhone/comprobante) NO debe
-    // aparecer para un visitante sin sesión — sería un bypass del guard.
-    await expect(page.getByText('PayPhone')).not.toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Iniciar sesión' })).toBeVisible();
+    await expect(page.locator('.unit')).toHaveCount(0);
   });
 
   test('cerrar el modal con la X vuelve a la grilla', async ({ page }) => {
@@ -103,7 +102,7 @@ test.describe('AEIS App — presupuesto de rendimiento (regresión del bundle)',
       }
     });
 
-    await page.goto('/');
+    await gotoApp(page);
     await waitForSplash(page);
     await page.waitForTimeout(1_000); // dar tiempo al import() dinámico de mapWarm
 

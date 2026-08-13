@@ -15,10 +15,17 @@ describe("LockerService.rent", () => {
   let audit: { record: jest.Mock };
   let payphone: { confirm: jest.Mock; getPublicConfig: jest.Mock };
   let ocr: { extractText: jest.Mock };
-  let subscriptionBenefits: { getLockerDiscountPercent: jest.Mock };
+  let subscriptionBenefits: { getLockerDiscountPercent: jest.Mock; getLockerDiscountInfo: jest.Mock };
 
   const locker = { id: "locker-1", code: "A07", zone: "A", status: "AVAILABLE" };
-  const params = { userId: "user-1", lockerCode: "A07", method: "TRANSFER" as const };
+  const params = {
+    userId: "user-1",
+    lockerCode: "A07",
+    method: "TRANSFER" as const,
+    cedula: "1723456789",
+    phone: "0991234567",
+    acceptedTerms: true,
+  };
 
   beforeEach(async () => {
     const tx = {
@@ -30,13 +37,17 @@ describe("LockerService.rent", () => {
       locker: { findUnique: jest.fn().mockResolvedValue(locker) },
       period: { findFirst: jest.fn().mockResolvedValue({ id: "period-1" }) },
       lockerRental: { findUnique: jest.fn() },
+      user: { update: jest.fn().mockResolvedValue({}) },
       $transaction: jest.fn((cb: any) => cb(tx)),
       __tx: tx,
     };
     audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
     payphone = { confirm: jest.fn(), getPublicConfig: jest.fn() };
     ocr = { extractText: jest.fn().mockResolvedValue("") };
-    subscriptionBenefits = { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) };
+    subscriptionBenefits = {
+      getLockerDiscountPercent: jest.fn().mockResolvedValue(0),
+      getLockerDiscountInfo: jest.fn().mockResolvedValue({ discountPercent: 0, tierName: null }),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -126,6 +137,94 @@ describe("LockerService.rent", () => {
     expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ amount: 6.5 }) })
     );
+  });
+
+  // Defensa en profundidad — el DTO ya rechaza esto con @IsIn([true]), pero
+  // rent() no debe confiar solo en esa capa (ver comentario en el método).
+  it("Dado acceptedTerms:false, Cuando se intenta alquilar, Entonces rechaza sin crear pago ni tocar el casillero", async () => {
+    await expect(service.rent({ ...params, acceptedTerms: false })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  // La "firma digital" del checkbox — QUIÉN/CUÁNDO/desde-dónde vienen de
+  // fuentes que el cliente no controla (actorId del JWT, AuditLog.createdAt,
+  // ipAddress de la request), no de campos del formulario. Acá solo se
+  // prueba que termsVersion/termsAccepted quedan en el metadata auditado.
+  it("Dado un alquiler aceptando términos, Cuando se completa, Entonces el audit log queda con termsAccepted y la versión del texto aceptado", async () => {
+    await service.rent(params);
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ termsAccepted: true, termsVersion: "2026-A-v1" }),
+      }),
+      prisma.__tx
+    );
+  });
+
+  // Cédula/celular se piden una sola vez (ver comentario en
+  // RentLockerModal.svelte) — el alquiler es el punto donde se guardan en
+  // User, para que el siguiente semestre no haya que volver a pedirlos.
+  it("Dado cédula y celular, Cuando alquila, Entonces los guarda en User para no volver a pedirlos", async () => {
+    await service.rent(params);
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { cedula: "1723456789", phone: "0991234567" },
+    });
+  });
+});
+
+describe("LockerService.getPricePreview", () => {
+  let service: LockerService;
+  let subscriptionBenefits: { getLockerDiscountPercent: jest.Mock; getLockerDiscountInfo: jest.Mock };
+
+  beforeEach(async () => {
+    subscriptionBenefits = {
+      getLockerDiscountPercent: jest.fn(),
+      getLockerDiscountInfo: jest.fn(),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        LockerService,
+        { provide: PrismaService, useValue: {} },
+        { provide: AuditService, useValue: {} },
+        { provide: PayphoneClient, useValue: {} },
+        { provide: OcrService, useValue: {} },
+        { provide: PeriodService, useValue: {} },
+        { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
+      ],
+    }).compile();
+    service = moduleRef.get(LockerService);
+  });
+
+  // Esto es lo que reemplaza las preguntas "¿eres aportante?" / "¿qué plan
+  // tienes?" del formulario en papel — el frontend llama a este preview
+  // ANTES de mostrar el precio, y el descuento ya viene resuelto solo con
+  // la sesión del estudiante, sin que declare nada.
+  it("Dado un aportante Plan Platino (10% de descuento), Cuando pide el preview de precio, Entonces devuelve el nombre del tier y el precio ya descontado en los dos métodos", async () => {
+    subscriptionBenefits.getLockerDiscountInfo.mockResolvedValue({ discountPercent: 10, tierName: "Platino" });
+
+    const preview = await service.getPricePreview("user-1");
+
+    expect(preview).toEqual({
+      basePrice: 6.5,
+      discountPercent: 10,
+      tierName: "Platino",
+      price: { TRANSFER: 5.85, PAYPHONE: 6.25 }, // 6.5*0.9=5.85; +0.40 de recargo PayPhone
+    });
+  });
+
+  it("Dado un estudiante sin aportación, Cuando pide el preview de precio, Entonces tierName es null y el precio es de lista", async () => {
+    subscriptionBenefits.getLockerDiscountInfo.mockResolvedValue({ discountPercent: 0, tierName: null });
+
+    const preview = await service.getPricePreview("user-1");
+
+    expect(preview).toEqual({
+      basePrice: 6.5,
+      discountPercent: 0,
+      tierName: null,
+      price: { TRANSFER: 6.5, PAYPHONE: 6.9 },
+    });
   });
 });
 

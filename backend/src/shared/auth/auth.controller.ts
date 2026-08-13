@@ -370,7 +370,7 @@ export class AuthController {
   async me(@Req() req: Request & { user: { id: string } }) {
     const user = await this.prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { fullName: true, uniqueCode: true, role: true },
+      select: { fullName: true, uniqueCode: true, role: true, cedula: true, phone: true },
     });
     if (!user) throw new UnauthorizedException();
     return user;
