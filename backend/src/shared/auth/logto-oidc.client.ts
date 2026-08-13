@@ -31,32 +31,49 @@ export class LogtoOidcClient implements OnModuleInit {
   // TODO el backend se caía por un problema de un solo proveedor externo.
   // Falla en caliente en su lugar: login() lanza recién cuando alguien de
   // verdad intenta autenticarse sin que Logto esté configurado.
+  //
+  // 3 intentos con backoff (1s/3s/6s) antes de rendirse — encontrado en
+  // producción: un `docker compose up --force-recreate` que reinicia
+  // backend Y Logto a la vez puede arrancar el backend una fracción de
+  // segundo antes de que Logto esté listo para responder discovery. Sin
+  // reintentos, ese primer intento fallido dejaba el backend pensando
+  // "Logto no configurado" hasta el SIGUIENTE restart, aunque Logto ya
+  // estuviera sano un par de segundos después.
   async onModuleInit() {
-    try {
-      const issuer = await Issuer.discover(this.config.getOrThrow<string>("LOGTO_ISSUER"));
-      this.client = new issuer.Client({
-        client_id: this.config.getOrThrow<string>("LOGTO_APP_ID"),
-        client_secret: this.config.get<string>("LOGTO_APP_SECRET"),
-        redirect_uris: [this.config.getOrThrow<string>("LOGTO_REDIRECT_URI")],
-        response_types: ["code"],
-        // openid-client asume RS256 por defecto para el id_token si no se le
-        // dice lo contrario — pero este tenant de Logto firma con ES384 (se
-        // confirmó en producción vía el header real del JWT). Sin esto,
-        // openid-client rechazaba TODO login con "unexpected JWT alg
-        // received, expected RS256, got: ES384" aunque el token fuera
-        // legítimo. Se toma del propio discovery doc del issuer en vez de
-        // hardcodear "ES384" a mano, para no romper de nuevo si Logto
-        // rota el algoritmo de firma más adelante.
-        id_token_signed_response_alg:
-          (issuer.metadata as Record<string, unknown>).id_token_signing_alg_values_supported instanceof Array
-            ? ((issuer.metadata as Record<string, unknown>).id_token_signing_alg_values_supported as string[])[0]
-            : "RS256",
-      });
-      this.logger.log(`Logto OIDC client inicializado contra ${issuer.issuer}`);
-    } catch (err) {
-      this.logger.warn(
-        `No se pudo inicializar el cliente OIDC de Logto — /auth/login fallará hasta que se resuelva. ${(err as Error).message}`
-      );
+    const attempts = [1_000, 3_000, 6_000];
+    for (let i = 0; i <= attempts.length; i++) {
+      try {
+        const issuer = await Issuer.discover(this.config.getOrThrow<string>("LOGTO_ISSUER"));
+        this.client = new issuer.Client({
+          client_id: this.config.getOrThrow<string>("LOGTO_APP_ID"),
+          client_secret: this.config.get<string>("LOGTO_APP_SECRET"),
+          redirect_uris: [this.config.getOrThrow<string>("LOGTO_REDIRECT_URI")],
+          response_types: ["code"],
+          // openid-client asume RS256 por defecto para el id_token si no se le
+          // dice lo contrario — pero este tenant de Logto firma con ES384 (se
+          // confirmó en producción vía el header real del JWT). Sin esto,
+          // openid-client rechazaba TODO login con "unexpected JWT alg
+          // received, expected RS256, got: ES384" aunque el token fuera
+          // legítimo. Se toma del propio discovery doc del issuer en vez de
+          // hardcodear "ES384" a mano, para no romper de nuevo si Logto
+          // rota el algoritmo de firma más adelante.
+          id_token_signed_response_alg:
+            (issuer.metadata as Record<string, unknown>).id_token_signing_alg_values_supported instanceof Array
+              ? ((issuer.metadata as Record<string, unknown>).id_token_signing_alg_values_supported as string[])[0]
+              : "RS256",
+        });
+        this.logger.log(`Logto OIDC client inicializado contra ${issuer.issuer}`);
+        return;
+      } catch (err) {
+        if (i === attempts.length) {
+          this.logger.warn(
+            `No se pudo inicializar el cliente OIDC de Logto tras ${attempts.length + 1} intentos — /auth/login fallará hasta que se resuelva. ${(err as Error).message}`
+          );
+          return;
+        }
+        this.logger.warn(`Descubrimiento OIDC de Logto falló, reintentando en ${attempts[i]}ms — ${(err as Error).message}`);
+        await new Promise((resolve) => setTimeout(resolve, attempts[i]));
+      }
     }
   }
 
