@@ -352,6 +352,19 @@
     padding: 20px;
   }
 
+  /* backdrop-filter obliga al navegador a difuminar en tiempo real todo lo
+     que queda detrás — acá, la grilla completa de hasta 108 casilleros con
+     sus propios drop-shadow, en el tap más común de la categoría (abrir
+     este modal). Es de las propiedades CSS más caras en GPUs Android de
+     gama baja; en mobile un scrim sólido más opaco se ve casi igual sin
+     ese costo (auditoría de rendimiento móvil). Desktop mantiene el blur. */
+  @media (max-width: 767px) {
+    .scrim {
+      background: rgba(2, 4, 10, 0.88);
+      backdrop-filter: none;
+    }
+  }
+
   .modal {
     position: relative;
     width: min(380px, 100%);

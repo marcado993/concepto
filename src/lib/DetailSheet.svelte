@@ -9,6 +9,7 @@
     onclose?: () => void;
     securityRisk?: number;
     securityCategory?: Category | null;
+    lockersCategory?: Category | null;
     securityIndicatorsError?: boolean;
     venturesError?: boolean;
     lockersError?: boolean;
@@ -23,6 +24,7 @@
     onclose,
     securityRisk = 0.5,
     securityCategory = null,
+    lockersCategory = null,
     securityIndicatorsError = false,
     venturesError = false,
     lockersError = false,
@@ -95,6 +97,7 @@
     <CategoryContent
       {category}
       {securityCategory}
+      {lockersCategory}
       {securityRisk}
       {securityIndicatorsError}
       {venturesError}

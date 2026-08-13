@@ -17,7 +17,23 @@ const app = mount(App, {
 // separe en su propio chunk, cargado en paralelo apenas monta la app — el
 // mapa se sigue precalentando durante el splash (mismo efecto que antes),
 // pero ya no bloquea que el resto de la UI aparezca primero.
-import('./lib/mapWarm')
+// requestIdleCallback (no un import() disparado directamente) — el import
+// dinámico ya separa MapLibre en su propio chunk, pero descargarlo/
+// parsearlo/ejecutar `new maplibregl.Map()` (contexto WebGL + worker) sigue
+// compitiendo por el mismo hilo principal que la animación de entrada de
+// Casilleros (la categoría por defecto al arrancar) en un celular de gama
+// baja con 1-2 núcleos reales — hallazgo de auditoría de rendimiento móvil:
+// no eran dos lags separados, era un choque de arranque compartido. El
+// timeout de respaldo (1500ms) cubre navegadores sin idle real bajo carga
+// continua, para que el precalentado del mapa no se postergue para siempre.
+const warmMapWhenIdle = () => {
+  import('./lib/mapWarm')
+}
+if ('requestIdleCallback' in window) {
+  requestIdleCallback(warmMapWhenIdle, { timeout: 1500 })
+} else {
+  setTimeout(warmMapWhenIdle, 300)
+}
 
 // The boot screen lives in index.html so it paints before this bundle even
 // arrives. Hand off once Svelte has mounted, keeping it up for a beat so a
