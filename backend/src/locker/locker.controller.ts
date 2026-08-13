@@ -62,6 +62,17 @@ export class LockerController {
     return this.lockerService.getPricePreview(req.user.id);
   }
 
+  // Le dice al frontend "¿tengo una reserva por transferencia esperando
+  // comprobante?" — para que la grilla deje tocar SU PROPIO casillero
+  // reservado (a resubir la foto) sin habilitar el de nadie más. userId
+  // sale del JWT ya verificado (@Roles + el guard de auth), nunca de un
+  // parámetro que el cliente pueda manipular.
+  @Get("mine/pending-receipt")
+  @Roles(Role.ESTUDIANTE)
+  myPendingReceipt(@Req() req: Request & { user: { id: string } }) {
+    return this.lockerService.getMyPendingReceipt(req.user.id);
+  }
+
   @Post("rent")
   @Roles(Role.ESTUDIANTE)
   // Límite propio, más estricto que el global (rate-limit.module.ts): un

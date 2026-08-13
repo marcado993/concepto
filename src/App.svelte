@@ -13,6 +13,7 @@
     fetchSecurityIndicators,
     fetchVentures,
     fetchLockers,
+    fetchMyPendingReceipt,
     fetchSubscriptionTiers,
     confirmLockerPayphonePayment,
     confirmSubscriptionPayphonePayment,
@@ -140,6 +141,35 @@
       });
   }
   $effect(loadLockers);
+
+  // Reserva propia (por transferencia) esperando comprobante — null si no
+  // hay ninguna, o si el comprobante ya se confirmó. Deja que la grilla
+  // habilite tocar ESE casillero puntual (y solo ese) aunque esté RESERVED,
+  // para resubir la foto si el primer intento falló (red caída, foto
+  // ilegible). El backend ya filtra por sesión — acá solo se guarda lo que
+  // devuelve, nunca se asume nada del lado del cliente.
+  let myPendingReceipt = $state<{ rentalId: string; lockerCode: string } | null>(null);
+  function loadMyPendingReceipt() {
+    if (!isAuthenticated()) return;
+    fetchMyPendingReceipt()
+      .then((data) => (myPendingReceipt = data))
+      .catch(() => {
+        // Silencioso a propósito: esto solo habilita un atajo (resubir sin
+        // buscar el casillero en la grilla ya lo cubre igual, solo que
+        // aparecería como bloqueado) — no es un dato crítico para mostrar
+        // un error aparte.
+      });
+  }
+  $effect(loadMyPendingReceipt);
+
+  // Tras un alquiler/confirmación exitosos, la grilla necesita refrescar
+  // tanto la disponibilidad (loadLockers) como si sigue habiendo una
+  // reserva propia esperando comprobante (loadMyPendingReceipt) — ya no
+  // debería haberla si el comprobante recién se confirmó.
+  function onLockerRented() {
+    loadLockers();
+    loadMyPendingReceipt();
+  }
 
   // Tiers de Aportaciones — mismo patrón que casilleros: se piden al
   // backend (no viven hardcodeados en data.ts), público, con estado de
@@ -326,7 +356,8 @@
                 {securityIndicatorsError}
                 {venturesError}
                 {lockersError}
-                onlockerrented={loadLockers}
+                {myPendingReceipt}
+                onlockerrented={onLockerRented}
                 {subscriptionTiersError}
                 onsubscribed={loadSubscriptionTiers}
                 wide
@@ -378,7 +409,8 @@
         {securityIndicatorsError}
         {venturesError}
         {lockersError}
-        onlockerrented={loadLockers}
+        {myPendingReceipt}
+        onlockerrented={onLockerRented}
         {subscriptionTiersError}
         onsubscribed={loadSubscriptionTiers}
       />

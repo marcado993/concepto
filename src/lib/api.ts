@@ -239,6 +239,19 @@ export function confirmLockerReceipt(rentalId: string, receipt: File) {
   return postFormData(`/lockers/rentals/${encodeURIComponent(rentalId)}/confirm-receipt`, form);
 }
 
+// "¿Tengo una reserva por transferencia esperando comprobante?" — para que
+// la grilla deje tocar SOLO ese casillero (a resubir la foto) mientras
+// sigue RESERVED, sin habilitar el de nadie más. El backend filtra por el
+// userId del JWT, nunca por algo que este cliente pueda manipular.
+export interface MyPendingReceipt {
+  rentalId: string;
+  lockerCode: string;
+}
+
+export function fetchMyPendingReceipt(): Promise<MyPendingReceipt | null> {
+  return getJSON<MyPendingReceipt | null>("/lockers/mine/pending-receipt", { auth: true });
+}
+
 // PayPhone (Cajita de Pagos) — el widget corre en el navegador con estos
 // valores (token/storeId), servidos por el backend en vez de vivir
 // hardcodeados aquí, para poder rotarlos sin redeploy del frontend (ver

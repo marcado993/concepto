@@ -21,6 +21,11 @@
     venturesError?: boolean;
     /** true si fetchLockers() falló — mismo patrón que securityIndicatorsError. */
     lockersError?: boolean;
+    /** La reserva propia (por transferencia) que sigue esperando comprobante,
+        si hay una — deja tocar ESE casillero puntual para resubir la foto
+        aunque su estado sea RESERVED. Verificado por el backend contra la
+        sesión real, nunca asumido acá. */
+    myPendingReceipt?: { rentalId: string; lockerCode: string } | null;
     /** Desktop full-screen layout: let grids breathe into more columns. */
     wide?: boolean;
     // Only wired up by the mobile sliding sheet, so its header doubles as a
@@ -44,6 +49,7 @@
     securityIndicatorsError = false,
     venturesError = false,
     lockersError = false,
+    myPendingReceipt = null,
     wide = false,
     onheaderpointerdown,
     onheaderpointermove,
@@ -70,6 +76,11 @@
   import type { SubscriptionBenefit } from "./data";
 
   let rentingLockerCode = $state<string | null>(null);
+  // Distinto de null solo cuando se toca el casillero de TU PROPIA reserva
+  // pendiente (myPendingReceipt) — le dice a RentLockerModal que salte
+  // directo al paso de subir el comprobante en vez de empezar un alquiler
+  // nuevo desde cero.
+  let resumeRentalId = $state<string | null>(null);
   let subscribingTier = $state<{ name: string; amount: string } | null>(null);
 
   // "descuento_casillero" con percent:0 no se muestra como "0% de
@@ -305,15 +316,36 @@
         {/if}
         <div class="grid">
           {#each lockersCategory.lockers ?? [] as unit, i (unit.id)}
+            {@const isMine = myPendingReceipt?.lockerCode === unit.number}
+            {@const clickable = unit.status === "available" || isMine}
             <button
               class="unit"
-              class:dim={unit.status !== "available"}
-              disabled={unit.status !== "available"}
-              onclick={() => (rentingLockerCode = unit.number)}
-              aria-label="Alquilar casillero {unit.number}"
+              class:dim={unit.status !== "available" && !isMine}
+              class:mine-pending={isMine}
+              disabled={!clickable}
+              onclick={() => {
+                resumeRentalId = isMine ? (myPendingReceipt?.rentalId ?? null) : null;
+                rentingLockerCode = unit.number;
+              }}
+              aria-label={isMine
+                ? `Resubir comprobante del casillero ${unit.number}`
+                : `Alquilar casillero ${unit.number}`}
               style="--unit-hue: {unitHue(i)}; animation-delay: {unitDelay(i)}ms"
             >
-              {#if unit.status !== "available"}
+              {#if isMine}
+                <!-- Solo TU reserva pendiente se ve así — verificado por el
+                     backend contra tu sesión, nunca por algo que este
+                     cliente decida. El resto de los reservados/ocupados
+                     sigue con el candado normal, sin poder tocarse. -->
+                <span class="unit-upload" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path
+                      fill="currentColor"
+                      d="M11 16V7.85l-2.6 2.6L7 9l5-5 5 5-1.4 1.45-2.6-2.6V16Zm-5 4q-.825 0-1.413-.588T4 18v-3h2v3h12v-3h2v3q0 .825-.588 1.413T18 20Z"
+                    />
+                  </svg>
+                </span>
+              {:else if unit.status !== "available"}
                 <!-- El texto "Ocupado"/"Reservado" ya distingue el estado
                      exacto, pero a 10px y entre hasta 108 unidades es fácil
                      de pasar por alto en un vistazo rápido — un candado en
@@ -331,7 +363,9 @@
               {/if}
               <IsoIcon unit status={unit.status} size={64} />
               <span class="unit-number">{unit.number}</span>
-              <span class="unit-status status-{unit.status}">{statusLabel[unit.status]}</span>
+              <span class="unit-status status-{unit.status}" class:status-mine={isMine}>
+                {isMine ? "Sube tu comprobante" : statusLabel[unit.status]}
+              </span>
             </button>
           {/each}
         </div>
@@ -419,7 +453,11 @@
 {#if rentingLockerCode}
   <RentLockerModal
     lockerCode={rentingLockerCode}
-    onclose={() => (rentingLockerCode = null)}
+    {resumeRentalId}
+    onclose={() => {
+      rentingLockerCode = null;
+      resumeRentalId = null;
+    }}
     onrented={() => onlockerrented?.()}
   />
 {/if}
@@ -616,6 +654,61 @@
   .unit-lock svg {
     width: 11px;
     height: 11px;
+  }
+
+  /* Tu reserva pendiente — la única celda RESERVED que sigue siendo
+     tocable. Pulso suave en el borde en vez del tratamiento .dim normal,
+     para que se note a distancia que hay algo pendiente de tu parte (a
+     diferencia de un "ocupado" cualquiera, que no pide ninguna acción). */
+  .unit.mine-pending {
+    border-color: var(--accent);
+    animation: unit-enter 0.45s ease-out forwards, mine-pulse 1.8s ease-in-out infinite 0.5s;
+  }
+
+  @keyframes mine-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 14px hsla(var(--unit-hue), 75%, 60%, 0.18);
+    }
+    50% {
+      box-shadow: 0 0 20px var(--accent-glow, rgba(33, 224, 160, 0.5));
+    }
+  }
+
+  .unit-upload {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0a1a12;
+    pointer-events: none;
+  }
+
+  .unit-upload svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .status-mine {
+    color: #0a1a12;
+    background: var(--accent);
+    animation: mine-status-pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes mine-status-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

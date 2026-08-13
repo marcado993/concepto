@@ -13,6 +13,7 @@
     securityIndicatorsError?: boolean;
     venturesError?: boolean;
     lockersError?: boolean;
+    myPendingReceipt?: { rentalId: string; lockerCode: string } | null;
     onlockerrented?: () => void;
     subscriptionTiersError?: boolean;
     onsubscribed?: () => void;
@@ -28,6 +29,7 @@
     securityIndicatorsError = false,
     venturesError = false,
     lockersError = false,
+    myPendingReceipt = null,
     onlockerrented,
     subscriptionTiersError = false,
     onsubscribed,
@@ -102,6 +104,7 @@
       {securityIndicatorsError}
       {venturesError}
       {lockersError}
+      {myPendingReceipt}
       {onlockerrented}
       {subscriptionTiersError}
       {onsubscribed}
