@@ -132,13 +132,16 @@ export class SubscriptionService {
     const valid = receiptMentionsAmount(ocrText, amount);
 
     if (!valid) {
+      // ocrTextPreview: mismo hallazgo que locker.service.ts — sin esto,
+      // un rechazo por OCR caído bajo presión de recursos y uno por un
+      // comprobante genuinamente equivocado se ven idénticos en el log.
       await this.audit.record({
         actorId: userId,
         action: "subscription.receipt.rejected",
         entityType: "Subscription",
         entityId: subscription.id,
         ipAddress,
-        metadata: { reason: "monto_no_coincide", expectedAmount: amount },
+        metadata: { reason: "monto_no_coincide", expectedAmount: amount, ocrTextPreview: ocrText.slice(0, 500) },
       });
       throw new BadRequestException(
         "No pudimos confirmar el monto en el comprobante — verifica que la foto sea legible e intenta de nuevo"

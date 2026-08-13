@@ -194,13 +194,19 @@ export class LockerService {
     const valid = receiptMentionsAmount(ocrText, amount);
 
     if (!valid) {
+      // ocrTextPreview: sin esto, un rechazo por "el OCR se cayó bajo
+      // presión" y uno por "el OCR leyó bien pero el comprobante de verdad
+      // no coincide" se veían idénticos en el AuditLog — hallazgo real
+      // (comprobante genuino rechazado durante un redeploy). Con el texto
+      // extraído ahí, un vistazo al log basta para saber cuál fue sin
+      // tener que volver a subir la imagen a mano para probarla.
       await this.audit.record({
         actorId: userId,
         action: "locker.receipt.rejected",
         entityType: "LockerRental",
         entityId: rental.id,
         ipAddress,
-        metadata: { reason: "monto_no_coincide", expectedAmount: amount },
+        metadata: { reason: "monto_no_coincide", expectedAmount: amount, ocrTextPreview: ocrText.slice(0, 500) },
       });
       throw new BadRequestException(
         "No pudimos confirmar el monto en el comprobante — verifica que la foto sea legible e intenta de nuevo"
