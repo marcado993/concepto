@@ -59,9 +59,9 @@
         }));
       case "subscriptions":
         // Tres bloques apilados — un tier por bloque (Bronce/Platino/
-        // Pantera), cada uno más brillante que el de abajo. Sin PNG propio
-        // todavía (a diferencia del resto de íconos); si llega uno, va en
-        // photoMap más abajo y este case queda de respaldo sin tocar nada.
+        // Pantera), cada uno más brillante que el de abajo. Respaldo por si
+        // photoMap no tiene foto para este kind (no debería pasar ahora que
+        // aportaciones.png existe, pero unit=true nunca usa foto igual).
         return [0, 1, 2].map((level) => ({
           ...isoToScreen(0, 0, level, W, H, 22),
           face: 0.45 + level * 0.275,
@@ -93,6 +93,7 @@
     resources: { src: "/repo.png", alt: "Recursos" },
     community: { src: "/emprendimiento.png", alt: "Emprendimientos" },
     security: { src: "/alerta.png", alt: "Seguridad" },
+    subscriptions: { src: "/aportaciones.png", alt: "Aportaciones" },
   };
   const photo = $derived(photoMap[kind]);
 </script>
