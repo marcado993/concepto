@@ -105,17 +105,31 @@
   class="iso-icon"
   class:glow={tone.glow}
 >
-  <defs>
-    <filter id="soft-glow-{kind}-{status}" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="3.2" result="blur" />
-      <feMerge>
-        <feMergeNode in="blur" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-  </defs>
+  {#if tone.glow && !unit}
+    <!-- El filtro feGaussianBlur solo se define/usa para el ÍCONO GRANDE de
+         la rueda (uno solo a la vez) — nunca para unit=true, que se
+         renderiza hasta ~108 veces en la grilla de casilleros. Cada
+         instancia definía su PROPIO <filter> con el mismo id repetido
+         (id duplicado inválido en SVG/HTML) y el navegador tenía que
+         rasterizar ~108 regiones de blur por separado — el cuello de
+         botella real del lag en gama baja, no la rueda. Para unit=true el
+         brillo usa un CSS drop-shadow más abajo (ver .cube.glow), que el
+         compositor resuelve mucho más barato al repetirse tantas veces. -->
+    <defs>
+      <filter id="soft-glow-{kind}-{status}" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="3.2" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+  {/if}
 
-  <g filter={tone.glow ? `url(#soft-glow-${kind}-${status})` : undefined}>
+  <g
+    filter={tone.glow && !unit ? `url(#soft-glow-${kind}-${status})` : undefined}
+    class:unit-glow={tone.glow && unit}
+  >
     {#each placed as p, i (i)}
       {@const c = cube(p.x, p.y, W, H, D)}
       <g class="cube">
@@ -154,6 +168,15 @@
   }
   .cube {
     transition: opacity 0.4s ease;
+  }
+
+  /* Brillo barato para casilleros "disponible" en la grilla — un
+     drop-shadow CSS normal, no un <filter> SVG con feGaussianBlur propio
+     (ver comentario arriba de <defs>). El navegador ya sabe componer
+     drop-shadow de forma eficiente incluso repetido ~100 veces; un
+     feGaussianBlur con su propia región de filtro por instancia no. */
+  .unit-glow {
+    filter: drop-shadow(0 0 3px var(--accent-glow, rgba(33, 224, 160, 0.55)));
   }
 
   /* "Materializes" in once on mount — a clip-path wipe plus a scanning
