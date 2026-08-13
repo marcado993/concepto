@@ -337,25 +337,27 @@
       </main>
     {:else}
       <main class="menu-layer" class:receded={sheetOpen}>
-        <div class="label-block">
-          {#key activeCategory.id}
-            <div in:fade={{ duration: 150 }}>
-              <TypeText tag="h1" class="label" text={activeCategory.label} speed={34} />
-              <TypeText
-                tag="p"
-                class="prompt-text"
-                text={activeCategory.prompt}
-                speed={14}
-                startDelay={activeCategory.label.length * 34 + 120}
-              />
-            </div>
-          {/key}
+        <div class="top-copy">
+          <div class="label-block">
+            {#key activeCategory.id}
+              <div in:fade={{ duration: 150 }}>
+                <TypeText tag="h1" class="label" text={activeCategory.label} speed={34} />
+                <TypeText
+                  tag="p"
+                  class="prompt-text"
+                  text={activeCategory.prompt}
+                  speed={14}
+                  startDelay={activeCategory.label.length * 34 + 120}
+                />
+              </div>
+            {/key}
+          </div>
+          <p class="swipe-hint" class:emphasize={firstVisit}>
+            <span class="hint-arrow bounce-left">‹</span>
+            {firstVisit ? "desliza el disco para elegir" : "desliza para elegir"}
+            <span class="hint-arrow bounce-right">›</span>
+          </p>
         </div>
-        <p class="swipe-hint" class:emphasize={firstVisit}>
-          <span class="hint-arrow bounce-left">‹</span>
-          {firstVisit ? "desliza el disco para elegir" : "desliza para elegir"}
-          <span class="hint-arrow bounce-right">›</span>
-        </p>
         <div class="wheel-slot" onpointerdown={dismissOnboarding}>
           <ArcMenu bind:selectedIndex categories={displayCategories} locked={sheetOpen} onswipeup={openSheet} />
         </div>
@@ -503,6 +505,23 @@
   .menu-layer.receded {
     transform: translateY(14px) scale(0.98);
     opacity: 0.3;
+  }
+
+  /* Antes label-block + swipe-hint eran hijos directos de .menu-layer,
+     pegados arriba, y todo el espacio libre restante quedaba dentro de
+     .wheel-slot (flex:1) — pero la rueda se ancla al fondo de ese espacio
+     (ArcMenu .stage, justify-content:flex-end), así que ese hueco se veía
+     entero ENTRE el texto y la rueda, no repartido. Envolver el texto en
+     su propio flex:1 centrado lo baja hasta la mitad de ese espacio libre
+     sin tocar la posición de la rueda (reporte real en celular). */
+  .top-copy {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(10px, 2.6vh, 20px);
   }
 
   .label-block {
