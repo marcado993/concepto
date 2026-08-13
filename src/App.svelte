@@ -644,27 +644,40 @@
     }
   }
 
+  /* Antes: relleno plano de un solo verde + halo parejo alrededor + fuente
+     del cuerpo — el combo clásico de "botón de plantilla genérica" (nada
+     con textura o gradiente en este sistema, todo lo demás es outline/glow,
+     así que un sólido plano destaca por las razones equivocadas). Ahora:
+     degradado de 2 tonos DEL MISMO verde de marca (--accent → --accent-dim,
+     ya definidos en app.css, no un tono inventado), sombra direccional
+     (luz desde arriba, se apaga hacia abajo, en vez de un halo uniforme),
+     ancho acotado a su contenido en vez de casi todo el viewport, y la
+     misma familia tipográfica que el título de la categoría arriba
+     (--font-heading) para que no se lean como dos sistemas distintos. */
   .open-pill {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
     margin: 0 0 max(4px, env(safe-area-inset-bottom));
-    padding: 13px 26px;
+    padding: 11px 22px;
+    width: fit-content;
+    max-width: min(74%, 260px);
     border-radius: 999px;
-    background: var(--accent);
+    background: linear-gradient(165deg, var(--accent) 0%, var(--accent-dim) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     color: #010805;
-    font-family: var(--font-display);
+    font-family: var(--font-heading);
     font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.02em;
+    font-weight: 400;
+    letter-spacing: 0.03em;
     text-transform: lowercase;
     text-shadow: none;
     text-align: center;
     white-space: nowrap;
     cursor: pointer;
     flex: 0 0 auto;
-    box-shadow: 0 0 0 2px rgba(4, 18, 12, 0.4) inset, 0 8px 24px var(--accent-glow);
+    box-shadow: 0 -6px 16px var(--accent-glow), 0 10px 22px rgba(2, 6, 4, 0.5);
     animation: pill-breathe 2.4s ease-in-out infinite;
     transition: transform 0.25s ease;
   }
@@ -677,11 +690,11 @@
     0%,
     100% {
       transform: translateY(0) scale(1);
-      box-shadow: 0 0 0 2px rgba(4, 18, 12, 0.4) inset, 0 8px 24px var(--accent-glow);
+      box-shadow: 0 -6px 16px var(--accent-glow), 0 10px 22px rgba(2, 6, 4, 0.5);
     }
     50% {
-      transform: translateY(-5px) scale(1.07);
-      box-shadow: 0 0 0 2px rgba(4, 18, 12, 0.4) inset, 0 0 34px var(--accent-glow), 0 14px 34px var(--accent-glow);
+      transform: translateY(-5px) scale(1.05);
+      box-shadow: 0 -10px 28px var(--accent-glow), 0 14px 28px rgba(2, 6, 4, 0.55);
     }
   }
 
@@ -695,11 +708,11 @@
     0%,
     100% {
       transform: translateY(0) scale(1);
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25) inset, 0 8px 24px var(--accent-glow);
+      box-shadow: 0 -4px 14px var(--accent-glow), 0 8px 20px rgba(2, 6, 4, 0.45);
     }
     50% {
       transform: translateY(-3px) scale(1.02);
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3) inset, 0 12px 30px var(--accent-glow);
+      box-shadow: 0 -7px 20px var(--accent-glow), 0 10px 24px rgba(2, 6, 4, 0.5);
     }
   }
 

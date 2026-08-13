@@ -381,8 +381,15 @@ export class AuthController {
   logout(@Res() res: Response) {
     const frontendOrigin = this.config.getOrThrow<string>("FRONTEND_ORIGIN").split(",")[0];
     const issuer = this.config.getOrThrow<string>("LOGTO_ISSUER");
-    return res.redirect(
-      `${issuer}/session/end?post_logout_redirect_uri=${encodeURIComponent(frontendOrigin)}`
-    );
+    // Sin `client_id`, Logto no puede confirmar que `post_logout_redirect_uri`
+    // esté en la lista blanca de ESTA app — sin esa validación, en vez de
+    // redirigir de vuelta muestra su propia pantalla genérica "You have
+    // successfully signed out" (hallazgo real en producción: el usuario
+    // veía esa pantalla de Logto en vez de volver al login de AEIS-APP).
+    const params = new URLSearchParams({
+      post_logout_redirect_uri: frontendOrigin,
+      client_id: this.config.getOrThrow<string>("LOGTO_APP_ID"),
+    });
+    return res.redirect(`${issuer}/session/end?${params.toString()}`);
   }
 }
