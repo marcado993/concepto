@@ -515,7 +515,12 @@
      su propio flex:1 centrado lo baja hasta la mitad de ese espacio libre
      sin tocar la posición de la rueda (reporte real en celular). */
   .top-copy {
-    flex: 1;
+    /* flex-grow más alto que .wheel-slot (que se queda en 1) — reparte MÁS
+       del espacio libre compartido hacia el texto sin mover ni un pixel el
+       borde inferior de .wheel-slot (donde ArcMenu ancla la rueda), porque
+       ese borde depende solo de la suma total de ambos más el alto fijo de
+       .pill-slot, no de cómo se reparte el crecimiento entre los dos. */
+    flex: 2;
     min-height: 0;
     display: flex;
     flex-direction: column;
