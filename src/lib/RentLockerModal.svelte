@@ -19,7 +19,7 @@
   import { loadPayphoneSdk } from "./payphoneSdk";
   import { isAuthenticated } from "./auth.svelte";
   import Login from "./Login.svelte";
-  import { fade, scale } from "svelte/transition";
+  import { scale } from "svelte/transition";
 
   interface Props {
     lockerCode: string;
@@ -200,7 +200,6 @@
   role="button"
   tabindex="-1"
   aria-label="Cerrar"
-  transition:fade={{ duration: 150 }}
 >
   <div
     class="modal"

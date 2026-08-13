@@ -571,9 +571,19 @@
     }
   }
 
-  .unit:hover:not(:disabled) {
-    border-color: hsla(var(--unit-hue), 75%, 65%, 0.55);
-    box-shadow: 0 0 16px hsla(var(--unit-hue), 75%, 60%, 0.25);
+  /* Brillo permanente y barato para "disponible" — box-shadow en el
+     BOTÓN, no filter/drop-shadow sobre la foto de adentro (ver comentario
+     en IsoIcon.svelte: eso volvía a ser caro con locker-mini.png por su
+     borde alfa disperso tipo halftone, a diferencia del cubo SVG de antes). */
+  .unit:not(.dim) {
+    box-shadow: 0 0 14px hsla(var(--unit-hue), 75%, 60%, 0.18);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .unit:hover:not(:disabled) {
+      border-color: hsla(var(--unit-hue), 75%, 65%, 0.55);
+      box-shadow: 0 0 16px hsla(var(--unit-hue), 75%, 60%, 0.25);
+    }
   }
 
   .unit:active {

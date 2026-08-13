@@ -490,3 +490,100 @@ describe("LockerService.confirmPayphonePayment", () => {
     expect(prisma.__tx.locker.update).not.toHaveBeenCalled();
   });
 });
+
+describe("LockerService.releaseExpiredTransferReservations", () => {
+  let service: LockerService;
+  let prisma: any;
+  let audit: { record: jest.Mock };
+
+  const expiredRental = {
+    id: "rental-1",
+    userId: "user-1",
+    lockerId: "locker-1",
+    paymentId: "payment-1",
+    locker: { id: "locker-1", code: "A07" },
+  };
+
+  beforeEach(async () => {
+    const tx = {
+      payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      lockerRental: { delete: jest.fn().mockResolvedValue({}) },
+      locker: { update: jest.fn().mockResolvedValue({ id: "locker-1", status: "AVAILABLE" }) },
+    };
+    prisma = {
+      lockerRental: { findMany: jest.fn().mockResolvedValue([expiredRental]) },
+      $transaction: jest.fn((cb: any) => cb(tx)),
+      __tx: tx,
+    };
+    audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        LockerService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditService, useValue: audit },
+        { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
+        { provide: OcrService, useValue: { extractText: jest.fn() } },
+        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
+        {
+          provide: SubscriptionBenefitsService,
+          useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
+        },
+      ],
+    }).compile();
+    service = moduleRef.get(LockerService);
+  });
+
+  it("Dado un alquiler RESERVED por transferencia sin comprobante hace más de 24h, Cuando corre el job, Entonces marca el pago REJECTED, borra el LockerRental (libera @@unique[lockerId,periodId]), pone el casillero AVAILABLE y audita locker.rental.expired", async () => {
+    const released = await service.releaseExpiredTransferReservations();
+
+    expect(prisma.lockerRental.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ payment: { method: "TRANSFER", status: "PENDING" } }),
+      })
+    );
+    expect(prisma.__tx.payment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "payment-1", status: "PENDING" },
+        data: { status: "REJECTED" },
+      })
+    );
+    expect(prisma.__tx.lockerRental.delete).toHaveBeenCalledWith({ where: { id: "rental-1" } });
+    expect(prisma.__tx.locker.update).toHaveBeenCalledWith({
+      where: { id: "locker-1" },
+      data: { status: "AVAILABLE" },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: "user-1",
+        action: "locker.rental.expired",
+        entityId: "rental-1",
+        metadata: expect.objectContaining({ lockerCode: "A07", reason: "sin_comprobante_24h" }),
+      }),
+      prisma.__tx
+    );
+    expect(released).toBe(1);
+  });
+
+  it("Dado que no hay reservas vencidas, Cuando corre el job, Entonces no abre ninguna transacción y retorna 0", async () => {
+    prisma.lockerRental.findMany.mockResolvedValue([]);
+
+    const released = await service.releaseExpiredTransferReservations();
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(released).toBe(0);
+  });
+
+  // CONCURRENCIA — mismo patrón que confirmReceipt()/confirmPayphonePayment():
+  // el estudiante sube el comprobante justo en el instante en que el cron
+  // ya había leído esta reserva como "vencida" pero todavía no la liberó.
+  it("Dado que el estudiante confirma el pago justo antes de que el job libere esa reserva (condición de carrera), Cuando updateMany no encuentra ninguna fila PENDING, Entonces NO borra el alquiler ni toca el casillero", async () => {
+    prisma.__tx.payment.updateMany.mockResolvedValue({ count: 0 });
+
+    const released = await service.releaseExpiredTransferReservations();
+
+    expect(prisma.__tx.lockerRental.delete).not.toHaveBeenCalled();
+    expect(prisma.__tx.locker.update).not.toHaveBeenCalled();
+    expect(released).toBe(0);
+  });
+});
