@@ -21,12 +21,50 @@ export class ApiError extends Error {
   }
 }
 
+// `fetch()` que rechaza (en vez de resolver con un Response) significa que
+// la petición nunca llegó a tener respuesta HTTP — red caída, DNS, CORS
+// bloqueado, o (el caso real más común reportado, con captura de pantalla:
+// un celular mostrando 19.2 KB/s) una conexión móvil tan lenta/inestable
+// que el navegador corta la subida a medio camino. Justo en el flujo de
+// subir un comprobante — la acción más crítica y con más ansiedad de toda
+// la app ("¿se subió o no, me cobraron o no?") — un solo intento fallido
+// no debería obligar al estudiante a volver a elegir la foto a mano.
+//
+// Reintentar automáticamente ACÁ es seguro (a diferencia de reintentar una
+// respuesta HTTP ya recibida, que si podría duplicar una acción): un
+// fetch() que nunca llegó a responder significa que el backend puede no
+// haber visto la petición en absoluto, y si SÍ la vio, cada acción crítica
+// (alquilar, confirmar comprobante) ya está protegida con
+// `updateMany WHERE status:"PENDING"` — un reintento que en realidad SÍ
+// se procesó la primera vez simplemente encuentra 0 filas PENDING y
+// responde con "ya fue procesado" en vez de duplicar nada.
+const NETWORK_RETRY_DELAYS_MS = [600, 1500]; // hasta 3 intentos en total
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      if (attempt >= NETWORK_RETRY_DELAYS_MS.length) throw err;
+      await new Promise((resolve) => setTimeout(resolve, NETWORK_RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
+// Mensaje después de agotar TODOS los reintentos — antes mostraba
+// textualmente "No se pudo contactar al backend
+// (https://api.aeis-app.online/...): Failed to fetch", la URL cruda del
+// backend y jerga de navegador que no le dicen nada útil a un estudiante.
+function networkErrorMessage(): string {
+  return "No se pudo conectar con el servidor — revisa tu conexión a internet e intenta de nuevo.";
+}
+
 async function getJSON<T>(path: string, opts: { auth?: boolean } = {}): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, { headers: opts.auth ? authHeader() : undefined });
-  } catch (err) {
-    throw new ApiError(`No se pudo contactar al backend (${API_BASE_URL}${path}): ${(err as Error).message}`);
+    res = await fetchWithRetry(`${API_BASE_URL}${path}`, { headers: opts.auth ? authHeader() : undefined });
+  } catch {
+    throw new ApiError(networkErrorMessage());
   }
   if (!res.ok) {
     throw new ApiError(`Backend respondió ${res.status} en ${path}`, res.status);
@@ -37,13 +75,13 @@ async function getJSON<T>(path: string, opts: { auth?: boolean } = {}): Promise<
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    res = await fetchWithRetry(`${API_BASE_URL}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(body),
     });
-  } catch (err) {
-    throw new ApiError(`No se pudo contactar al backend (${API_BASE_URL}${path}): ${(err as Error).message}`);
+  } catch {
+    throw new ApiError(networkErrorMessage());
   }
   if (!res.ok) {
     throw new ApiError(await friendlyErrorMessage(res, path), res.status);
@@ -57,13 +95,13 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
 async function postFormData<T>(path: string, form: FormData): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    res = await fetchWithRetry(`${API_BASE_URL}${path}`, {
       method: "POST",
       headers: { ...authHeader() },
       body: form,
     });
-  } catch (err) {
-    throw new ApiError(`No se pudo contactar al backend (${API_BASE_URL}${path}): ${(err as Error).message}`);
+  } catch {
+    throw new ApiError(networkErrorMessage());
   }
   if (!res.ok) {
     throw new ApiError(await friendlyErrorMessage(res, path), res.status);
