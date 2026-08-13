@@ -150,7 +150,20 @@ export class LogtoOidcClient implements OnModuleInit {
     const tokenSet = await this.client.callback(
       redirectUri,
       { code: params.code, state: params.state, iss: params.iss },
-      { code_verifier: params.codeVerifier, state: params.expectedState }
+      { code_verifier: params.codeVerifier, state: params.expectedState },
+      {
+        // El `resource` de authorizationUrl() solo viaja en la petición de
+        // AUTORIZACIÓN — Logto no lo recuerda por sí solo para la petición
+        // de TOKEN que viene después con el `code`. Sin repetirlo acá, el
+        // login "se veía" exitoso (código real, tokenSet con claims
+        // válidos) pero el access_token venía OPACO (un string corto sin
+        // firmar, no un JWT) en vez del JWT que jwt.strategy.ts necesita
+        // para validar cada request protegida — 401 silencioso en
+        // /auth/me, /lockers/my-price, todo. Confirmado a mano contra el
+        // token endpoint real de Logto: mismo `code`, sin este parámetro
+        // → opaco; con este parámetro → JWT con aud correcto.
+        exchangeBody: { resource: this.config.getOrThrow<string>("LOGTO_AUDIENCE") },
+      }
     );
     if (!tokenSet.access_token || !tokenSet.claims().sub) {
       throw new Error("Logto no devolvió un token válido");
