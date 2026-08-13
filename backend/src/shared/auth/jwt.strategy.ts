@@ -40,7 +40,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // ver 07-iso27001-sgsi-politica.md.
       audience: config.getOrThrow<string>("LOGTO_AUDIENCE"),
       issuer: config.getOrThrow<string>("LOGTO_ISSUER"),
-      algorithms: ["RS256"],
+      // Este tenant de Logto firma con ES384, no RS256 (mismo hallazgo que
+      // logto-oidc.client.ts — confirmado ahí vía el discovery doc real:
+      // id_token_signing_alg_values_supported=["ES384"], y acá vía un
+      // login real en producción: jsonwebtoken rechazaba SILENCIOSAMENTE
+      // cualquier access_token real porque su alg no estaba en la lista
+      // permitida — 401 sin ningún log, porque el rechazo pasa dentro de
+      // passport-jwt/jsonwebtoken antes de que este código vea el error.
+      // A diferencia de logto-oidc.client.ts, acá no hay forma simple de
+      // tomarlo del discovery doc (PassportStrategy configura esto de
+      // forma síncrona en el constructor) — si Logto rota el algoritmo de
+      // firma, este valor hay que actualizarlo a mano.
+      algorithms: ["ES384"],
     });
   }
 
