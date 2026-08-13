@@ -42,6 +42,19 @@ export function onWarmReady(cb: () => void): void {
   _pending.push(cb);
 }
 
+// pitch:45 (vista 3D inclinada) es mucho más caro de dibujar que una
+// vista plana — a ese ángulo la GPU tiene que rasterizar bastantes más
+// tiles de los que caben en pantalla (todo lo que queda "detrás" del
+// horizonte inclinado) y con proyección en perspectiva, no ortogonal.
+// En un celular de gama baja eso es justo lo que se siente como lag al
+// entrar a Seguridad. En desktop el efecto 3D se mantiene: es una GPU con
+// mucho más margen y la pantalla es una fracción del hardware disponible
+// en el dispositivo. `matchMedia` en vez de `innerWidth` a propósito —
+// se evalúa UNA vez acá al crear el mapa (no reactivo), así que no hace
+// falta un listener de resize por algo que nunca va a cambiar después de
+// esta carga de página.
+const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+
 // Doble rAF: el primero espera a que el browser pinte el primer frame
 // (splash visible), el segundo cede el hilo para que Svelte monte.
 // Solo después creamos el Map, que es la operación costosa.
@@ -52,8 +65,15 @@ requestAnimationFrame(() =>
       style: "/map-style.json",
       center: [-78.4886, -0.208],
       zoom: 14,
-      pitch: 45,
-      bearing: -12,
+      pitch: isMobile ? 0 : 45,
+      bearing: isMobile ? 0 : -12,
+      // Los gestos de inclinar/rotar con dos dedos casi nunca son
+      // intencionales en un mapa chico dentro de una app (suelen ser un
+      // pellizco/scroll que se malinterpreta) — además de bajar el costo
+      // de repintado, evita que un gesto accidental deje el mapa
+      // inclinado/rotado sin que el estudiante entienda por qué.
+      dragRotate: !isMobile,
+      touchPitch: !isMobile,
       attributionControl: false,
     });
 
