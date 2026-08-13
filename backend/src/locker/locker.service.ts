@@ -1,4 +1,12 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
 import { LockerRental } from "@prisma/client";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
@@ -37,8 +45,17 @@ export interface RentLockerParams {
   ipAddress?: string;
 }
 
+// Cuánto tiempo se le da al ganador de un casillero por TRANSFERENCIA para
+// subir el comprobante antes de que otro estudiante pueda tomarlo — pedido
+// real del cliente: "solo se reservan 1 día... si no sube evidencias se
+// libera". PayPhone no aplica: ahí no hay comprobante que subir, la
+// confirmación pasa por confirmPayphonePayment() contra la API real.
+const TRANSFER_RECEIPT_GRACE_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class LockerService {
+  private readonly logger = new Logger(LockerService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -326,5 +343,66 @@ export class LockerService {
       );
       return { rental, locker: updatedLocker };
     });
+  }
+
+  // Corre cada hora, mismo patrón que ResourceMonitorService (@Cron en el
+  // mismo proceso que sirve la API — ver ese archivo para por qué no un
+  // job/daemon aparte). Libera casilleros RESERVED por transferencia cuyo
+  // ganador nunca subió el comprobante dentro de las 24h de gracia — sin
+  // esto, un estudiante que se arrepiente o simplemente no vuelve deja el
+  // casillero bloqueado para todos el resto del semestre (@@unique
+  // [lockerId, periodId] impide que otro lo intente mientras el
+  // LockerRental "fantasma" siga ahí).
+  @Cron(CronExpression.EVERY_HOUR)
+  async releaseExpiredTransferReservations(): Promise<number> {
+    const cutoff = new Date(Date.now() - TRANSFER_RECEIPT_GRACE_MS);
+    const expired = await this.prisma.lockerRental.findMany({
+      where: { payment: { method: "TRANSFER", status: "PENDING" }, createdAt: { lte: cutoff } },
+      include: { locker: true },
+    });
+
+    let released = 0;
+    for (const rental of expired) {
+      const freed = await this.prisma.$transaction(async (tx) => {
+        // updateMany + WHERE status:"PENDING", no update() simple — mismo
+        // motivo que confirmReceipt()/confirmPayphonePayment(): si el
+        // estudiante sube el comprobante justo en este instante, esto evita
+        // liberar un casillero que ya se confirmó por debajo.
+        const { count } = await tx.payment.updateMany({
+          where: { id: rental.paymentId, status: "PENDING" },
+          data: { status: "REJECTED" },
+        });
+        if (count === 0) return false;
+
+        // Se borra el LockerRental (no el Payment, que queda como historial
+        // marcado REJECTED) — es la fila que bloquea @@unique[lockerId,
+        // periodId], así que borrarla es lo que de verdad libera el cupo
+        // para que otro estudiante pueda alquilar el mismo casillero.
+        await tx.lockerRental.delete({ where: { id: rental.id } });
+        await tx.locker.update({ where: { id: rental.lockerId }, data: { status: "AVAILABLE" } });
+        await this.audit.record(
+          {
+            // No hay un usuario "actuando" acá (esto lo dispara el reloj,
+            // no un click) — se usa el dueño de la reserva vencida como
+            // actor porque AuditLog.actorId es NOT NULL a propósito (ver
+            // audit.service.ts); metadata.reason deja claro que fue
+            // automático, no algo que el estudiante pidió.
+            actorId: rental.userId,
+            action: "locker.rental.expired",
+            entityType: "LockerRental",
+            entityId: rental.id,
+            metadata: { lockerCode: rental.locker.code, reason: "sin_comprobante_24h" },
+          },
+          tx
+        );
+        return true;
+      });
+      if (freed) released++;
+    }
+
+    if (released > 0) {
+      this.logger.log(`Liberados ${released} casillero(s) reservados por transferencia sin comprobante en 24h`);
+    }
+    return released;
   }
 }

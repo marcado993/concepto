@@ -107,12 +107,16 @@
 </script>
 
 {#if isLockerUnit}
-  <span
-    class="photo-wrap unit-photo"
-    class:unit-glow={tone.glow}
-    class:unit-dim-photo={!tone.glow}
-    style="width: {size}px; height: {size}px"
-  >
+  <!-- Sin drop-shadow acá — a diferencia del cubo SVG (pocos polígonos,
+       bordes rectos), esta foto es un halftone de puntitos con MUCHO borde
+       alfa disperso, no solo en el contorno exterior. drop-shadow tiene que
+       recalcular esos bordes; en 108 instancias a la vez eso volvió a ser
+       el mismo cuello de botella que ya se había resuelto para el cubo
+       (reporte real: lag al cambiar de categoría tras agregar esta foto).
+       El brillo de "disponible" ahora lo pone .unit misma con box-shadow
+       (CategoryContent.svelte) — barato porque no depende de la silueta
+       real de la imagen. -->
+  <span class="photo-wrap unit-photo" class:unit-dim-photo={!tone.glow} style="width: {size}px; height: {size}px">
     <img src="/locker-mini.png" alt="" class="kind-photo" draggable="false" decoding="async" />
   </span>
 {:else if photo && !unit}
