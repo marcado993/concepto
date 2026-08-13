@@ -4,7 +4,7 @@
   // el mapa está listo (puede ser inmediato o asíncrono si el usuario
   // navega muy rápido antes de que el mapa haya terminado de crear).
   import * as maplibregl from "maplibre-gl";
-  import { warmMap, warmShell, mapLoaded, onWarmReady, state as warmState } from "./mapWarm";
+  import { warmMap, warmShell, mapLoaded, onWarmReady, state as warmState, isMobile } from "./mapWarm";
   import { fetchSecurityMapData, type GeoJSONFeatureCollection } from "./api";
 
   interface Props {
@@ -47,10 +47,19 @@
         id: "risk-heat",
         type: "heatmap",
         source: "risk-points",
+        // En mobile la intensidad/radio bajan junto con el pixelRatio
+        // capado en mapWarm.ts — el heatmap es la capa más cara del
+        // estilo (kernel multi-pase + blending aditivo por punto) y en
+        // gama baja Android se nota directamente como lag al entrar a
+        // Seguridad (auditoría de rendimiento móvil).
         paint: {
           "heatmap-weight": 1,
-          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 11, 1, 16, 2.4],
-          "heatmap-radius":    ["interpolate", ["linear"], ["zoom"], 11, 16, 16, 42],
+          "heatmap-intensity": isMobile
+            ? ["interpolate", ["linear"], ["zoom"], 11, 0.7, 16, 1.7]
+            : ["interpolate", ["linear"], ["zoom"], 11, 1, 16, 2.4],
+          "heatmap-radius": isMobile
+            ? ["interpolate", ["linear"], ["zoom"], 11, 12, 16, 28]
+            : ["interpolate", ["linear"], ["zoom"], 11, 16, 16, 42],
           "heatmap-opacity": 0.75,
           "heatmap-color": [
             "interpolate", ["linear"], ["heatmap-density"],
@@ -95,7 +104,11 @@
       });
     }
     if (!warmState.navControlAdded) {
-      m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+      // visualizePitch anima la brújula en cada frame en que pitch/bearing
+      // sean distintos de cero — en mobile ambos quedan fijos en 0
+      // (mapWarm.ts), así que ahí la brújula nunca tiene nada que
+      // visualizar: trabajo muerto que se apaga solo en mobile.
+      m.addControl(new maplibregl.NavigationControl({ visualizePitch: !isMobile }), "top-right");
       warmState.navControlAdded = true;
     }
 

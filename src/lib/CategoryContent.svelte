@@ -8,6 +8,12 @@
     // NOT just `category` when it happens to be active. See the note by
     // the map block below for why this exists.
     securityCategory?: Category | null;
+    // Misma razón que securityCategory: una referencia que no cambia de
+    // identidad solo porque se navegó a otra categoría — sin esto, la
+    // grilla de hasta 108 casilleros se destruía y reconstruía entera
+    // (con sus 108 animaciones de entrada) cada vez que se volvía a esta
+    // sección (auditoría de rendimiento móvil).
+    lockersCategory?: Category | null;
     securityRisk?: number;
     /** true si fetchSecurityIndicators() falló — distingue "cargando" de "no se pudo". */
     securityIndicatorsError?: boolean;
@@ -33,6 +39,7 @@
   let {
     category,
     securityCategory = null,
+    lockersCategory = null,
     securityRisk = 0.5,
     securityIndicatorsError = false,
     venturesError = false,
@@ -84,18 +91,30 @@
 
   let mapReady = $state(false);
 
-  // Cuando el sheet se abre y el mapa ya está listo, forzamos resize
-  // para que llene el contenedor correctamente (el tamaño cambia al
-  // animarse el slide del sheet).
-  $effect(() => {
-    if (isSecurityActive && mapReady) {
-      setTimeout(() => {
-        window.dispatchEvent(new Event("resize"));
-      }, 420);
-    }
-  });
+  // El resize del mapa al abrirse el sheet ya lo cubre el ResizeObserver
+  // propio de SecurityMap.svelte (observa el contenedor real). Antes acá
+  // se despachaba además un `window.dispatchEvent(new Event("resize"))`
+  // global 420ms después — no solo era redundante (hasta 3 llamadas a
+  // `map.resize()`, cada una recrea framebuffers), sino que ese evento
+  // global también re-disparaba cualquier OTRO listener de resize de la
+  // app, no solo el del mapa (hallazgo de auditoría de rendimiento móvil).
 
   const isSecurityActive = $derived(category.id === "security");
+  const isLockersActive = $derived(category.id === "lockers");
+
+  // Una sola vez true, nunca vuelve a false — a propósito no es
+  // `isSecurityActive` directo. `{#if isSecurityActive}` desmontaba
+  // <SecurityMapComp> cada vez que se navegaba fuera de Seguridad (pese a
+  // que el comentario del panel decía lo contrario), lo que disparaba un
+  // fetch nuevo a /security/map-data y un setData() completo del heatmap
+  // (~500 puntos re-tesselados en GPU) en cada visita, no solo la primera
+  // (hallazgo de auditoría de rendimiento móvil). Con este flag, el mapa
+  // sigue sin montarse para quien nunca abre Seguridad, pero una vez
+  // montado queda montado — igual que ya pasa con Casilleros.
+  let hasOpenedSecurity = $state(false);
+  $effect(() => {
+    if (isSecurityActive) hasOpenedSecurity = true;
+  });
 
   const riskLabel: Record<"low" | "moderate" | "high", string> = {
     low: "Bajo",
@@ -172,27 +191,7 @@
   </header>
 
   <div class="sheet-body">
-    {#if category.id === "lockers" && category.lockers}
-      {#if lockersError}
-        <p class="fetch-error">No se pudo cargar la disponibilidad real de casilleros — intenta más tarde.</p>
-      {/if}
-      <div class="grid">
-        {#each category.lockers as unit, i (unit.id)}
-          <button
-            class="unit"
-            class:dim={unit.status !== "available"}
-            disabled={unit.status !== "available"}
-            onclick={() => (rentingLockerCode = unit.number)}
-            aria-label="Alquilar casillero {unit.number}"
-            style="--unit-hue: {unitHue(i)}; animation-delay: {unitDelay(i)}ms"
-          >
-            <IsoIcon unit status={unit.status} size={64} />
-            <span class="unit-number">{unit.number}</span>
-            <span class="unit-status status-{unit.status}">{statusLabel[unit.status]}</span>
-          </button>
-        {/each}
-      </div>
-    {:else if category.id === "events" && category.events}
+    {#if category.id === "events" && category.events}
       <div class="timeline">
         {#each category.events as ev (ev.id)}
           <div class="event-row">
@@ -292,6 +291,37 @@
       </div>
     {/if}
 
+    <!-- Casilleros tampoco está en la cadena {#if/:else if} de arriba, por
+         la misma razón que Seguridad (ver comentario debajo): es la
+         sección más pesada (hasta 108 unidades, cada una con su propio
+         IsoIcon SVG animado) y antes se destruía/reconstruía por completo
+         — con las 108 animaciones de entrada volviendo a dispararse — cada
+         vez que el usuario navegaba a otra categoría y regresaba. Ahora se
+         monta una sola vez y solo se oculta con `display: none`. -->
+    {#if lockersCategory}
+      <div class="lockers-panel" style:display={isLockersActive ? "block" : "none"}>
+        {#if lockersError}
+          <p class="fetch-error">No se pudo cargar la disponibilidad real de casilleros — intenta más tarde.</p>
+        {/if}
+        <div class="grid">
+          {#each lockersCategory.lockers ?? [] as unit, i (unit.id)}
+            <button
+              class="unit"
+              class:dim={unit.status !== "available"}
+              disabled={unit.status !== "available"}
+              onclick={() => (rentingLockerCode = unit.number)}
+              aria-label="Alquilar casillero {unit.number}"
+              style="--unit-hue: {unitHue(i)}; animation-delay: {unitDelay(i)}ms"
+            >
+              <IsoIcon unit status={unit.status} size={64} />
+              <span class="unit-number">{unit.number}</span>
+              <span class="unit-status status-{unit.status}">{statusLabel[unit.status]}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     <!-- Seguridad is NOT in the {#if/:else if} chain above on purpose. It's
          keyed off `securityCategory` — a reference that stays the same
          object whether or not Seguridad is the active section — and only
@@ -323,7 +353,7 @@
             <span class="sec-map-icon spin">◎</span>
             cargando mapa 3d…
           </div>
-          {#if isSecurityActive}
+          {#if hasOpenedSecurity}
             {#await securityMapModule then { default: SecurityMapComp }}
               <SecurityMapComp
                 risk={securityRisk}

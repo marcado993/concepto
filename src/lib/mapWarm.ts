@@ -53,7 +53,7 @@ export function onWarmReady(cb: () => void): void {
 // se evalúa UNA vez acá al crear el mapa (no reactivo), así que no hace
 // falta un listener de resize por algo que nunca va a cambiar después de
 // esta carga de página.
-const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+export const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
 
 // Doble rAF: el primero espera a que el browser pinte el primer frame
 // (splash visible), el segundo cede el hilo para que Svelte monte.
@@ -65,6 +65,14 @@ requestAnimationFrame(() =>
       style: "/map-style.json",
       center: [-78.4886, -0.208],
       zoom: 14,
+      // Sin capar esto, MapLibre renderiza al devicePixelRatio real del
+      // teléfono (2.5-3.5 típico en Android de gama baja), lo que
+      // multiplica por ~6-12x el trabajo de fill-rate de CADA capa del
+      // estilo (heatmap incluido) frente a un DPR de 1 — hallazgo de
+      // auditoría de rendimiento móvil, el mayor lever de rendimiento
+      // que quedaba en el mapa. 1.5 en mobile sigue viéndose nítido en
+      // pantallas pequeñas; 2 en desktop es el tope habitual.
+      pixelRatio: Math.min(typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1, isMobile ? 1.5 : 2),
       pitch: isMobile ? 0 : 45,
       bearing: isMobile ? 0 : -12,
       // Los gestos de inclinar/rotar con dos dedos casi nunca son

@@ -262,6 +262,16 @@
     padding: 20px;
   }
 
+  /* Mismo hallazgo que RentLockerModal.svelte: backdrop-filter es caro en
+     GPUs Android de gama baja, y en mobile un scrim sólido más opaco se ve
+     casi igual sin ese costo. */
+  @media (max-width: 767px) {
+    .scrim {
+      background: rgba(2, 4, 10, 0.88);
+      backdrop-filter: none;
+    }
+  }
+
   .modal {
     position: relative;
     width: min(380px, 100%);

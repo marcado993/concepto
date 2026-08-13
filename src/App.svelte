@@ -220,6 +220,11 @@
   // just because you've navigated to some other section — see the comment
   // by <SecurityMapComp> for why that distinction is the whole point.
   const securityCategory = $derived(displayCategories.find((c) => c.id === "security") ?? null);
+  // Mismo motivo que securityCategory: Casilleros es la grilla más pesada
+  // (hasta 108 nodos animados) de las 5 secciones — sin una referencia
+  // estable, CategoryContent la destruye y reconstruye entera cada vez que
+  // se navega a otra categoría y se vuelve (auditoría de rendimiento móvil).
+  const lockersCategory = $derived(displayCategories.find((c) => c.id === "lockers") ?? null);
   const bgOverride = $derived(
     activeCategory.id === "security" ? { dim: securityTheme.accentDim, deep: securityTheme.deep } : null
   );
@@ -316,6 +321,7 @@
               <CategoryContent
                 category={activeCategory}
                 {securityCategory}
+                {lockersCategory}
                 securityRisk={riskForHour(currentHour)}
                 {securityIndicatorsError}
                 {venturesError}
@@ -365,6 +371,7 @@
         category={activeCategory}
         bind:open={sheetOpen}
         {securityCategory}
+        {lockersCategory}
         securityRisk={riskForHour(currentHour)}
         {securityIndicatorsError}
         {venturesError}
