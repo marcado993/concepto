@@ -7,9 +7,16 @@
     size?: number;
     status?: LockerStatus;
     unit?: boolean;
+    /** true solo para el ícono activo de la rueda — las otras 5 categorías
+        se ven a la vez en pantalla desde el arranque, pero solo UNA es el
+        foco real; el resto puede ceder ancho de banda frente al JS/CSS/API
+        (hallazgo real: las 6 fotos de categoría descargaban ~1.6MB de un
+        solo golpe en el sitio en producción, compitiendo por red justo
+        cuando la grilla de Casilleros está animando su entrada). */
+    priority?: boolean;
   }
 
-  let { kind = "lockers", size = 96, status, unit = false }: Props = $props();
+  let { kind = "lockers", size = 96, status, unit = false, priority = false }: Props = $props();
 
   const W = 46;
   const H = 26;
@@ -93,7 +100,14 @@
 {#if photo && !unit}
   {#key photo.src}
     <span class="photo-wrap" style="width: {size}px; height: {size}px">
-      <img src={photo.src} alt={photo.alt} class="kind-photo" draggable="false" />
+      <img
+        src={photo.src}
+        alt={photo.alt}
+        class="kind-photo"
+        draggable="false"
+        fetchpriority={priority ? "high" : "low"}
+        decoding="async"
+      />
       <span class="scan-sweep"></span>
     </span>
   {/key}

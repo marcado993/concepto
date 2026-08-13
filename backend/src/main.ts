@@ -48,6 +48,15 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.FRONTEND_ORIGIN?.split(",") ?? false,
     credentials: true,
+    // Sin maxAge, Chrome cachea el preflight OPTIONS solo 5s por defecto —
+    // cualquier acción con body JSON o header Authorization (alquilar
+    // casillero, aportar, /auth/me, precio con descuento...) dispara un
+    // OPTIONS extra que paga la latencia real hasta el VPS en cada
+    // ocasión. Invisible en local (RTT ~0), pero medido en producción real
+    // (aeis.app en Vercel + API en el VPS) es un viaje de red completo
+    // repetido innecesariamente en cada acción — 24h de caché del
+    // preflight por sesión del navegador.
+    maxAge: 86400,
   });
 
   app.useGlobalPipes(

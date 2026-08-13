@@ -268,7 +268,7 @@
                 ? 1
                 : 0.72 - dist * 0.08}); opacity: {1 - dist * 0.55}"
             >
-              <IsoIcon kind={cat.icon} size={isActive ? R * 0.56 : R * 0.3} />
+              <IsoIcon kind={cat.icon} size={isActive ? R * 0.56 : R * 0.3} priority={isActive} />
             </span>
           </button>
         {/each}
