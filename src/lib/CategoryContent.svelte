@@ -185,7 +185,7 @@
   >
     <h2>{category.label}</h2>
     <div class="icon-cluster">
-      <IsoIcon kind={category.icon} size={128} />
+      <IsoIcon kind={category.icon} size={128} priority />
     </div>
     <p class="sheet-sub">{category.detailTitle}</p>
   </header>
