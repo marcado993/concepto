@@ -334,6 +334,15 @@ jobs:
             git fetch origin main
             git checkout main
             git reset --hard origin/main
-            sudo docker compose -f docker-compose.prod.yml up -d --build
+            # --build (sin --no-cache) se comprobó dos veces en producción
+            # que puede quedarse con la capa COPY . . vieja del build
+            # anterior y NO detectar que el código fuente cambió — el
+            # contenedor sigue vivo con el código de antes sin ningún
+            # error visible. --no-cache fuerza a Docker a releer el
+            # contexto de verdad en cada deploy; --force-recreate asegura
+            # que el contenedor use la imagen nueva aunque compose crea
+            # que nada cambió.
+            sudo docker compose -f docker-compose.prod.yml build --no-cache backend
+            sudo docker compose -f docker-compose.prod.yml up -d --force-recreate
             sudo docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy
           '
