@@ -52,6 +52,12 @@ model User {
   uniqueCode String   @unique // código único de estudiante EPN
   fullName   String
   role       Role     @default(ESTUDIANTE)
+  // Cédula/celular — se piden UNA vez (al primer alquiler de casillero,
+  // ver locker.controller.ts) y se guardan acá para no volver a
+  // preguntarlos en el siguiente semestre (heurística de Nielsen:
+  // reconocimiento sobre recuerdo). Nulos hasta ese primer alquiler.
+  cedula     String?
+  phone      String?
   createdAt  DateTime @default(now())
 
   payments      Payment[]

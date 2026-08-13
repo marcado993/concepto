@@ -21,10 +21,19 @@ export class LockerUnavailableError extends ConflictException {
   }
 }
 
+// Versión del texto de términos que se le muestra al estudiante — si el
+// texto cambia de un semestre a otro, un AuditLog viejo con
+// termsVersion:"2026-A-v1" sigue siendo prueba de qué versión ACEPTÓ en su
+// momento, no de la que esté vigente hoy.
+export const LOCKER_TERMS_VERSION = "2026-A-v1";
+
 export interface RentLockerParams {
   userId: string;
   lockerCode: string;
   method: PaymentMethod;
+  cedula: string;
+  phone: string;
+  acceptedTerms: boolean;
   ipAddress?: string;
 }
 
@@ -46,7 +55,33 @@ export class LockerService {
     });
   }
 
+  // Preview del precio ANTES de alquilar — el frontend lo usa para mostrar
+  // el monto real (con descuento de aportante ya aplicado) en el paso de
+  // identidad, sin que el estudiante tenga que declarar si es aportante ni
+  // de qué plan (eso ya lo resuelve subscriptionBenefits a partir de su
+  // propia sesión — ver comentario en rent()).
+  async getPricePreview(userId: string) {
+    const { discountPercent, tierName } = await this.subscriptionBenefits.getLockerDiscountInfo(userId);
+    return {
+      basePrice: DEFAULT_LOCKER_BASE_PRICE,
+      discountPercent,
+      tierName,
+      price: {
+        TRANSFER: calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, "TRANSFER", discountPercent).amount,
+        PAYPHONE: calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, "PAYPHONE", discountPercent).amount,
+      },
+    };
+  }
+
   async rent(params: RentLockerParams) {
+    // Defensa en profundidad — el DTO ya rechaza acceptedTerms:false con
+    // @IsIn([true]), pero rent() puede llamarse desde otro lado (tests,
+    // futuros jobs) sin pasar por esa validación. Nunca se crea un alquiler
+    // sin la aceptación explícita.
+    if (!params.acceptedTerms) {
+      throw new BadRequestException("Debes aceptar los términos y condiciones para alquilar");
+    }
+
     const locker = await this.prisma.locker.findUnique({ where: { code: params.lockerCode } });
     if (!locker) throw new NotFoundException(`Casillero ${params.lockerCode} no existe`);
 
@@ -59,6 +94,15 @@ export class LockerService {
     const discountPercent = await this.subscriptionBenefits.getLockerDiscountPercent(params.userId);
     const price = calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, params.method, discountPercent);
 
+    // Cédula/celular se piden una sola vez — se guardan en User acá mismo
+    // (no en un endpoint de perfil aparte) para no agregar un paso extra al
+    // flujo; el siguiente alquiler/aportación los reutiliza sin volver a
+    // preguntarlos (ver GET /auth/me).
+    await this.prisma.user.update({
+      where: { id: params.userId },
+      data: { cedula: params.cedula, phone: params.phone },
+    });
+
     return executeMoneyMutation<LockerRental>(
       { prisma: this.prisma, audit: this.audit },
       {
@@ -69,7 +113,18 @@ export class LockerService {
         auditAction: "locker.rental.created",
         auditEntityType: "LockerRental",
         entityId: (rental) => rental.id,
-        auditMetadata: () => ({ lockerCode: params.lockerCode, discountPercent }),
+        // La "firma digital" del checkbox de términos vive acá: QUIÉN
+        // (actorId, ya viene del JWT verificado, no de un campo del
+        // formulario) + CUÁNDO (AuditLog.createdAt, reloj del servidor) +
+        // desde QUÉ IP (params.ipAddress, de la request real) — ninguno de
+        // los tres lo puede falsificar el cliente. termsVersion deja
+        // registrado qué texto exacto aceptó, por si cambia más adelante.
+        auditMetadata: () => ({
+          lockerCode: params.lockerCode,
+          discountPercent,
+          termsAccepted: true,
+          termsVersion: LOCKER_TERMS_VERSION,
+        }),
         // La restricción @@unique([lockerId, periodId]) en el esquema es la
         // que de verdad impide la doble-reserva bajo concurrencia real —
         // el chequeo de `locker.status` de arriba es solo el camino feliz,

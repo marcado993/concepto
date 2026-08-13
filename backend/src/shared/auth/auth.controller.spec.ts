@@ -29,7 +29,13 @@ describe("AuthController", () => {
     prisma = {
       user: {
         upsert: jest.fn().mockResolvedValue({ id: "user-1" }),
-        findUnique: jest.fn().mockResolvedValue({ fullName: "Estudiante EPN", uniqueCode: "PENDIENTE-abc", role: "ESTUDIANTE" }),
+        findUnique: jest.fn().mockResolvedValue({
+          fullName: "Estudiante EPN",
+          uniqueCode: "PENDIENTE-abc",
+          role: "ESTUDIANTE",
+          cedula: null,
+          phone: null,
+        }),
       },
     };
 
@@ -239,15 +245,24 @@ describe("AuthController", () => {
     expect(prisma.user.upsert).toHaveBeenCalled();
   });
 
-  it("Dado un usuario autenticado, Cuando pide /auth/me, Entonces retorna solo nombre/código/rol, nunca el logtoSub ni otros campos internos", async () => {
+  it("Dado un usuario autenticado, Cuando pide /auth/me, Entonces retorna nombre/código/rol/cédula/celular, nunca el logtoSub ni otros campos internos", async () => {
     const req = { user: { id: "user-1" } } as any;
 
     const result = await controller.me(req);
 
     expect(prisma.user.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "user-1" }, select: { fullName: true, uniqueCode: true, role: true } })
+      expect.objectContaining({
+        where: { id: "user-1" },
+        select: { fullName: true, uniqueCode: true, role: true, cedula: true, phone: true },
+      })
     );
-    expect(result).toEqual({ fullName: "Estudiante EPN", uniqueCode: "PENDIENTE-abc", role: "ESTUDIANTE" });
+    expect(result).toEqual({
+      fullName: "Estudiante EPN",
+      uniqueCode: "PENDIENTE-abc",
+      role: "ESTUDIANTE",
+      cedula: null,
+      phone: null,
+    });
   });
 
   it("Dado un id de usuario que ya no existe en la base, Cuando pide /auth/me, Entonces lanza UnauthorizedException", async () => {

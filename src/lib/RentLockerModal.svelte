@@ -11,8 +11,10 @@
     rentLocker,
     confirmLockerReceipt,
     fetchPayphoneConfig,
+    fetchLockerPricePreview,
     ApiError,
     type MeResponse,
+    type LockerPricePreview,
   } from "./api";
   import { loadPayphoneSdk } from "./payphoneSdk";
   import { isAuthenticated } from "./auth.svelte";
@@ -32,12 +34,41 @@
 
   let me = $state<MeResponse | null>(null);
   let meError = $state(false);
+  // El precio (ya con el descuento de aportante resuelto por el backend) y
+  // el nombre del tier — nunca le preguntamos al estudiante "¿eres
+  // aportante?" ni "¿qué plan tienes?": eso ya lo sabe la app con solo su
+  // sesión (backend/src/locker/locker.service.ts::getPricePreview cruza
+  // con el dominio de Aportaciones). Menos preguntas, menos error posible
+  // (heurística de Nielsen "prevención de errores").
+  let pricePreview = $state<LockerPricePreview | null>(null);
+  let pricePreviewError = $state(false);
   $effect(() => {
     if (!isAuthenticated()) return;
     fetchMe()
-      .then((data) => (me = data))
+      .then((data) => {
+        me = data;
+        cedula = data.cedula ?? "";
+        phone = data.phone ?? "";
+      })
       .catch(() => (meError = true));
+    fetchLockerPricePreview()
+      .then((data) => (pricePreview = data))
+      .catch(() => (pricePreviewError = true));
   });
+
+  // Cédula/celular — se piden UNA vez; si ya están en el perfil (alquiler
+  // de un semestre anterior) llegan prellenados desde /auth/me arriba, acá
+  // solo se re-confirman o se corrigen, nunca se escriben desde cero de
+  // nuevo (reconocimiento sobre recuerdo).
+  let cedula = $state("");
+  let phone = $state("");
+  const CEDULA_RE = /^\d{10}$/;
+  const PHONE_RE = /^0\d{9}$/;
+  const cedulaValid = $derived(CEDULA_RE.test(cedula.trim()));
+  const phoneValid = $derived(PHONE_RE.test(phone.trim()));
+  let acceptedTerms = $state(false);
+
+  const identityValid = $derived(cedulaValid && phoneValid && acceptedTerms);
 
   let showLogin = $state(false);
   let busy = $state(false);
@@ -45,24 +76,31 @@
   let rentalId = $state<string | null>(null);
   let receiptFile = $state<File | null>(null);
 
-  const PRICE: Record<"PAYPHONE" | "TRANSFER", string> = {
-    PAYPHONE: "$6.90",
-    TRANSFER: "$6.50",
-  };
-  const PRICE_CENTS: Record<"PAYPHONE" | "TRANSFER", number> = {
-    PAYPHONE: 690,
-    TRANSFER: 650,
-  };
+  const PRICE = $derived<Record<"PAYPHONE" | "TRANSFER", string>>({
+    PAYPHONE: pricePreview ? `$${pricePreview.price.PAYPHONE.toFixed(2)}` : "…",
+    TRANSFER: pricePreview ? `$${pricePreview.price.TRANSFER.toFixed(2)}` : "…",
+  });
+  const PRICE_CENTS = $derived<Record<"PAYPHONE" | "TRANSFER", number>>({
+    PAYPHONE: pricePreview ? Math.round(pricePreview.price.PAYPHONE * 100) : 0,
+    TRANSFER: pricePreview ? Math.round(pricePreview.price.TRANSFER * 100) : 0,
+  });
 
   // Ambos métodos crean el alquiler (PENDING/RESERVED) de una vez — con
   // PAYPHONE el cobro real todavía no pasó, pasa en el widget del paso 2
   // (ver backend/src/locker/locker.service.ts confirmPayphonePayment). El
   // casillero queda RESERVED mientras tanto, igual que TRANSFER.
   async function continueFromIdentity() {
+    if (!identityValid) return;
     errorMessage = null;
     busy = true;
     try {
-      const rental = await rentLocker({ lockerCode, method });
+      const rental = await rentLocker({
+        lockerCode,
+        method,
+        cedula: cedula.trim(),
+        phone: phone.trim(),
+        acceptedTerms,
+      });
       rentalId = rental.id;
       step = method === "PAYPHONE" ? "payphone" : "receipt-upload";
     } catch (err) {
@@ -186,6 +224,34 @@
           <div class="identity-row"><span>Código</span><strong>{me.uniqueCode}</strong></div>
         </div>
 
+        {#if pricePreview?.tierName}
+          <p class="tier-banner">✓ Aportante Plan {pricePreview.tierName} — descuento ya aplicado abajo</p>
+        {/if}
+
+        <label class="field-label" for="rl-cedula">Cédula</label>
+        <input
+          id="rl-cedula"
+          class="field-input"
+          class:invalid={cedula.length > 0 && !cedulaValid}
+          type="text"
+          inputmode="numeric"
+          maxlength="10"
+          placeholder="10 dígitos"
+          bind:value={cedula}
+        />
+
+        <label class="field-label" for="rl-phone">Celular</label>
+        <input
+          id="rl-phone"
+          class="field-input"
+          class:invalid={phone.length > 0 && !phoneValid}
+          type="text"
+          inputmode="numeric"
+          maxlength="10"
+          placeholder="0991234567"
+          bind:value={phone}
+        />
+
         <div class="method-choice">
           <button
             class="method-option"
@@ -204,10 +270,21 @@
             <span class="method-price">{PRICE.PAYPHONE}</span>
           </button>
         </div>
+        {#if pricePreviewError}
+          <p class="modal-copy error">No se pudo calcular tu precio — intenta de nuevo.</p>
+        {/if}
+
+        <label class="terms-row">
+          <input type="checkbox" bind:checked={acceptedTerms} />
+          <span>
+            Acepto usar el casillero hasta fin del semestre 2026-A y cuidarlo.
+            <em>Esto queda firmado digitalmente con tu identidad, fecha y hora.</em>
+          </span>
+        </label>
 
         {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
 
-        <button class="cta" disabled={busy} onclick={continueFromIdentity}>
+        <button class="cta" disabled={busy || !identityValid} onclick={continueFromIdentity}>
           {busy ? "Un momento…" : "Continuar"}
         </button>
       {/if}
@@ -338,6 +415,65 @@
     border-radius: 14px;
     padding: 12px 14px;
     margin-bottom: 14px;
+  }
+
+  .tier-banner {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--accent, #21e0a0);
+    background: rgba(33, 224, 160, 0.1);
+    border: 1px solid rgba(33, 224, 160, 0.3);
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin: -4px 0 14px;
+  }
+
+  .field-label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: rgba(238, 244, 251, 0.55);
+    margin-bottom: 6px;
+  }
+  .field-input {
+    width: 100%;
+    padding: 10px 13px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #eef4fb;
+    font-size: 13.5px;
+    margin-bottom: 12px;
+  }
+  .field-input:focus {
+    outline: none;
+    border-color: var(--accent, #21e0a0);
+  }
+  .field-input.invalid {
+    border-color: #ff8a8a;
+  }
+
+  .terms-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: rgba(238, 244, 251, 0.75);
+    margin: 4px 0 16px;
+    cursor: pointer;
+  }
+  .terms-row input {
+    margin-top: 2px;
+    accent-color: var(--accent, #21e0a0);
+  }
+  .terms-row em {
+    display: block;
+    font-style: normal;
+    font-size: 10.5px;
+    color: rgba(238, 244, 251, 0.5);
+    margin-top: 3px;
   }
   .identity-row {
     display: flex;
