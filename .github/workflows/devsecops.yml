@@ -342,7 +342,18 @@ jobs:
             # contexto de verdad en cada deploy; --force-recreate asegura
             # que el contenedor use la imagen nueva aunque compose crea
             # que nada cambió.
+            #
+            # --force-recreate CON "backend" al final a propósito — sin
+            # el nombre del servicio reinicia TODOS los contenedores del
+            # compose (logto, caddy, postgres incluidos), y el backend
+            # puede arrancar una fracción de segundo antes de que Logto
+            # esté listo para responder. LogtoOidcClient solo intenta
+            # conectarse UNA vez al arrancar (onModuleInit) — si falla en
+            # ese instante, el backend queda pensando que Logto no está
+            # configurado hasta el próximo restart, aunque Logto sí esté
+            # sano. Solo el backend cambió de código — solo el backend
+            # necesita recrearse.
             sudo docker compose -f docker-compose.prod.yml build --no-cache backend
-            sudo docker compose -f docker-compose.prod.yml up -d --force-recreate
+            sudo docker compose -f docker-compose.prod.yml up -d --force-recreate backend
             sudo docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy
           '
