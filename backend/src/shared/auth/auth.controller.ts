@@ -4,6 +4,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Post,
   Query,
   Req,
@@ -69,12 +70,28 @@ function isInstitutionalEmail(email: string | undefined): email is string {
 
 @Controller("auth")
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly logto: LogtoOidcClient,
     private readonly logtoExperience: LogtoExperienceClient,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService
   ) {}
+
+  // NUNCA reenviar ExperienceApiError.message tal cual al cliente — es el
+  // mensaje crudo del conector de Logto, que a su vez puede traer el error
+  // crudo del proveedor de correo por debajo (hallazgo real de producción:
+  // Resend en modo sandbox devolvió su propio mensaje de error completo,
+  // exponiendo qué proveedor se usa, que la cuenta no tiene dominio
+  // verificado, Y el correo personal del desarrollador — a cualquier
+  // visitante no autenticado, sin haber iniciado sesión siquiera). El
+  // detalle real se audita acá, server-side; al cliente solo le llega un
+  // mensaje genérico y seguro.
+  private sanitizedEmailError(err: ExperienceApiError, context: string, safeMessage: string): BadRequestException {
+    this.logger.error(`${context} — Logto Experience API rechazó la operación: [${err.code ?? "sin código"}] ${err.message}`);
+    return new BadRequestException(safeMessage);
+  }
 
   // Más estricto que el global (5/s, 100/min) a propósito: cada hit real
   // dispara un round-trip contra el authorization endpoint de Logto — un
@@ -250,7 +267,11 @@ export class AuthController {
       return res.json({});
     } catch (err) {
       if (err instanceof ExperienceApiError) {
-        throw new BadRequestException(err.message);
+        throw this.sanitizedEmailError(
+          err,
+          `emailStart(${email})`,
+          "No se pudo enviar el código a tu correo — intenta de nuevo en unos minutos."
+        );
       }
       throw err;
     }
@@ -281,7 +302,13 @@ export class AuthController {
         pending.verificationId
       );
     } catch (err) {
-      if (err instanceof ExperienceApiError) throw new BadRequestException(err.message);
+      if (err instanceof ExperienceApiError) {
+        throw this.sanitizedEmailError(
+          err,
+          `emailVerify.verifyEmailCode(${pending.email})`,
+          "No se pudo verificar el código — intenta de nuevo."
+        );
+      }
       throw err;
     }
 
@@ -290,11 +317,24 @@ export class AuthController {
     if (identification.status !== 204) {
       if (identification.errorCode === "user.user_not_exist" && pending.interactionEvent === "SignIn") {
         const registerCookie = await this.logtoExperience.setInteractionEvent(identification.cookie, "Register");
-        const { cookie: cookieWithCode, verificationId } = await this.logtoExperience.requestEmailCode(
-          registerCookie,
-          pending.email,
-          "Register"
-        );
+        let cookieWithCode: string;
+        let verificationId: string;
+        try {
+          ({ cookie: cookieWithCode, verificationId } = await this.logtoExperience.requestEmailCode(
+            registerCookie,
+            pending.email,
+            "Register"
+          ));
+        } catch (err) {
+          if (err instanceof ExperienceApiError) {
+            throw this.sanitizedEmailError(
+              err,
+              `emailVerify.register-retry(${pending.email})`,
+              "No se pudo enviar el código a tu correo — intenta de nuevo en unos minutos."
+            );
+          }
+          throw err;
+        }
         const nextPending: EmailPending = {
           ...pending,
           interactionEvent: "Register",

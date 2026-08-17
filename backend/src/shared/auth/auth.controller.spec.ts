@@ -3,7 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { AuthController } from "./auth.controller";
 import { LogtoOidcClient } from "./logto-oidc.client";
-import { LogtoExperienceClient } from "./logto-experience.client";
+import { ExperienceApiError, LogtoExperienceClient } from "./logto-experience.client";
 import { PrismaService } from "../prisma/prisma.service";
 
 function mockResponse() {
@@ -11,12 +11,20 @@ function mockResponse() {
     cookie: jest.fn(),
     clearCookie: jest.fn(),
     redirect: jest.fn(),
+    json: jest.fn(),
+    status: jest.fn().mockReturnThis(),
   } as any;
 }
 
 describe("AuthController", () => {
   let controller: AuthController;
   let logto: { generatePkce: jest.Mock; authorizationUrl: jest.Mock; exchangeCode: jest.Mock };
+  let logtoExperience: {
+    startInteraction: jest.Mock;
+    setInteractionEvent: jest.Mock;
+    requestEmailCode: jest.Mock;
+    verifyEmailCode: jest.Mock;
+  };
   let prisma: { user: { upsert: jest.Mock; findUnique: jest.Mock } };
   let config: ConfigService;
 
@@ -25,6 +33,12 @@ describe("AuthController", () => {
       generatePkce: jest.fn().mockReturnValue({ codeVerifier: "verifier-1", codeChallenge: "challenge-1", state: "state-1" }),
       authorizationUrl: jest.fn().mockReturnValue("https://logto.example/oidc/auth?direct_sign_in=social:github"),
       exchangeCode: jest.fn(),
+    };
+    logtoExperience = {
+      startInteraction: jest.fn().mockResolvedValue("_interaction=cookie-1"),
+      setInteractionEvent: jest.fn().mockResolvedValue("_interaction=cookie-2"),
+      requestEmailCode: jest.fn(),
+      verifyEmailCode: jest.fn(),
     };
     prisma = {
       user: {
@@ -43,7 +57,7 @@ describe("AuthController", () => {
       controllers: [AuthController],
       providers: [
         { provide: LogtoOidcClient, useValue: logto },
-        { provide: LogtoExperienceClient, useValue: {} },
+        { provide: LogtoExperienceClient, useValue: logtoExperience },
         { provide: PrismaService, useValue: prisma },
         {
           provide: ConfigService,
@@ -270,5 +284,46 @@ describe("AuthController", () => {
     const req = { user: { id: "user-fantasma" } } as any;
 
     await expect(controller.me(req)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // Hallazgo real de producción: el conector de correo de Logto le pasa
+  // por debajo a Resend, y Resend en modo sandbox rechaza mandar a
+  // cualquiera que no sea el dueño de la cuenta con SU PROPIO mensaje de
+  // error crudo (nombra el proveedor, el modo sandbox, y el correo
+  // personal del dueño). Antes de este fix, ExperienceApiError.message se
+  // reenviaba tal cual al cliente sin autenticar — cualquier visitante
+  // veía ese mensaje interno. Estas pruebas fijan que NUNCA vuelva a pasar.
+  it("Dado que Logto/Resend rechaza el envío del código con su mensaje interno crudo, Cuando se llama /auth/email/start, Entonces el cliente recibe un mensaje genérico — nunca el mensaje crudo del conector", async () => {
+    const res = mockResponse();
+    logtoExperience.requestEmailCode.mockRejectedValue(
+      new ExperienceApiError(
+        422,
+        "connector.general",
+        'Error occurred in connector: {"message":"Message failed: 550 You can only send testing emails to your own email address (dev@epn.edu.ec)."}'
+      )
+    );
+
+    let caught: unknown;
+    try {
+      await controller.emailStart("estudiante@epn.edu.ec", res);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(BadRequestException);
+    expect((caught as Error).message).not.toContain("dev@epn.edu.ec");
+    expect((caught as Error).message).not.toContain("connector");
+  });
+
+  it("Dado que Logto/Resend rechaza el envío del código, Cuando se llama /auth/email/start, Entonces lanza BadRequestException con un mensaje seguro y NO setea la cookie de verificación pendiente", async () => {
+    const res = mockResponse();
+    logtoExperience.requestEmailCode.mockRejectedValue(
+      new ExperienceApiError(422, "connector.general", "detalle interno del proveedor de correo")
+    );
+
+    await expect(controller.emailStart("estudiante@epn.edu.ec", res)).rejects.toThrow(
+      "No se pudo enviar el código a tu correo — intenta de nuevo en unos minutos."
+    );
+    expect(res.cookie).not.toHaveBeenCalled();
   });
 });
