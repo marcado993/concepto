@@ -252,6 +252,18 @@ export function fetchMyPendingReceipt(): Promise<MyPendingReceipt | null> {
   return getJSON<MyPendingReceipt | null>("/lockers/mine/pending-receipt", { auth: true });
 }
 
+// "¿Ya tengo un casillero confirmado este periodo?" — mismo criterio que
+// MyPendingReceipt: para que la grilla lo distinga y lo deje tocar para
+// ver el estado, en vez de que el estudiante lo busque entre hasta 108.
+export interface MyRentedLocker {
+  lockerCode: string;
+  zone: string;
+}
+
+export function fetchMyRentedLocker(): Promise<MyRentedLocker | null> {
+  return getJSON<MyRentedLocker | null>("/lockers/mine/rented", { auth: true });
+}
+
 // PayPhone (Cajita de Pagos) — el widget corre en el navegador con estos
 // valores (token/storeId), servidos por el backend en vez de vivir
 // hardcodeados aquí, para poder rotarlos sin redeploy del frontend (ver

@@ -73,6 +73,15 @@ export class LockerController {
     return this.lockerService.getMyPendingReceipt(req.user.id);
   }
 
+  // "¿Ya tengo un casillero confirmado este periodo?" — pedido real: en
+  // vez de que el estudiante busque el suyo entre hasta 108, la grilla lo
+  // distingue y lo deja tocar para ver el estado directamente.
+  @Get("mine/rented")
+  @Roles(Role.ESTUDIANTE)
+  myRentedLocker(@Req() req: Request & { user: { id: string } }) {
+    return this.lockerService.getMyRentedLocker(req.user.id);
+  }
+
   @Post("rent")
   @Roles(Role.ESTUDIANTE)
   // Límite propio, más estricto que el global (rate-limit.module.ts): un

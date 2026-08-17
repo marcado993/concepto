@@ -83,8 +83,16 @@
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
   }
 
-  .accessible-item:hover {
-    background: rgba(255, 255, 255, 0.07);
+  /* Gateado a (hover: hover) — mismo hallazgo real que .unit:hover en
+     CategoryContent.svelte: un :hover sin esto hace que iOS interprete el
+     PRIMER tap como "simular hover" y recién el SEGUNDO tap como el click
+     real — "estoy haciendo dos clicks para cambiar" (reporte real). En
+     touch nunca debería existir un estado :hover que haya que "confirmar"
+     con un segundo toque. */
+  @media (hover: hover) and (pointer: fine) {
+    .accessible-item:hover {
+      background: rgba(255, 255, 255, 0.07);
+    }
   }
 
   .accessible-item:active {
