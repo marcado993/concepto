@@ -90,6 +90,25 @@ export class LockerService {
     return { rentalId: rental.id, lockerCode: rental.locker.code };
   }
 
+  // Mismo criterio que getMyPendingReceipt (arriba) pero para el caso
+  // "ya tiene un casillero" — pedido real: en vez de obligar al estudiante
+  // a buscar el suyo entre hasta 108, la grilla lo distingue y deja tocarlo
+  // para ver su estado directamente. status:"CONFIRMED" (no PENDING) porque
+  // acá el pago YA se validó — a diferencia de la reserva pendiente, esto
+  // no depende del método de pago (TRANSFER o PAYPHONE, cualquiera vale).
+  async getMyRentedLocker(userId: string) {
+    // Filtrado por periodo actual — un casillero confirmado en un semestre
+    // anterior no debe seguir apareciendo como "tu casillero" para siempre.
+    const periodId = await this.period.getCurrentPeriodId();
+    const rental = await this.prisma.lockerRental.findFirst({
+      where: { userId, periodId, payment: { status: "CONFIRMED" } },
+      include: { locker: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!rental) return null;
+    return { lockerCode: rental.locker.code, zone: rental.locker.zone };
+  }
+
   // Preview del precio ANTES de alquilar — el frontend lo usa para mostrar
   // el monto real (con descuento de aportante ya aplicado) en el paso de
   // identidad, sin que el estudiante tenga que declarar si es aportante ni

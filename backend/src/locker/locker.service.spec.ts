@@ -634,3 +634,52 @@ describe("LockerService.getMyPendingReceipt", () => {
     expect(result).toBeNull();
   });
 });
+
+describe("LockerService.getMyRentedLocker", () => {
+  let service: LockerService;
+  let prisma: any;
+  let period: { getCurrentPeriodId: jest.Mock };
+
+  beforeEach(async () => {
+    prisma = { lockerRental: { findFirst: jest.fn() } };
+    period = { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        LockerService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditService, useValue: { record: jest.fn() } },
+        { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
+        { provide: OcrService, useValue: { extractText: jest.fn() } },
+        { provide: PeriodService, useValue: period },
+        { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountInfo: jest.fn() } },
+      ],
+    }).compile();
+    service = moduleRef.get(LockerService);
+  });
+
+  it("Dado un estudiante con un casillero confirmado este periodo, Cuando pide su casillero alquilado, Entonces devuelve el código y la zona — filtrado por su userId Y el periodo actual", async () => {
+    prisma.lockerRental.findFirst.mockResolvedValue({
+      id: "rental-1",
+      userId: "user-1",
+      locker: { code: "E08", zone: "E" },
+    });
+
+    const result = await service.getMyRentedLocker("user-1");
+
+    expect(prisma.lockerRental.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", periodId: "period-1", payment: { status: "CONFIRMED" } },
+      })
+    );
+    expect(result).toEqual({ lockerCode: "E08", zone: "E" });
+  });
+
+  it("Dado un estudiante sin ningún casillero confirmado, Cuando pide su casillero alquilado, Entonces devuelve null", async () => {
+    prisma.lockerRental.findFirst.mockResolvedValue(null);
+
+    const result = await service.getMyRentedLocker("user-1");
+
+    expect(result).toBeNull();
+  });
+});

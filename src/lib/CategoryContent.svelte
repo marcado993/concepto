@@ -26,6 +26,10 @@
         aunque su estado sea RESERVED. Verificado por el backend contra la
         sesión real, nunca asumido acá. */
     myPendingReceipt?: { rentalId: string; lockerCode: string } | null;
+    /** El casillero que el estudiante ya tiene CONFIRMADO este periodo, si
+        hay uno — deja distinguirlo en la grilla y tocarlo para ver su
+        estado, en vez de que lo busque entre hasta 108. */
+    myRentedLocker?: { lockerCode: string; zone: string } | null;
     /** Desktop full-screen layout: let grids breathe into more columns. */
     wide?: boolean;
     // Only wired up by the mobile sliding sheet, so its header doubles as a
@@ -50,6 +54,7 @@
     venturesError = false,
     lockersError = false,
     myPendingReceipt = null,
+    myRentedLocker = null,
     wide = false,
     onheaderpointerdown,
     onheaderpointermove,
@@ -72,6 +77,7 @@
   // SecurityMapComp se monte/desmonte varias veces navegando.
   const securityMapModule = import("./SecurityMap.svelte");
   import RentLockerModal from "./RentLockerModal.svelte";
+  import MyLockerStatusModal from "./MyLockerStatusModal.svelte";
   import SubscribeModal from "./SubscribeModal.svelte";
   import type { SubscriptionBenefit } from "./data";
 
@@ -81,6 +87,10 @@
   // directo al paso de subir el comprobante en vez de empezar un alquiler
   // nuevo desde cero.
   let resumeRentalId = $state<string | null>(null);
+  // Casillero propio confirmado que se está viendo (solo lectura) — no es
+  // lo mismo que rentingLockerCode/RentLockerModal: acá no hay nada que
+  // alquilar ni confirmar, solo el estado de lo que ya es tuyo.
+  let viewingMyLocker = $state<{ lockerCode: string; zone: string } | null>(null);
   let subscribingTier = $state<{ name: string; amount: string } | null>(null);
 
   // "descuento_casillero" con percent:0 no se muestra como "0% de
@@ -179,6 +189,21 @@
   function unitDelay(index: number): number {
     return Math.min(index * 12, 500);
   }
+
+  // Pedido real: que los reservados/ocupados se hundan al final y solo los
+  // libres (y los tuyos — pendiente o ya alquilado, que sí puedes tocar)
+  // queden arriba, en vez de mezclados entre hasta 108. Se ordena por
+  // "prioridad" (0 = arriba) y a igualdad de prioridad se respeta el orden
+  // original (número de casillero), así el resultado no salta de forma
+  // rara entre refrescos.
+  function unitPriority(unit: { status: LockerStatus; number: string }): number {
+    if (unit.status === "available") return 0;
+    if (myPendingReceipt?.lockerCode === unit.number || myRentedLocker?.lockerCode === unit.number) return 0;
+    return 1;
+  }
+  const sortedLockers = $derived(
+    [...(lockersCategory?.lockers ?? [])].sort((a, b) => unitPriority(a) - unitPriority(b))
+  );
 
   const theme = $derived(category.theme);
   const wrapStyle = $derived(
@@ -315,24 +340,45 @@
           <p class="fetch-error">No se pudo cargar la disponibilidad real de casilleros — intenta más tarde.</p>
         {/if}
         <div class="grid">
-          {#each lockersCategory.lockers ?? [] as unit, i (unit.id)}
+          {#each sortedLockers as unit, i (unit.id)}
             {@const isMine = myPendingReceipt?.lockerCode === unit.number}
-            {@const clickable = unit.status === "available" || isMine}
+            {@const isMineRented = myRentedLocker?.lockerCode === unit.number}
+            {@const clickable = unit.status === "available" || isMine || isMineRented}
             <button
               class="unit"
-              class:dim={unit.status !== "available" && !isMine}
+              class:dim={unit.status !== "available" && !isMine && !isMineRented}
               class:mine-pending={isMine}
+              class:mine-rented={isMineRented}
               disabled={!clickable}
               onclick={() => {
+                if (isMineRented) {
+                  viewingMyLocker = myRentedLocker;
+                  return;
+                }
                 resumeRentalId = isMine ? (myPendingReceipt?.rentalId ?? null) : null;
                 rentingLockerCode = unit.number;
               }}
-              aria-label={isMine
-                ? `Resubir comprobante del casillero ${unit.number}`
-                : `Alquilar casillero ${unit.number}`}
+              aria-label={isMineRented
+                ? `Ver estado de tu casillero ${unit.number}`
+                : isMine
+                  ? `Resubir comprobante del casillero ${unit.number}`
+                  : `Alquilar casillero ${unit.number}`}
               style="--unit-hue: {unitHue(i)}; animation-delay: {unitDelay(i)}ms"
             >
-              {#if isMine}
+              {#if isMineRented}
+                <!-- Casillero propio ya confirmado — pedido real: en vez de
+                     buscarlo entre hasta 108, se distingue con su propio
+                     ícono (check, no candado/upload) y se puede tocar para
+                     ver el estado directamente. -->
+                <span class="unit-check" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path
+                      fill="currentColor"
+                      d="m9.55 17.55-5.7-5.7 1.425-1.425L9.55 14.7l9.175-9.175L20.15 6.95Z"
+                    />
+                  </svg>
+                </span>
+              {:else if isMine}
                 <!-- Solo TU reserva pendiente se ve así — verificado por el
                      backend contra tu sesión, nunca por algo que este
                      cliente decida. El resto de los reservados/ocupados
@@ -363,8 +409,8 @@
               {/if}
               <IsoIcon unit status={unit.status} size={64} />
               <span class="unit-number">{unit.number}</span>
-              <span class="unit-status status-{unit.status}" class:status-mine={isMine}>
-                {isMine ? "Sube tu comprobante" : statusLabel[unit.status]}
+              <span class="unit-status status-{unit.status}" class:status-mine={isMine || isMineRented}>
+                {isMineRented ? "Es tuyo — toca para ver" : isMine ? "Sube tu comprobante" : statusLabel[unit.status]}
               </span>
             </button>
           {/each}
@@ -459,6 +505,14 @@
       resumeRentalId = null;
     }}
     onrented={() => onlockerrented?.()}
+  />
+{/if}
+
+{#if viewingMyLocker}
+  <MyLockerStatusModal
+    lockerCode={viewingMyLocker.lockerCode}
+    zone={viewingMyLocker.zone}
+    onclose={() => (viewingMyLocker = null)}
   />
 {/if}
 
@@ -691,6 +745,34 @@
   }
 
   .unit-upload svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Casillero propio ya confirmado — a diferencia de .mine-pending, no
+     pide ninguna acción urgente (no hay nada pendiente de subir), así que
+     el borde queda fijo en vez de pulsar; el check reemplaza al candado
+     para que se note al toque que es "tuyo", no solo "ocupado". */
+  .unit.mine-rented {
+    border-color: var(--accent);
+  }
+
+  .unit-check {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0a1a12;
+    pointer-events: none;
+  }
+
+  .unit-check svg {
     width: 12px;
     height: 12px;
   }

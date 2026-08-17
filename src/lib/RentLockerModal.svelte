@@ -551,17 +551,20 @@
     min-height: 16px;
   }
 
+  /* Grande a propósito (44px, min de objetivo táctil WCAG 2.5.5) —
+     feedback real de usabilidad: "para cerrar pon una X grande". Salir de
+     un flujo tiene que ser al menos tan fácil de tocar como entrar. */
   .close {
     position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 30px;
-    height: 30px;
+    top: 10px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.07);
     border: none;
     color: #eef4fb;
-    font-size: 18px;
+    font-size: 26px;
     line-height: 1;
     cursor: pointer;
   }

@@ -15,6 +15,7 @@
     fetchVentures,
     fetchLockers,
     fetchMyPendingReceipt,
+    fetchMyRentedLocker,
     fetchSubscriptionTiers,
     confirmLockerPayphonePayment,
     confirmSubscriptionPayphonePayment,
@@ -171,13 +172,27 @@
   }
   $effect(loadMyPendingReceipt);
 
+  // El casillero que el estudiante ya tiene confirmado este periodo, si
+  // hay uno — pedido real: en vez de que busque el suyo entre hasta 108,
+  // la grilla lo distingue y lo deja tocar para ver el estado.
+  let myRentedLocker = $state<{ lockerCode: string; zone: string } | null>(null);
+  function loadMyRentedLocker() {
+    if (!isAuthenticated()) return;
+    fetchMyRentedLocker()
+      .then((data) => (myRentedLocker = data))
+      .catch(() => {
+        // Silencioso a propósito, mismo criterio que loadMyPendingReceipt.
+      });
+  }
+  $effect(loadMyRentedLocker);
+
   // Tras un alquiler/confirmación exitosos, la grilla necesita refrescar
-  // tanto la disponibilidad (loadLockers) como si sigue habiendo una
-  // reserva propia esperando comprobante (loadMyPendingReceipt) — ya no
-  // debería haberla si el comprobante recién se confirmó.
+  // disponibilidad + si sigue habiendo una reserva propia pendiente + si
+  // ya hay un casillero propio confirmado (el que se acaba de confirmar).
   function onLockerRented() {
     loadLockers();
     loadMyPendingReceipt();
+    loadMyRentedLocker();
   }
 
   // Tiers de Aportaciones — mismo patrón que casilleros: se piden al
@@ -366,6 +381,7 @@
                 {venturesError}
                 {lockersError}
                 {myPendingReceipt}
+                {myRentedLocker}
                 onlockerrented={onLockerRented}
                 {subscriptionTiersError}
                 onsubscribed={loadSubscriptionTiers}
@@ -407,6 +423,7 @@
         {venturesError}
         {lockersError}
         {myPendingReceipt}
+        {myRentedLocker}
         onlockerrented={onLockerRented}
         {subscriptionTiersError}
         onsubscribed={loadSubscriptionTiers}
@@ -455,6 +472,7 @@
         {venturesError}
         {lockersError}
         {myPendingReceipt}
+        {myRentedLocker}
         onlockerrented={onLockerRented}
         {subscriptionTiersError}
         onsubscribed={loadSubscriptionTiers}
