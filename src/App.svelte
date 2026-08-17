@@ -2,6 +2,7 @@
   import { fade } from "svelte/transition";
   import Background from "./lib/Background.svelte";
   import ArcMenu from "./lib/ArcMenu.svelte";
+  import AccessibleCategoryNav from "./lib/AccessibleCategoryNav.svelte";
   import DetailSheet from "./lib/DetailSheet.svelte";
   import DesktopNav from "./lib/DesktopNav.svelte";
   import CategoryContent from "./lib/CategoryContent.svelte";
@@ -21,6 +22,14 @@
     type LockerFromApi,
   } from "./lib/api";
   import { consumeAuthCallback, isAuthenticated, logout } from "./lib/auth.svelte";
+  import { getUiVariant } from "./lib/abTest";
+
+  // Test A/B de navegación — A: la rueda (ArcMenu). B: lista accesible
+  // (AccessibleCategoryNav.svelte) — pedido real del cliente tras feedback
+  // de que la rueda "no es usable". Se lee una sola vez al montar, no es
+  // reactivo: la variante de un dispositivo no debe cambiar a media
+  // sesión (ver abTest.ts para por qué queda fija).
+  const uiVariant = getUiVariant();
 
   // Si el backend acaba de redirigir tras un login (Logto → GitHub → Logto
   // → backend → aquí), el access_token viene en location.hash — se
@@ -366,6 +375,42 @@
           </div>
         </section>
       </main>
+    {:else if uiVariant === "B"}
+      <!-- Variante B del test A/B — ver abTest.ts. Sin rueda, sin gesto de
+           arrastre: tocar una categoría la selecciona Y abre el sheet en
+           el mismo tap (la rueda necesitaba girar y LUEGO deslizar arriba
+           o tocar el pill — dos pasos separados). -->
+      <main class="menu-layer accessible-layer" class:receded={sheetOpen}>
+        <div class="top-copy accessible-top-copy">
+          <div class="label-block">
+            <h1 class="label">Elige una categoría</h1>
+            <p class="prompt-text">Toca cualquier opción para abrirla.</p>
+          </div>
+        </div>
+        <AccessibleCategoryNav
+          categories={displayCategories}
+          {selectedIndex}
+          onopen={(i) => {
+            selectedIndex = i;
+            openSheet();
+          }}
+        />
+      </main>
+
+      <DetailSheet
+        category={activeCategory}
+        bind:open={sheetOpen}
+        {securityCategory}
+        {lockersCategory}
+        securityRisk={riskForHour(currentHour)}
+        {securityIndicatorsError}
+        {venturesError}
+        {lockersError}
+        {myPendingReceipt}
+        onlockerrented={onLockerRented}
+        {subscriptionTiersError}
+        onsubscribed={loadSubscriptionTiers}
+      />
     {:else}
       <main class="menu-layer" class:receded={sheetOpen}>
         <div class="top-copy">
@@ -559,6 +604,16 @@
     align-items: center;
     justify-content: center;
     gap: clamp(10px, 2.6vh, 20px);
+  }
+
+  /* Variante B (accesible) no tiene rueda que anclar — el flex:2 de arriba
+     existe SOLO para repartir el espacio libre con .wheel-slot (que acá no
+     existe). Sin este override, el encabezado se centraría en un hueco
+     enorme y la lista de categorías, que es el contenido real, quedaría
+     apretada abajo. */
+  .accessible-top-copy {
+    flex: 0 0 auto;
+    padding-top: clamp(8px, 2vh, 16px);
   }
 
   .label-block {
