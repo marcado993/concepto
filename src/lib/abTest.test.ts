@@ -21,33 +21,28 @@ class MemoryStorage {
 }
 vi.stubGlobal("localStorage", new MemoryStorage());
 
-// TDD: la asignación de variante A/B tiene que quedar FIJA por dispositivo
-// — un experimento donde la misma persona ve A una vez y B la siguiente no
-// mide nada. localStorage (no sessionStorage) a propósito: debe sobrevivir
-// a cerrar la pestaña, no solo a la sesión actual.
+// Experimento cerrado (ver comentario en abTest.ts) — getUiVariant()
+// siempre devuelve "B" ahora, sin importar qué había guardado antes.
 describe("abTest.ts — getUiVariant", () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it("Dado un dispositivo que nunca visitó la app, Cuando pide su variante, Entonces asigna A o B y la deja guardada para la próxima vez", () => {
-    const first = getUiVariant();
-
-    expect(["A", "B"]).toContain(first);
-    expect(localStorage.getItem("aeis_ui_variant")).toBe(first);
+  it("Dado un dispositivo que nunca visitó la app, Cuando pide su variante, Entonces es B y queda guardada", () => {
+    expect(getUiVariant()).toBe("B");
+    expect(localStorage.getItem("aeis_ui_variant")).toBe("B");
   });
 
-  it("Dado un dispositivo que ya tiene una variante asignada, Cuando pide su variante de nuevo, Entonces devuelve SIEMPRE la misma — nunca reasigna al azar", () => {
-    localStorage.setItem("aeis_ui_variant", "B");
+  it("Dado un dispositivo que había quedado asignado a A antes de cerrar el experimento, Cuando pide su variante, Entonces migra a B — ya no hay moneda al aire, todos ven la lista accesible", () => {
+    localStorage.setItem("aeis_ui_variant", "A");
 
     expect(getUiVariant()).toBe("B");
-    expect(getUiVariant()).toBe("B");
-    expect(getUiVariant()).toBe("B");
+    expect(localStorage.getItem("aeis_ui_variant")).toBe("B");
   });
 
-  it("Dado que localStorage tiene un valor corrupto/inesperado, Cuando pide su variante, Entonces lo trata como si no hubiera nada guardado y asigna una nueva (nunca revienta)", () => {
+  it("Dado que localStorage tiene un valor corrupto/inesperado, Cuando pide su variante, Entonces igual devuelve B (nunca revienta)", () => {
     localStorage.setItem("aeis_ui_variant", "algo-que-no-es-A-ni-B");
 
-    expect(["A", "B"]).toContain(getUiVariant());
+    expect(getUiVariant()).toBe("B");
   });
 });
