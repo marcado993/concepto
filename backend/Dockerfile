@@ -8,7 +8,7 @@
 # + prisma/seed.ts) y anida el output bajo dist/src/... — confirmado
 # inspeccionando la imagen real (docs/dominio/10-despliegue-vps-vercel.md).
 
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma
@@ -17,7 +17,7 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 # El npm que trae node:22-alpine por defecto carga sus propias dependencias
