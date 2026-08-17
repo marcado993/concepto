@@ -160,8 +160,10 @@
       filter 0.15s ease,
       transform 0.15s ease;
   }
-  .cta:hover {
-    filter: brightness(1.08);
-    transform: translateY(-1px);
+  @media (hover: hover) and (pointer: fine) {
+    .cta:hover {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
   }
 </style>

@@ -244,8 +244,14 @@
     cursor: pointer;
     padding: 4px 6px;
   }
-  .back:hover {
-    color: var(--accent, #21e0a0);
+  /* Gateado a (hover: hover) — mismo hallazgo real que .unit:hover en
+     CategoryContent.svelte: sin esto, el primer tap en móvil se "gasta"
+     simulando hover y hace falta un segundo tap para que el botón
+     realmente actúe. */
+  @media (hover: hover) and (pointer: fine) {
+    .back:hover {
+      color: var(--accent, #21e0a0);
+    }
   }
 
   .brand-row {
@@ -329,8 +335,10 @@
     margin-top: 14px;
     padding: 4px;
   }
-  .link-btn:hover:not(:disabled) {
-    color: var(--accent, #21e0a0);
+  @media (hover: hover) and (pointer: fine) {
+    .link-btn:hover:not(:disabled) {
+      color: var(--accent, #21e0a0);
+    }
   }
   .link-btn:disabled {
     opacity: 0.5;
@@ -356,10 +364,12 @@
       background 0.15s ease,
       transform 0.15s ease;
   }
-  .provider-btn:hover {
-    border-color: var(--accent, #21e0a0);
-    background: rgba(255, 255, 255, 0.08);
-    transform: translateY(-1px);
+  @media (hover: hover) and (pointer: fine) {
+    .provider-btn:hover {
+      border-color: var(--accent, #21e0a0);
+      background: rgba(255, 255, 255, 0.08);
+      transform: translateY(-1px);
+    }
   }
   .provider-btn.github svg {
     flex: 0 0 auto;
