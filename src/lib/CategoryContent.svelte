@@ -1017,9 +1017,14 @@
       border-color 0.15s ease,
       transform 0.15s ease;
   }
-  .tier-card:hover {
-    border-color: var(--sheet-accent);
-    transform: translateY(-1px);
+  /* Gateado a (hover: hover) — mismo hallazgo de .unit:hover /
+     .accessible-item:hover: sin esto, el primer tap en móvil se
+     "gasta" simulando este estado y hace falta un segundo tap real. */
+  @media (hover: hover) and (pointer: fine) {
+    .tier-card:hover {
+      border-color: var(--sheet-accent);
+      transform: translateY(-1px);
+    }
   }
 
   .tier-head {
@@ -1274,9 +1279,11 @@
      recordar": el ojo ya sabe qué hace este botón antes de leer el texto,
      que es exactamente lo que se busca en el paso de mayor fricción del
      flujo (salir de la app a escribir a un desconocido). */
-  .venture-cta:hover {
-    filter: brightness(1.08);
-    transform: translateY(-1px);
+  @media (hover: hover) and (pointer: fine) {
+    .venture-cta:hover {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
   }
   .venture-cta:active {
     transform: translateY(0);

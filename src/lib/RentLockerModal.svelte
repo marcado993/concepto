@@ -740,9 +740,15 @@
       filter 0.15s ease,
       transform 0.15s ease;
   }
-  .cta:hover:not(:disabled) {
-    filter: brightness(1.08);
-    transform: translateY(-1px);
+  /* Gateado a (hover: hover) — mismo hallazgo real que .unit:hover en
+     CategoryContent.svelte: sin esto, el primer tap en móvil se "gasta"
+     simulando hover y hace falta un segundo tap para que el botón
+     realmente actúe. */
+  @media (hover: hover) and (pointer: fine) {
+    .cta:hover:not(:disabled) {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
   }
   .cta:disabled {
     opacity: 0.55;
