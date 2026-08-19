@@ -175,6 +175,11 @@ jobs:
       # SARIF de abajo es solo para la pestaña Security y no bloquea —
       # trivy-action tiene un bug confirmado generando SARIF con 0
       # hallazgos que produce exit code 1 espurio.
+      # trivyignores acá también — sin esto, .trivyignore solo aplicaba al
+      # escaneo de imagen (trivy-image-scan más abajo), y este gate de
+      # filesystem no leía las excepciones documentadas para nada
+      # (hallazgo real: CVE-2026-40345 seguía bloqueando este job pese a
+      # estar ya justificada en .trivyignore).
       - name: Trivy fs scan (gate)
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
@@ -183,6 +188,7 @@ jobs:
           severity: "CRITICAL,HIGH"
           exit-code: "1"
           format: "table"
+          trivyignores: ".trivyignore"
       - name: Trivy fs scan (SARIF para Security tab, no bloquea)
         if: always()
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
@@ -193,6 +199,7 @@ jobs:
           exit-code: "0"
           format: "sarif"
           output: "trivy-fs.sarif"
+          trivyignores: ".trivyignore"
       - uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
         if: always()
         with:

@@ -23,3 +23,14 @@ CVE-2026-69152
 # para resolver registries, no por el código de AEIS-APP (que usa
 # `req.ip` de Express directamente, sin esta librería).
 CVE-2026-69192
+
+# deepmerge-ts (stack exhaustion en grafos recursivos, CVE nueva —
+# apareció sin ningún cambio de dependencias de nuestro lado): dependencia
+# transitiva de `prisma` (devDependency, vía @prisma/config), NUNCA de
+# AEIS-APP directamente — backend/package.json no la referencia. Termina
+# en la imagen final igual porque `npx prisma generate` (backend/Dockerfile,
+# stage runtime) la descarga para generar el Prisma Client, pero esa
+# ejecución pasa nuestro propio schema.prisma como único input — nunca
+# datos de una petición HTTP real. No hay forma de que un atacante le
+# pase el "grafo recursivo" que dispara el CVE.
+CVE-2026-40345
