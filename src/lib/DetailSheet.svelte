@@ -143,17 +143,26 @@
     z-index: 30;
     display: flex;
     flex-direction: column;
-    touch-action: none;
     overflow: hidden;
     will-change: transform;
     transition: background 0.4s ease;
   }
 
+  /* touch-action: none SOLO acá, no en .sheet entero — hallazgo real: el
+     gesto de arrastre (onPointerDown/Move/Up) solo arranca desde esta zona
+     y desde .sheet-header (ver el mismo patrón, ya correcto, en
+     CategoryContent.svelte). Aplicarlo al .sheet completo apagaba el
+     manejo nativo de touch en TODO lo de adentro — casilleros, tarjetas de
+     tier, cualquier botón — que es exactamente la clase de bug que hace
+     que un navegador móvil necesite un segundo toque para registrar un
+     tap real en vez de interpretarlo como el inicio de un gesto.
+  */
   .handle-zone {
     padding: 14px 0 6px;
     display: flex;
     justify-content: center;
     cursor: grab;
+    touch-action: none;
   }
 
   .handle {
