@@ -540,9 +540,17 @@
     white-space: nowrap;
     cursor: pointer;
   }
-  .auth-button:hover {
-    border-color: var(--accent);
-    color: var(--accent);
+  /* Gateado a (hover: hover) — mismo hallazgo real que .unit:hover en
+     CategoryContent.svelte: sin esto, el primer tap en móvil se "gasta"
+     simulando hover y hace falta un segundo tap para que el botón
+     realmente actúe. Este botón (Cerrar sesión) es de los que más se
+     toca en la app — se había quedado fuera de todas las pasadas
+     anteriores por auditoría de este mismo bug. */
+  @media (hover: hover) and (pointer: fine) {
+    .auth-button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
   }
 
   .auth-error-banner {

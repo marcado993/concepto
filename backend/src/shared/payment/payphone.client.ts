@@ -83,9 +83,16 @@ export class PayphoneClient {
     }
 
     return {
+      // Sin fallback a `clientTransactionId` (el valor que NOSOTROS
+      // mandamos) — el llamador compara este campo contra el rentalId/
+      // subscriptionId que dice estar confirmando, precisamente para
+      // detectar que UN pago real aprobado se reutilice para confirmar
+      // OTRO alquiler/aportación distinto (hallazgo de auditoría de
+      // seguridad). Si PayPhone no devuelve este campo, `String(undefined)`
+      // nunca calza con un id real — falla cerrado, no abierto.
       approved: body.transactionStatus === "Approved" && body.statusCode === 3,
       transactionId: Number(body.transactionId),
-      clientTransactionId: String(body.clientTransactionId ?? clientTransactionId),
+      clientTransactionId: String(body.clientTransactionId),
       amountCents: Number(body.amount),
       raw: body,
     };

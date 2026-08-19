@@ -233,7 +233,13 @@ describe("SubscriptionService.confirmPayphonePayment", () => {
 
   it("Dado que PayPhone no aprueba la transacción, Cuando se confirma, Entonces rechaza sin tocar el pago", async () => {
     const { service, prisma, payphone } = await build({
-      confirm: jest.fn().mockResolvedValue({ approved: false, transactionId: 1, amountCents: 2039, raw: {} }),
+      confirm: jest.fn().mockResolvedValue({
+        approved: false,
+        transactionId: 1,
+        clientTransactionId: "sub-1",
+        amountCents: 2039,
+        raw: {},
+      }),
     });
 
     await expect(service.confirmPayphonePayment("sub-1", 1, "user-1")).rejects.toBeInstanceOf(BadRequestException);
@@ -241,9 +247,33 @@ describe("SubscriptionService.confirmPayphonePayment", () => {
     expect(payphone.confirm).toHaveBeenCalledWith(1, "sub-1");
   });
 
+  // Mismo hallazgo de seguridad que locker.service.spec.ts: un pago real
+  // aprobado no debería poder confirmar una aportación distinta a la que
+  // de verdad se pagó, aunque el monto coincida (tiers tienen precio fijo).
+  it("Dado que PayPhone aprueba una transacción real pero para OTRA aportación distinta (clientTransactionId no coincide), Cuando se confirma, Entonces rechaza sin tocar el pago", async () => {
+    const { service, prisma } = await build({
+      confirm: jest.fn().mockResolvedValue({
+        approved: true,
+        transactionId: 1,
+        clientTransactionId: "sub-de-otra-aportacion",
+        amountCents: 2039,
+        raw: {},
+      }),
+    });
+
+    await expect(service.confirmPayphonePayment("sub-1", 1, "user-1")).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("Dado que PayPhone aprueba con el monto correcto, Cuando se confirma, Entonces el pago pasa a CONFIRMED", async () => {
     const { service, prisma } = await build({
-      confirm: jest.fn().mockResolvedValue({ approved: true, transactionId: 1, amountCents: 2039, raw: {} }),
+      confirm: jest.fn().mockResolvedValue({
+        approved: true,
+        transactionId: 1,
+        clientTransactionId: "sub-1",
+        amountCents: 2039,
+        raw: {},
+      }),
     });
 
     await service.confirmPayphonePayment("sub-1", 1, "user-1");
