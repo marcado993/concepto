@@ -207,14 +207,19 @@ export class SubscriptionService {
       throw new BadRequestException("No se pudo confirmar el pago con PayPhone — intenta de nuevo");
     }
 
-    if (!result.approved || result.amountCents !== expectedCents) {
+    // clientTransactionId es el ancla real contra reutilizar UN pago
+    // aprobado para confirmar OTRA aportación distinta — sin esto, dos
+    // aportaciones con el mismo tier (mismo monto) bastan para que el
+    // mismo transactionId real "apruebe" ambas (mismo hallazgo que en
+    // locker.service.ts confirmPayphonePayment).
+    if (!result.approved || result.amountCents !== expectedCents || result.clientTransactionId !== subscriptionId) {
       await this.audit.record({
         actorId: userId,
         action: "subscription.payphone.rejected",
         entityType: "Subscription",
         entityId: subscription.id,
         ipAddress,
-        metadata: { reason: "no_aprobado_o_monto_no_coincide", expectedCents, got: result },
+        metadata: { reason: "no_aprobado_monto_no_coincide_o_clientTransactionId_no_coincide", expectedCents, got: result },
       });
       throw new BadRequestException("PayPhone no aprobó esta transacción");
     }

@@ -443,6 +443,26 @@ describe("LockerService.confirmPayphonePayment", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  // Hallazgo de auditoría de seguridad: un mismo pago real y aprobado de
+  // PayPhone (mismo monto base) reutilizado para confirmar OTRO alquiler
+  // distinto al que de verdad se pagó — sin este chequeo, solo aprobado+
+  // monto no bastan, porque el precio de un casillero es fijo y el
+  // atacante controla cuál rentalId manda a confirmar.
+  it("Dado que PayPhone aprueba una transacción real pero para OTRO alquiler distinto (clientTransactionId no coincide), Cuando se confirma, Entonces rechaza sin tocar el pago ni el casillero", async () => {
+    payphone.confirm.mockResolvedValue({
+      approved: true,
+      transactionId: 999,
+      clientTransactionId: "rental-de-otro-alquiler",
+      amountCents: 690,
+      raw: {},
+    });
+
+    await expect(service.confirmPayphonePayment("rental-1", 999, "user-1")).rejects.toBeInstanceOf(
+      BadRequestException
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("Dado que PayPhone aprueba la transacción con el monto correcto, Cuando se confirma, Entonces el pago pasa a CONFIRMED y el casillero a RENTED dentro de la misma transacción", async () => {
     payphone.confirm.mockResolvedValue({
       approved: true,

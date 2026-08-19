@@ -341,14 +341,20 @@ export class LockerService {
       throw new BadRequestException("No se pudo confirmar el pago con PayPhone — intenta de nuevo");
     }
 
-    if (!result.approved || result.amountCents !== expectedCents) {
+    // clientTransactionId es el ancla real contra reutilizar UN pago
+    // aprobado para confirmar OTRO alquiler distinto — sin esto, dos
+    // alquileres con el mismo precio base bastan para que el mismo
+    // transactionId real "apruebe" ambos (auditoría de seguridad real:
+    // el monto solo no basta, hay que anclar la transacción al alquiler
+    // exacto que dice confirmar).
+    if (!result.approved || result.amountCents !== expectedCents || result.clientTransactionId !== rentalId) {
       await this.audit.record({
         actorId: userId,
         action: "locker.payphone.rejected",
         entityType: "LockerRental",
         entityId: rental.id,
         ipAddress,
-        metadata: { reason: "no_aprobado_o_monto_no_coincide", expectedCents, got: result },
+        metadata: { reason: "no_aprobado_monto_no_coincide_o_clientTransactionId_no_coincide", expectedCents, got: result },
       });
       throw new BadRequestException("PayPhone no aprobó esta transacción");
     }
