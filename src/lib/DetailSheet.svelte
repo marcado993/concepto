@@ -73,16 +73,42 @@
   // comía entonces el scrim (invisible pero aún activo) cerrando "de
   // verdad", y recién el segundo tap llegaba al botón. Con el listener a
   // nivel de window el gesto siempre termina, suelte donde suelte el dedo.
+  // Se decide por los PÍXELES que el dedo recorrió — la intención real del
+  // usuario — no por la posición del sheet. Las dos alternativas fallaban
+  // por depender del tiempo, y se reprodujeron con entrada real:
+  //  - Posición absoluta ($progress > umbral): si el gesto empezaba con el
+  //    sheet aún animándose al abrir, startProgress no era 0 y 40px ya
+  //    bastaban para cerrar sin que el usuario lo pidiera.
+  //  - Delta de progreso ($progress - startProgress): el Math.min(1, …) de
+  //    onPointerMove satura el valor, así que empezando cerca de 1 (sheet
+  //    a medio abrir) un arrastre largo de verdad producía un delta
+  //    diminuto y NO cerraba.
+  // Los píxeles no se saturan ni dependen de en qué punto de la animación
+  // se enganchó el gesto.
+  const CLOSE_FRACTION = 0.25;
+  const sheetHeightPx = () => window.innerHeight * 0.86;
+  let draggedPx = 0;
+
   function endDrag() {
     if (!dragging) return;
     dragging = false;
     window.removeEventListener("pointerup", endDrag);
     window.removeEventListener("pointercancel", endDrag);
-    if ($progress > 0.2) {
-      open = false;
-      onclose?.();
+
+    if (draggedPx >= sheetHeightPx() * CLOSE_FRACTION) {
+      // progress.set(1) explícito: si `open` ya era false, reasignarlo NO
+      // vuelve a disparar el $effect, y el sheet se quedaría clavado justo
+      // donde lo soltó el dedo — "no se cierra del todo y sigue estando ahí".
+      progress.set(1);
+      if (open) {
+        open = false;
+        onclose?.();
+      }
     } else {
-      progress.set(0);
+      // Vuelve a donde de verdad corresponde según el estado, no siempre a
+      // "abierto" — así un arrastre corto nunca deja apariencia y estado
+      // contradiciéndose.
+      progress.set(open ? 0 : 1);
     }
   }
 
@@ -93,6 +119,7 @@
     dragging = true;
     startY = e.clientY;
     startProgress = $progress;
+    draggedPx = 0;
     window.addEventListener("pointerup", endDrag);
     window.addEventListener("pointercancel", endDrag);
   }
@@ -101,8 +128,8 @@
     if (!dragging) return;
     const dy = e.clientY - startY;
     if (dy < 0) return;
-    const sheetHeight = window.innerHeight * 0.86;
-    progress.set(Math.min(1, startProgress + dy / sheetHeight), { hard: true });
+    draggedPx = dy;
+    progress.set(Math.min(1, startProgress + dy / sheetHeightPx()), { hard: true });
   }
 
   // Si el componente se destruye a mitad de un arrastre, los listeners de
@@ -120,15 +147,16 @@
   // toda la pantalla estando aún invisible, y al cerrar el sheet seguía
   // VIÉNDOSE pero los taps lo atravesaban hasta la lista de atrás. Mismo
   // hallazgo que ya se había corregido en RentLockerModal.
-  const interactive = $derived($progress < 0.98);
-  // El scrim exige ADEMÁS que open siga siendo true. Defensa en
-  // profundidad contra el mismo trampa de arriba: si el estado alguna vez
-  // vuelve a desincronizarse (se ve cerrado pero open=true), un scrim
-  // invisible a pantalla completa no debe poder tragarse el siguiente tap
-  // — que es justo el síntoma de "toca hacer doble click".
-  const scrimInteractive = $derived(open && interactive);
+  // Apenas `open` es false, NI el sheet NI el scrim vuelven a interceptar
+  // nada — aunque el sheet siga viéndose deslizarse hacia abajo esos
+  // ~700ms que dura el spring. Esto es lo que hacía falta un segundo tap:
+  // al cerrar arrastrando, el sheet seguía capturando toques sobre el 86%
+  // de la pantalla mientras se iba, así que el tap para abrir otra
+  // categoría se lo comía él y no llegaba a la lista de atrás. El scrim
+  // pide además estar visible, para no tragarse taps mientras aparece.
+  const scrimInteractive = $derived(open && $progress < 0.98);
   const sheetStyle = $derived(
-    `transform: translateY(${$progress * 100}%); pointer-events: ${interactive ? "auto" : "none"};` +
+    `transform: translateY(${$progress * 100}%); pointer-events: ${open ? "auto" : "none"};` +
       `--sheet-dim: ${theme.accentDim}; --sheet-deep: ${theme.deep};`
   );
 </script>
