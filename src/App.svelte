@@ -3,6 +3,7 @@
   import Background from "./lib/Background.svelte";
   import ArcMenu from "./lib/ArcMenu.svelte";
   import AccessibleCategoryNav from "./lib/AccessibleCategoryNav.svelte";
+  import SheetCategoryTabs from "./lib/SheetCategoryTabs.svelte";
   import DetailSheet from "./lib/DetailSheet.svelte";
   import DesktopNav from "./lib/DesktopNav.svelte";
   import CategoryContent from "./lib/CategoryContent.svelte";
@@ -393,45 +394,43 @@
         </section>
       </main>
     {:else if uiVariant === "B"}
-      <!-- Variante B del test A/B — ver abTest.ts. Sin rueda, sin gesto de
-           arrastre: tocar una categoría la selecciona Y abre el sheet en
-           el mismo tap (la rueda necesitaba girar y LUEGO deslizar arriba
-           o tocar el pill — dos pasos separados). -->
-      <main class="menu-layer accessible-layer" class:receded={sheetOpen}>
-        <div class="top-copy accessible-top-copy">
-          <div class="label-block">
-            <h1 class="label">Elige una categoría</h1>
-            <p class="prompt-text">Toca cualquier opción para abrirla.</p>
-          </div>
-        </div>
-        <AccessibleCategoryNav
+      <!-- UNA sola pantalla: pestañas fijas arriba + contenido debajo.
+           Antes esto era una lista de 6 categorías y ENCIMA un panel
+           deslizante que tapaba el 86% de la pantalla — dos navegaciones
+           para las mismas 6 cosas, con la lista de atrás inservible.
+           Feedback textual del cliente: "la app no es muy usable",
+           señalando navegación y exceso de adorno.
+
+           Quitar el panel se lleva por delante, además, TODA la
+           maquinaria que produjo los bugs de toques de esta sesión: el
+           scrim a pantalla completa que se comía el primer tap, el gesto
+           de arrastre con sus dos condiciones de carrera, el spring y el
+           malabar de pointer-events entre apariencia y estado. Menos
+           piezas móviles = menos formas de fallar. -->
+      <main class="mobile-main">
+        <SheetCategoryTabs
           categories={displayCategories}
           {selectedIndex}
-          onopen={(i) => {
-            selectedIndex = i;
-            openSheet();
-          }}
+          onselect={(i) => (selectedIndex = i)}
         />
+        <div class="mobile-content">
+          <CategoryContent
+            category={activeCategory}
+            {securityCategory}
+            {lockersCategory}
+            securityRisk={riskForHour(currentHour)}
+            {securityIndicatorsError}
+            {venturesError}
+            {lockersError}
+            {myPendingReceipt}
+            {myRentedLocker}
+            onlockerrented={onLockerRented}
+            {subscriptionTiersError}
+            onsubscribed={loadSubscriptionTiers}
+            compact
+          />
+        </div>
       </main>
-
-      <DetailSheet
-        category={activeCategory}
-        bind:open={sheetOpen}
-        categories={displayCategories}
-        {selectedIndex}
-        onselect={(i) => (selectedIndex = i)}
-        {securityCategory}
-        {lockersCategory}
-        securityRisk={riskForHour(currentHour)}
-        {securityIndicatorsError}
-        {venturesError}
-        {lockersError}
-        {myPendingReceipt}
-        {myRentedLocker}
-        onlockerrented={onLockerRented}
-        {subscriptionTiersError}
-        onsubscribed={loadSubscriptionTiers}
-      />
     {:else}
       <main class="menu-layer" class:receded={sheetOpen}>
         <div class="top-copy">
@@ -594,6 +593,26 @@
     font-size: 13px;
     letter-spacing: 0.3em;
     color: var(--ink-1);
+  }
+
+  /* Pantalla única de móvil: pestañas fijas + contenido. Sin position
+     absoluta, sin z-index peleando con nada — no hay capas encimadas que
+     puedan interceptar toques (que era el origen de los bugs de esta
+     sesión). */
+  .mobile-main {
+    position: relative;
+    z-index: 5;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-content {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .menu-layer {

@@ -32,6 +32,12 @@
     myRentedLocker?: { lockerCode: string; zone: string } | null;
     /** Desktop full-screen layout: let grids breathe into more columns. */
     wide?: boolean;
+    /** Móvil de una sola pantalla: las pestañas de arriba YA dicen en qué
+        sección estás, así que el encabezado grande (título + ícono de
+        128px + subtítulo) era información repetida ocupando casi la mitad
+        de lo visible — el espacio más caro que hay en un celular.
+        Feedback textual: "se ve mucho adorno y poco contenido". */
+    compact?: boolean;
     // Only wired up by the mobile sliding sheet, so its header doubles as a
     // drag handle — the desktop panel just omits these.
     onheaderpointerdown?: (e: PointerEvent) => void;
@@ -56,6 +62,7 @@
     myPendingReceipt = null,
     myRentedLocker = null,
     wide = false,
+    compact = false,
     onheaderpointerdown,
     onheaderpointermove,
     onheaderpointerup,
@@ -228,7 +235,7 @@
   );
 </script>
 
-<div class="content-wrap" class:wide style={wrapStyle}>
+<div class="content-wrap" class:wide class:compact style={wrapStyle}>
   <header
     class="sheet-header"
     onpointerdown={onheaderpointerdown}
@@ -236,11 +243,18 @@
     onpointerup={onheaderpointerup}
     onpointercancel={onheaderpointerup}
   >
-    <h2>{category.label}</h2>
-    <div class="icon-cluster">
-      <IsoIcon kind={category.icon} size={128} priority />
-    </div>
-    <p class="sheet-sub">{category.detailTitle}</p>
+    {#if compact}
+      <!-- Solo la línea de contexto: el título ya lo dice la pestaña
+           activa de arriba, y el ícono de 128px era puro adorno robando
+           el espacio donde debería empezar el contenido. -->
+      <p class="sheet-sub">{category.detailTitle}</p>
+    {:else}
+      <h2>{category.label}</h2>
+      <div class="icon-cluster">
+        <IsoIcon kind={category.icon} size={128} priority />
+      </div>
+      <p class="sheet-sub">{category.detailTitle}</p>
+    {/if}
   </header>
 
   <div class="sheet-body">
@@ -624,6 +638,15 @@
     touch-action: none;
   }
 
+  /* Sin el panel deslizante no hay gesto de arrastre desde el header, así
+     que tampoco hay razón para apagarle el touch nativo — dejarlo puesto
+     era justo el tipo de cosa que rompe el desplazamiento con el dedo. */
+  .content-wrap.compact .sheet-header {
+    padding: 2px 22px 10px;
+    text-align: left;
+    touch-action: auto;
+  }
+
   .sheet-header h2 {
     font-family: var(--font-heading);
     font-weight: 500;
@@ -757,6 +780,16 @@
        golpe sino en una ola rápida de izquierda a derecha, arriba a abajo. */
     opacity: 0;
     animation: unit-enter 0.45s ease-out forwards;
+  }
+
+  /* En la pantalla única de móvil los casilleros aparecen YA, sin ola de
+     entrada. Con hasta 108 unidades, ese escalonado hacía esperar hasta
+     ~950ms para ver la grilla completa cada vez que entrabas — se lee
+     como "la app va lenta", que es textualmente lo que se reportó. La
+     animación era adorno; ver el contenido es el trabajo real. */
+  .content-wrap.compact .unit {
+    opacity: 1;
+    animation: none;
   }
 
   @keyframes unit-enter {
