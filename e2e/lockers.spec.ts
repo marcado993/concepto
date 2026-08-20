@@ -31,19 +31,18 @@ async function openLockersSheet(page: Page) {
   await lockersResponse;
 
   // Tolerante a variante: la rueda (A, retirada del tráfico real pero
-  // sigue en el repo) usa .open-pill; la lista accesible (B, la única que
-  // ven los estudiantes ahora — ver abTest.ts) abre directo tocando la
-  // fila "Casilleros".
+  // sigue en el repo) usa .open-pill. En la navegación actual de móvil no
+  // hay nada que abrir — Casilleros es la categoría por defecto y su
+  // contenido ya está en pantalla; si acaso, basta tocar su pestaña.
   const openPill = page.locator('.open-pill');
   if (await openPill.isVisible({ timeout: 1_000 }).catch(() => false)) {
     await openPill.click();
     await page.waitForTimeout(400);
     return;
   }
-  const lockersRow = page.locator('.accessible-item', { hasText: 'Casilleros' });
-  if (await lockersRow.isVisible({ timeout: 1_000 }).catch(() => false)) {
-    await lockersRow.click();
-    await page.waitForTimeout(400);
+  const lockersTab = page.locator('[role="tab"]', { hasText: 'Casilleros' });
+  if (await lockersTab.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await lockersTab.click();
   }
 }
 

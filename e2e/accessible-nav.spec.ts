@@ -1,21 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
 import { gotoApp } from './test-utils';
 
-// Variante B del test A/B de navegación (src/lib/abTest.ts) — lista
-// accesible en vez de la rueda (ArcMenu), pedido real del cliente tras
-// feedback de que la rueda "no es usable". Mismo estilo de caja negra que
-// el resto de la suite: build de producción real, backend real.
+// Navegación móvil: UNA sola pantalla con pestañas fijas arriba y el
+// contenido debajo. Antes era una lista de 6 categorías y encima un panel
+// deslizante que la tapaba — dos navegaciones para lo mismo, y el origen
+// de todos los bugs de toques (scrim a pantalla completa, gesto de
+// arrastre, spring). Quitar el panel eliminó esa clase entera de fallos.
 //
-// App.svelte decide rueda/lista-A11y VS. el sidebar de escritorio mirando
-// `(pointer: fine) and (min-width: 720px)` — el proyecto "chromium" de
-// playwright.config.ts usa devices['Desktop Chrome'] (mouse, ≥720px), así
-// que SIEMPRE cae en la rama de escritorio salvo que se fuerce lo
-// contrario acá. Sin esto, .accessible-nav nunca aparece y estos tests
-// fallan siempre — no por un bug real, sino por probar la rama equivocada.
-//
-// Solo viewport/touch a mano, NO devices['iPhone ...'] completo — esos
-// presets traen defaultBrowserType:'webkit', y este repo solo tiene
-// instalado el navegador chromium (mismo que el resto de la suite).
+// El proyecto "chromium" de playwright.config.ts usa devices['Desktop
+// Chrome'], así que sin este test.use() la app cae en la rama de
+// escritorio y estos selectores no existen.
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
 async function waitForSplash(page: Page) {
@@ -27,29 +21,30 @@ async function waitForSplash(page: Page) {
   }, { timeout: 8_000 });
 }
 
-test.describe('AEIS App — navegación variante B (accesible)', () => {
-  test('en variante B se ve la lista de categorías, no la rueda', async ({ page }) => {
+test.describe('AEIS App — navegación móvil (pestañas)', () => {
+  test('se ven pestañas de categoría, no la rueda ni el panel deslizante', async ({ page }) => {
     await gotoApp(page, '/', 'B');
     await waitForSplash(page);
 
-    await expect(page.locator('.accessible-nav')).toBeVisible();
+    await expect(page.locator('[role="tablist"]')).toBeVisible();
     await expect(page.locator('.wheel-slot')).toHaveCount(0);
     await expect(page.locator('.open-pill')).toHaveCount(0);
+    // Ya no existe panel encimado: nada puede taparse a nada.
+    await expect(page.locator('.sheet')).toHaveCount(0);
+    await expect(page.locator('.scrim')).toHaveCount(0);
   });
 
-  test('cada categoría es un botón real con texto visible — no depende de un gesto de arrastre', async ({ page }) => {
+  test('cada categoría es un botón real con texto visible', async ({ page }) => {
     await gotoApp(page, '/', 'B');
     await waitForSplash(page);
 
-    const items = page.locator('.accessible-item');
-    await expect(items).toHaveCount(6);
-    await expect(items.first()).toHaveText(/Casilleros/);
-    // aria-current marca cuál es la categoría activa — sin esto un lector
-    // de pantalla no tiene forma de saber cuál está seleccionada.
-    await expect(items.first()).toHaveAttribute('aria-current', 'true');
+    const tabs = page.locator('[role="tab"]');
+    await expect(tabs).toHaveCount(6);
+    await expect(tabs.first()).toHaveText(/Casilleros/);
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('tocar una categoría la abre directo — un solo tap, sin paso intermedio de "deslizar arriba"', async ({ page }) => {
+  test('el contenido de la categoría activa se ve de entrada, sin abrir nada', async ({ page }) => {
     const lockersResponse = page.waitForResponse(
       (res) => res.url().includes('/lockers') && res.request().method() === 'GET' && res.status() === 200,
       { timeout: 10_000 }
@@ -59,69 +54,60 @@ test.describe('AEIS App — navegación variante B (accesible)', () => {
     await waitForSplash(page);
     await lockersResponse;
 
-    await page.locator('.accessible-item', { hasText: 'Casilleros' }).click();
-
-    const units = page.locator('.unit');
-    await expect(units).toHaveCount(108, { timeout: 5_000 });
+    // Casilleros es la categoría por defecto: cero toques para llegar a lo
+    // que la mayoría viene a hacer.
+    await expect(page.locator('.unit')).toHaveCount(108, { timeout: 5_000 });
   });
 
-  // REGRESIÓN del bug real de "dos toques para cambiar" reportado desde
-  // móvil. El punto ciego de la suite era este: los tests de arriba solo
-  // abren UNA categoría desde la pantalla inicial (sheet cerrado, lista
-  // expuesta) — nunca probaban CAMBIAR de categoría con el sheet ya
-  // abierto, que es justo cuando fallaba. Con el sheet abierto, el .scrim
-  // (z-index 20, pantalla completa) tapaba la lista (z-index 5), así que
-  // el primer tap solo cerraba el sheet y hacía falta un segundo para
-  // elegir. Este test usa .click() de Playwright, que SÍ hace hit-testing
-  // real (falla si otro elemento intercepta el punto) — a diferencia de
-  // un .click() de JS suelto, que se lo salta y por eso nunca lo detectó.
-  test('con el sheet YA abierto, cambiar de categoría toma UN solo tap (no hay que cerrarlo primero)', async ({ page }) => {
+  // REGRESIÓN del bug de "dos toques para cambiar" que se reportó desde
+  // móvil una y otra vez. .click() de Playwright SÍ hace hit-testing real
+  // (falla si algo intercepta el punto), a diferencia de un .click() de JS
+  // suelto, que se lo salta — por eso las verificaciones viejas pasaban
+  // con el bug vivo.
+  test('cambiar de categoría toma UN solo tap', async ({ page }) => {
     await gotoApp(page, '/', 'B');
     await waitForSplash(page);
 
-    await page.locator('.accessible-item', { hasText: 'Casilleros' }).click();
-    await expect(page.locator('[role="tablist"]')).toBeVisible({ timeout: 5_000 });
-
-    // Un único click, sin cerrar nada antes — si algo lo intercepta,
-    // Playwright falla acá en vez de pasar en falso.
     await page.locator('[role="tab"]', { hasText: 'Eventos' }).click({ timeout: 5_000 });
-
-    await expect(page.locator('.sheet-header h2')).toHaveText('Eventos', { timeout: 5_000 });
-    // La pestaña activa tiene que REFLEJAR el cambio — si no, el usuario no
-    // tiene forma de saber en qué categoría quedó (visibilidad del estado).
     await expect(page.locator('[role="tab"][aria-selected="true"]')).toHaveText('Eventos');
+
+    await page.locator('[role="tab"]', { hasText: 'Aportaciones' }).click({ timeout: 5_000 });
+    await expect(page.locator('[role="tab"][aria-selected="true"]')).toHaveText('Aportaciones');
   });
 
-  test('las etiquetas de las pestañas se leen completas, sin truncarse ni encimarse', async ({ page }) => {
+  test('ir y volver entre categorías sigue tomando un tap cada vez', async ({ page }) => {
     await gotoApp(page, '/', 'B');
     await waitForSplash(page);
-    await page.locator('.accessible-item', { hasText: 'Casilleros' }).click();
-    await expect(page.locator('[role="tablist"]')).toBeVisible({ timeout: 5_000 });
 
-    // "Emprendimientos" es la más larga — es la que se cortaba antes.
+    for (let i = 0; i < 4; i++) {
+      await page.locator('[role="tab"]', { hasText: 'Eventos' }).click({ timeout: 3_000 });
+      await expect(page.locator('[role="tab"][aria-selected="true"]')).toHaveText('Eventos');
+      await page.locator('[role="tab"]', { hasText: 'Casilleros' }).click({ timeout: 3_000 });
+      await expect(page.locator('[role="tab"][aria-selected="true"]')).toHaveText('Casilleros');
+    }
+  });
+
+  test('las etiquetas de las pestañas se leen completas, sin truncarse', async ({ page }) => {
+    await gotoApp(page, '/', 'B');
+    await waitForSplash(page);
+
     const tab = page.locator('[role="tab"]', { hasText: 'Emprendimientos' });
     const truncated = await tab.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
     expect(truncated).toBe(false);
 
-    // Objetivo táctil mínimo WCAG 2.5.5 en alto.
     const box = await tab.boundingBox();
     expect(box!.height).toBeGreaterThanOrEqual(44);
   });
 
-  test('el sheet tiene un botón de cerrar alcanzable (no solo tocar el fondo o arrastrar)', async ({ page }) => {
+  test('el contenido empieza arriba: sin encabezado gigante robando pantalla', async ({ page }) => {
     await gotoApp(page, '/', 'B');
     await waitForSplash(page);
+    await expect(page.locator('.unit').first()).toBeVisible({ timeout: 5_000 });
 
-    await page.locator('.accessible-item', { hasText: 'Eventos' }).click();
-    const closeBtn = page.locator('.sheet-close');
-    await expect(closeBtn).toBeVisible({ timeout: 5_000 });
-
-    // Objetivo táctil mínimo WCAG 2.5.5 (44x44).
-    const box = await closeBtn.boundingBox();
-    expect(box!.width).toBeGreaterThanOrEqual(44);
-    expect(box!.height).toBeGreaterThanOrEqual(44);
-
-    await closeBtn.click();
-    await expect(page.locator('.accessible-item', { hasText: 'Eventos' })).toBeVisible();
+    // El primer casillero tiene que verse sin desplazarse. Antes, entre el
+    // título, el ícono de 128px y el subtítulo, la grilla arrancaba muy
+    // por debajo del pliegue.
+    const top = await page.locator('.unit').first().evaluate((el) => el.getBoundingClientRect().top);
+    expect(top).toBeLessThan(844 * 0.6);
   });
 });
