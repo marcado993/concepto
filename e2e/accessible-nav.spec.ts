@@ -64,4 +64,45 @@ test.describe('AEIS App — navegación variante B (accesible)', () => {
     const units = page.locator('.unit');
     await expect(units).toHaveCount(108, { timeout: 5_000 });
   });
+
+  // REGRESIÓN del bug real de "dos toques para cambiar" reportado desde
+  // móvil. El punto ciego de la suite era este: los tests de arriba solo
+  // abren UNA categoría desde la pantalla inicial (sheet cerrado, lista
+  // expuesta) — nunca probaban CAMBIAR de categoría con el sheet ya
+  // abierto, que es justo cuando fallaba. Con el sheet abierto, el .scrim
+  // (z-index 20, pantalla completa) tapaba la lista (z-index 5), así que
+  // el primer tap solo cerraba el sheet y hacía falta un segundo para
+  // elegir. Este test usa .click() de Playwright, que SÍ hace hit-testing
+  // real (falla si otro elemento intercepta el punto) — a diferencia de
+  // un .click() de JS suelto, que se lo salta y por eso nunca lo detectó.
+  test('con el sheet YA abierto, cambiar de categoría toma UN solo tap (no hay que cerrarlo primero)', async ({ page }) => {
+    await gotoApp(page, '/', 'B');
+    await waitForSplash(page);
+
+    await page.locator('.accessible-item', { hasText: 'Casilleros' }).click();
+    await expect(page.locator('.sheet-switcher')).toBeVisible({ timeout: 5_000 });
+
+    // Un único click, sin cerrar nada antes — si algo lo intercepta,
+    // Playwright falla acá en vez de pasar en falso.
+    await page.locator('.sheet-switcher .nav-item', { hasText: 'Eventos' }).click({ timeout: 5_000 });
+
+    await expect(page.locator('.sheet-header h2')).toHaveText('Eventos', { timeout: 5_000 });
+  });
+
+  test('el sheet tiene un botón de cerrar alcanzable (no solo tocar el fondo o arrastrar)', async ({ page }) => {
+    await gotoApp(page, '/', 'B');
+    await waitForSplash(page);
+
+    await page.locator('.accessible-item', { hasText: 'Eventos' }).click();
+    const closeBtn = page.locator('.sheet-close');
+    await expect(closeBtn).toBeVisible({ timeout: 5_000 });
+
+    // Objetivo táctil mínimo WCAG 2.5.5 (44x44).
+    const box = await closeBtn.boundingBox();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+
+    await closeBtn.click();
+    await expect(page.locator('.accessible-item', { hasText: 'Eventos' })).toBeVisible();
+  });
 });
