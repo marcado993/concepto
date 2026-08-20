@@ -208,25 +208,25 @@ describe("AuthController", () => {
     );
   });
 
-  it("Dado un correo que NO es @epn.edu.ec, Cuando se llama /auth/callback, Entonces rechaza SIN crear el usuario ni emitir token — la autenticación con Logto fue real, pero este backend no lo trata como estudiante de la EPN", async () => {
+  it("Dado un correo personal (no @epn.edu.ec), Cuando se llama /auth/callback, Entonces provisiona el usuario igual — decisión real de DGIP: ya no se exige dominio institucional (evita que graduarse/dar de baja la cuenta EPN deje al estudiante sin poder loguearse)", async () => {
     const req = {
       signedCookies: { aeis_oidc_pending: JSON.stringify({ codeVerifier: "verifier-1", state: "state-1" }) },
     } as any;
     const res = mockResponse();
     logto.exchangeCode.mockResolvedValue({
       access_token: "at-123",
-      claims: () => ({ sub: "github|99", email: "cualquiera@gmail.com", name: "No EPN" }),
+      claims: () => ({ sub: "github|99", email: "cualquiera@gmail.com", name: "Estudiante" }),
     });
 
     await controller.callback("code-3", "state-1", "https://tenant.logto.app/oidc", req, res);
 
-    expect(prisma.user.upsert).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(
-      "https://aeis-app.vercel.app/?auth_error=dominio_no_institucional"
+    expect(prisma.user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { logtoSub: "github|99" } })
     );
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/#access_token=at-123");
   });
 
-  it("Dado un login de GitHub sin correo público/verificado (claims.email undefined), Cuando se llama /auth/callback, Entonces rechaza igual — sin correo no hay forma de verificar el dominio", async () => {
+  it("Dado un login de GitHub sin correo público/verificado (claims.email undefined), Cuando se llama /auth/callback, Entonces rechaza — sin ningún correo no hay forma de identificar/contactar al usuario, sin importar el dominio", async () => {
     const req = {
       signedCookies: { aeis_oidc_pending: JSON.stringify({ codeVerifier: "verifier-1", state: "state-1" }) },
     } as any;
@@ -240,7 +240,7 @@ describe("AuthController", () => {
 
     expect(prisma.user.upsert).not.toHaveBeenCalled();
     expect(res.redirect).toHaveBeenCalledWith(
-      "https://aeis-app.vercel.app/?auth_error=dominio_no_institucional"
+      "https://aeis-app.vercel.app/?auth_error=correo_no_disponible"
     );
   });
 

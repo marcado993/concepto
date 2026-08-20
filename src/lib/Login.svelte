@@ -21,9 +21,12 @@
   }
   let { onclose, showBack = true, errorMessage = null }: Props = $props();
 
-  let institutionalEmail = $state("");
-  const EMAIL_RE = /^[^\s@]+@epn\.edu\.ec$/i;
-  const isValidInstitutionalEmail = $derived(EMAIL_RE.test(institutionalEmail.trim()));
+  // Ya no se exige dominio @epn.edu.ec (decisión de DGIP, 2026-08-19) —
+  // cualquier correo válido sirve para registrarse/entrar, ver el
+  // comentario de isValidEmail en backend/src/shared/auth/auth.controller.ts.
+  let email = $state("");
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isValidEmailInput = $derived(EMAIL_RE.test(email.trim()));
 
   // El paso de código nunca sale a la pantalla de Logto — se queda acá
   // mismo (ver startEmailLogin/verifyEmailLogin en auth.svelte.ts, que
@@ -39,11 +42,11 @@
   }
 
   async function continueWithEmail() {
-    if (!isValidInstitutionalEmail || sending) return;
+    if (!isValidEmailInput || sending) return;
     sending = true;
     localError = null;
     try {
-      await startEmailLogin(institutionalEmail.trim());
+      await startEmailLogin(email.trim());
       step = "code";
     } catch (err) {
       localError = err instanceof EmailLoginError ? err.message : "No se pudo enviar el código — intenta de nuevo";
@@ -137,22 +140,22 @@
         Continuar con GitHub
       </button>
 
-      <div class="divider"><span>o con correo institucional</span></div>
+      <div class="divider"><span>o con correo electrónico</span></div>
 
-      <label class="field-label" for="login-email">Correo institucional</label>
+      <label class="field-label" for="login-email">Correo electrónico</label>
       <input
         id="login-email"
         class="field-input"
         type="email"
-        placeholder="tu.nombre@epn.edu.ec"
-        bind:value={institutionalEmail}
+        placeholder="tu@correo.com"
+        bind:value={email}
         autocomplete="email"
         onkeydown={(e) => e.key === "Enter" && continueWithEmail()}
       />
       <button
         class="cta"
-        disabled={!isValidInstitutionalEmail || sending}
-        title={isValidInstitutionalEmail ? undefined : "Escribe tu correo @epn.edu.ec completo"}
+        disabled={!isValidEmailInput || sending}
+        title={isValidEmailInput ? undefined : "Escribe un correo completo"}
         onclick={continueWithEmail}
       >
         {sending ? "Enviando código…" : "Continuar con correo"}
@@ -162,7 +165,7 @@
     {:else}
       <label class="field-label" for="login-otp">Código de 6 dígitos</label>
       <p class="subtitle" style="margin-top:-2px">
-        Te lo mandamos a <strong>{institutionalEmail.trim()}</strong>
+        Te lo mandamos a <strong>{email.trim()}</strong>
       </p>
       <input
         id="login-otp"

@@ -48,24 +48,18 @@ interface EmailPending {
   verificationId: string;
 }
 
-// Restricción de dominio institucional — aplicada AQUÍ, en el backend, no
-// intentando configurarla del lado de Logto: Logto no tiene una forma
-// nativa y confiable de "solo permitir este dominio de correo" que cubra
-// A LA VEZ el conector de correo institucional Y GitHub (un conector
-// social no sabe nada de dominios EPN). Chequear claims.email acá cubre
-// los dos casos con una sola regla, sin importar qué conector se usó.
-//
-// Con GitHub esto tiene una limitación real que hay que comunicar a los
-// estudiantes: si su cuenta de GitHub no tiene el correo público/verificado
-// habilitado en su perfil, Logto no puede entregarnos ese claim aunque el
-// estudiante SÍ sea de la EPN — el login se rechaza igual, porque no hay
-// forma de verificar el dominio sin ese dato. La alternativa (confiar en
-// el login sin verificar dominio) es peor: cualquiera con cuenta de GitHub
-// entraría como si fuera estudiante de Sistemas.
-const ALLOWED_EMAIL_DOMAIN = "epn.edu.ec";
-
-function isInstitutionalEmail(email: string | undefined): email is string {
-  return !!email && email.toLowerCase().endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
+// Restricción de dominio institucional — RETIRADA a propósito (decisión
+// real de DGIP, 2026-08-19): atar la cuenta al correo @epn.edu.ec hacía
+// que un estudiante quedara sin poder loguearse en cuanto la EPN le daba
+// de baja esa cuenta al graduarse, y una cuenta institucional inactiva
+// reutilizada más adelante era un vector de ataque real. Ya no hay
+// ninguna verificación de que quien se registra sea efectivamente
+// estudiante de Sistemas — decisión consciente, aceptada así por ahora:
+// alquilar un casillero de todos modos exige pagar (PayPhone o
+// transferencia) y tener acceso físico al campus para usarlo, lo que ya
+// filtra bastante el abuso sin necesitar una verificación de dominio.
+function isValidEmail(email: string | undefined): email is string {
+  return !!email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 @Controller("auth")
@@ -116,13 +110,11 @@ export class AuthController {
     // cualquier direct_sign_in sin que este backend lo valide primero.
     const directSignIn = connector === "github" ? "social:github" : undefined;
 
-    // ?email=... viene del campo de correo institucional en Login.svelte
-    // — precarga el campo en la pantalla de Logto (login_hint), nunca
-    // salta el paso del código de verificación. Un chequeo de forma
-    // mínimo (no una validación de dominio real — eso ya lo hace
-    // isInstitutionalEmail() en el callback) antes de reenviarlo, para no
-    // meter cualquier string arbitrario del query string a la URL de
-    // autorización sin pasar por este backend primero.
+    // ?email=... viene del campo de correo en Login.svelte — precarga el
+    // campo en la pantalla de Logto (login_hint), nunca salta el paso del
+    // código de verificación. Un chequeo de forma mínimo antes de
+    // reenviarlo, para no meter cualquier string arbitrario del query
+    // string a la URL de autorización sin pasar por este backend primero.
     const loginHint = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
 
     let authUrl: string;
@@ -205,19 +197,19 @@ export class AuthController {
     iss?: string;
     expectedState: string;
     codeVerifier: string;
-  }): Promise<{ ok: true; accessToken: string } | { ok: false; reason: "dominio_no_institucional" }> {
+  }): Promise<{ ok: true; accessToken: string } | { ok: false; reason: "correo_no_disponible" }> {
     const tokenSet = await this.logto.exchangeCode(params);
     const claims = tokenSet.claims();
     const email = claims.email as string | undefined;
 
-    // Se rechaza ANTES de tocar la base de datos — nunca se crea un User
-    // "a medias" para un correo no institucional que después haya que
-    // limpiar a mano. Ni siquiera se emite el access_token: sin esto, el
-    // frontend igual habría recibido un token válido de Logto (la
-    // AUTENTICACIÓN sí fue real) para alguien que este backend nunca
-    // debió tratar como estudiante de la EPN.
-    if (!isInstitutionalEmail(email)) {
-      return { ok: false, reason: "dominio_no_institucional" };
+    // Ya no se exige dominio @epn.edu.ec (ver comentario de isValidEmail
+    // más arriba) — este chequeo ahora solo cubre el caso real que queda:
+    // GitHub sin correo público/verificado en el perfil, donde Logto
+    // nunca nos entrega el claim `email` en absoluto. Se rechaza ANTES de
+    // tocar la base de datos — nunca se crea un User "a medias" para una
+    // identidad sin correo que después haya que limpiar a mano.
+    if (!isValidEmail(email)) {
+      return { ok: false, reason: "correo_no_disponible" };
     }
 
     await this.provisionUser(claims.sub, email, claims.name as string | undefined);
@@ -233,8 +225,8 @@ export class AuthController {
   @Throttle({ short: { limit: 5, ttl: 10_000 } })
   @Post("email/start")
   async emailStart(@Body("email") email: string | undefined, @Res() res: Response) {
-    if (!isInstitutionalEmail(email)) {
-      throw new BadRequestException("Usa tu correo institucional @epn.edu.ec");
+    if (!isValidEmail(email)) {
+      throw new BadRequestException("Escribe un correo válido");
     }
 
     const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();

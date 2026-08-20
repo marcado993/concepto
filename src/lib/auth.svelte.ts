@@ -48,8 +48,8 @@ export function getAccessToken(): string | null {
  *  realmente decide el conector según qué botón tocó el estudiante. Sin
  *  connector, el backend deja que Logto muestre su propio selector.
  *
- *  loginHint opcional — el correo institucional que el estudiante ya
- *  escribió en NUESTRO formulario, para no hacer que lo vuelva a escribir
+ *  loginHint opcional — el correo que el estudiante ya escribió en
+ *  NUESTRO formulario, para no hacer que lo vuelva a escribir
  *  en la pantalla de Logto. Precarga el campo, no salta el paso (el
  *  código de verificación lo sigue mostrando/pidiendo Logto — no hay
  *  forma de recibir/validar ese código sin su propia pantalla). */
@@ -61,7 +61,7 @@ export function login(connector?: string, loginHint?: string) {
   window.location.href = `${API_BASE_URL}/auth/login${qs ? `?${qs}` : ""}`;
 }
 
-// Login por correo institucional — a diferencia de login("github") (que
+// Login por correo — a diferencia de login("github") (que
 // navega el navegador entero hacia afuera), este flujo se queda en
 // Login.svelte de principio a fin: el backend habla con la Experience API
 // de Logto por dentro (ver backend/src/shared/auth/logto-experience.client.ts)

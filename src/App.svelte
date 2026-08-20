@@ -44,10 +44,11 @@
   // dejar que el usuario se quede mirando un 500 crudo en otra pestaña.
   const AUTH_ERROR_MESSAGES: Record<string, string> = {
     logto_not_configured: "El login todavía no está disponible — Logto está pendiente de configurar.",
-    // Puede salir con GitHub aunque el estudiante SÍ sea de la EPN, si su
-    // cuenta no tiene el correo público/verificado — ver auth.controller.ts.
-    dominio_no_institucional:
-      "Solo se puede entrar con tu correo institucional (@epn.edu.ec). Si usaste GitHub, revisa que tu correo esté verificado y público en tu perfil de GitHub.",
+    // Ya no se exige dominio @epn.edu.ec (decisión de DGIP) — esto solo
+    // sale si GitHub no entrega ningún correo en absoluto (perfil sin
+    // correo público/verificado) — ver auth.controller.ts.
+    correo_no_disponible:
+      "No pudimos obtener tu correo desde GitHub. Revisa que tu correo esté verificado y público en tu perfil de GitHub, o usa la opción de correo electrónico.",
   };
   let authError = $state<string | null>(null);
   if (typeof window !== "undefined") {
