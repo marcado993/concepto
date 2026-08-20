@@ -158,7 +158,7 @@ export const categories: Category[] = [
     resources: [
       {
         id: "r1",
-        name: "lab-inteligencia-artificial",
+        name: "Laboratorio de Inteligencia Artificial",
         description: "Equipos con GPU para proyectos de machine learning y visión por computador.",
         tag: "Hardware",
         stat1Label: "Disponibles",
@@ -169,7 +169,7 @@ export const categories: Category[] = [
       },
       {
         id: "r2",
-        name: "sala-servidores",
+        name: "Sala de Servidores",
         description: "Rack de servidores para desplegar proyectos y prácticas estudiantiles.",
         tag: "Infraestructura",
         stat1Label: "Nodos",
@@ -180,7 +180,7 @@ export const categories: Category[] = [
       },
       {
         id: "r3",
-        name: "kit-electronica",
+        name: "Kit de Electrónica",
         description: "Componentes, sensores y placas de desarrollo para prototipado.",
         tag: "Electrónica",
         stat1Label: "Kits",
@@ -191,7 +191,7 @@ export const categories: Category[] = [
       },
       {
         id: "r4",
-        name: "biblioteca-tecnica",
+        name: "Biblioteca Técnica",
         description: "Libros, papers y guías de ingeniería de sistemas.",
         tag: "Material",
         stat1Label: "Títulos",
@@ -222,7 +222,7 @@ export const categories: Category[] = [
     sublabel: "Bronce · Platino · Pantera",
     prompt: "Elige esto para apoyar a AEIS y ver tus beneficios",
     icon: "subscriptions",
-    detailTitle: "Tiers de aportación",
+    detailTitle: "Niveles de aportación",
     theme: { accent: "#e0b23c", accentDim: "#5a4512", deep: "#2a2008", glow: "rgba(224, 178, 60, 0.4)", hue: 45 },
     // `tiers` se pide al backend (fetchSubscriptionTiers en api.ts) — los
     // 3 tiers reales (Bronce/Platino/Pantera) viven en la base de datos
@@ -236,7 +236,7 @@ export const categories: Category[] = [
     sublabel: "Alarma · Zona campus",
     prompt: "Elige esto para ver el estado de seguridad de tu zona",
     icon: "security",
-    detailTitle: "Alarma",
+    detailTitle: "Seguridad del campus",
     // Placeholder — App.svelte overrides this with themeForRisk(currentHour)
     // so the module's tone tracks the clock instead of sitting fixed.
     theme: { accent: "#f5b942", accentDim: "#4d3a12", deep: "#241c0a", glow: "rgba(245, 185, 66, 0.4)", hue: 0 },
