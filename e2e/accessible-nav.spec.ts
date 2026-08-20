@@ -80,13 +80,32 @@ test.describe('AEIS App — navegación variante B (accesible)', () => {
     await waitForSplash(page);
 
     await page.locator('.accessible-item', { hasText: 'Casilleros' }).click();
-    await expect(page.locator('.sheet-switcher')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[role="tablist"]')).toBeVisible({ timeout: 5_000 });
 
     // Un único click, sin cerrar nada antes — si algo lo intercepta,
     // Playwright falla acá en vez de pasar en falso.
-    await page.locator('.sheet-switcher .nav-item', { hasText: 'Eventos' }).click({ timeout: 5_000 });
+    await page.locator('[role="tab"]', { hasText: 'Eventos' }).click({ timeout: 5_000 });
 
     await expect(page.locator('.sheet-header h2')).toHaveText('Eventos', { timeout: 5_000 });
+    // La pestaña activa tiene que REFLEJAR el cambio — si no, el usuario no
+    // tiene forma de saber en qué categoría quedó (visibilidad del estado).
+    await expect(page.locator('[role="tab"][aria-selected="true"]')).toHaveText('Eventos');
+  });
+
+  test('las etiquetas de las pestañas se leen completas, sin truncarse ni encimarse', async ({ page }) => {
+    await gotoApp(page, '/', 'B');
+    await waitForSplash(page);
+    await page.locator('.accessible-item', { hasText: 'Casilleros' }).click();
+    await expect(page.locator('[role="tablist"]')).toBeVisible({ timeout: 5_000 });
+
+    // "Emprendimientos" es la más larga — es la que se cortaba antes.
+    const tab = page.locator('[role="tab"]', { hasText: 'Emprendimientos' });
+    const truncated = await tab.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+    expect(truncated).toBe(false);
+
+    // Objetivo táctil mínimo WCAG 2.5.5 en alto.
+    const box = await tab.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
   });
 
   test('el sheet tiene un botón de cerrar alcanzable (no solo tocar el fondo o arrastrar)', async ({ page }) => {
