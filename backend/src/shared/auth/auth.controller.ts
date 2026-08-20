@@ -18,6 +18,7 @@ import { Public } from "./public.decorator";
 import { LogtoOidcClient } from "./logto-oidc.client";
 import { ExperienceApiError, LogtoExperienceClient } from "./logto-experience.client";
 import { PrismaService } from "../prisma/prisma.service";
+import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter.service";
 
 // Flujo de login — 2 saltos de red (navegador → Logto → GitHub → Logto →
 // backend), el mínimo posible para OIDC con un proveedor externo (mismo
@@ -70,7 +71,8 @@ export class AuthController {
     private readonly logto: LogtoOidcClient,
     private readonly logtoExperience: LogtoExperienceClient,
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService
+    private readonly config: ConfigService,
+    private readonly emailDestinationLimiter: EmailDestinationLimiter
   ) {}
 
   // NUNCA reenviar ExperienceApiError.message tal cual al cliente — es el
@@ -228,6 +230,12 @@ export class AuthController {
     if (!isValidEmail(email)) {
       throw new BadRequestException("Escribe un correo válido");
     }
+    // Límite por correo DESTINO, no por IP — ver EmailDestinationLimiter.
+    // Sin dominio institucional exigido, cualquier correo es un blanco
+    // válido para "email bombing" si solo se limitara por IP.
+    if (!this.emailDestinationLimiter.tryConsume(email)) {
+      throw new BadRequestException("Ya se mandaron varios códigos a este correo — espera unos minutos e intenta de nuevo");
+    }
 
     const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();
     const authUrl = this.logto.authorizationUrl({ codeChallenge, state });
@@ -308,6 +316,9 @@ export class AuthController {
 
     if (identification.status !== 204) {
       if (identification.errorCode === "user.user_not_exist" && pending.interactionEvent === "SignIn") {
+        if (!this.emailDestinationLimiter.tryConsume(pending.email)) {
+          throw new BadRequestException("Ya se mandaron varios códigos a este correo — espera unos minutos e intenta de nuevo");
+        }
         const registerCookie = await this.logtoExperience.setInteractionEvent(identification.cookie, "Register");
         let cookieWithCode: string;
         let verificationId: string;

@@ -5,6 +5,7 @@ import { AuthController } from "./auth.controller";
 import { LogtoOidcClient } from "./logto-oidc.client";
 import { ExperienceApiError, LogtoExperienceClient } from "./logto-experience.client";
 import { PrismaService } from "../prisma/prisma.service";
+import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter.service";
 
 function mockResponse() {
   return {
@@ -66,6 +67,10 @@ describe("AuthController", () => {
               ({ FRONTEND_ORIGIN: "https://aeis-app.vercel.app", LOGTO_ISSUER: "https://tenant.logto.app/oidc" })[key],
           },
         },
+        // Clase real, no un mock — es en memoria y sin dependencias
+        // externas, así que usarla tal cual prueba el comportamiento real
+        // del límite por correo destino en vez de fingir que existe.
+        EmailDestinationLimiter,
       ],
     }).compile();
     controller = moduleRef.get(AuthController);

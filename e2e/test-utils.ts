@@ -5,12 +5,14 @@ import type { Page } from '@playwright/test';
 // atascado en la pantalla de login y nunca ve .brandbar, el mapa, ni dispara
 // GET /lockers. Los e2e no necesitan un login real (GitHub/OTP no son
 // automatizables acá): isAuthenticated() solo mira si hay un token en
-// sessionStorage, y las rutas que estos tests ejercitan (/lockers, /security/*)
-// son @Public() en el backend — no validan el token, así que un valor
-// cualquiera basta para pasar el gate del FRONTEND.
+// localStorage (antes sessionStorage — cambiado para que la sesión real
+// sobreviva cerrar la pestaña/app, ver auth.svelte.ts), y las rutas que
+// estos tests ejercitan (/lockers, /security/*) son @Public() en el
+// backend — no validan el token, así que un valor cualquiera basta para
+// pasar el gate del FRONTEND.
 //
 // addInitScript() corre antes que cualquier script de la página, así que la
-// sesión ya existe en sessionStorage para cuando App.svelte monta y lee
+// sesión ya existe en localStorage para cuando App.svelte monta y lee
 // isAuthenticated() por primera vez.
 // uiVariant se asigna al azar por dispositivo (src/lib/abTest.ts, test A/B
 // de navegación: rueda vs. lista accesible) — sin fijarlo acá, cada
@@ -20,7 +22,7 @@ import type { Page } from '@playwright/test';
 // comportamiento de siempre; e2e/accessible-nav.spec.ts prueba B aparte.
 export async function gotoApp(page: Page, path = '/', variant: 'A' | 'B' = 'A') {
   await page.addInitScript((v) => {
-    sessionStorage.setItem('aeis_access_token', 'e2e-fake-token');
+    localStorage.setItem('aeis_access_token', 'e2e-fake-token');
     localStorage.setItem('aeis_ui_variant', v);
   }, variant);
   await page.goto(path);
