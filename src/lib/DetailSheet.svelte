@@ -1,12 +1,22 @@
 <script lang="ts">
   import { spring } from "svelte/motion";
   import CategoryContent from "./CategoryContent.svelte";
+  import DesktopNav from "./DesktopNav.svelte";
   import type { Category } from "./data";
 
   interface Props {
     category: Category;
     open?: boolean;
     onclose?: () => void;
+    /** Lista completa de categorías + cuál está activa, para el selector
+        horizontal de arriba del sheet. Sin esto, cambiar de categoría
+        obligaba a CERRAR el sheet primero (el tap se lo comía el .scrim,
+        que cubre toda la pantalla por encima de la lista) y recién con un
+        SEGUNDO tap elegir otra — el bug real de "dos toques para cambiar"
+        que se reportó desde móvil. */
+    categories?: Category[];
+    selectedIndex?: number;
+    onselect?: (i: number) => void;
     securityRisk?: number;
     securityCategory?: Category | null;
     lockersCategory?: Category | null;
@@ -24,6 +34,9 @@
     category,
     open = $bindable(false),
     onclose,
+    categories,
+    selectedIndex = 0,
+    onselect,
     securityRisk = 0.5,
     securityCategory = null,
     lockersCategory = null,
@@ -78,13 +91,20 @@
 
   const contentOpacity = $derived(Math.max(0, 1 - $progress * 1.4));
   const theme = $derived(category.theme);
+  // Interactividad atada al MISMO valor que la apariencia ($progress del
+  // spring), no al booleano `open`. `open` cambia en un frame pero la
+  // animación tarda ~700ms: con el booleano, al abrir el scrim ya se comía
+  // toda la pantalla estando aún invisible, y al cerrar el sheet seguía
+  // VIÉNDOSE pero los taps lo atravesaban hasta la lista de atrás. Mismo
+  // hallazgo que ya se había corregido en RentLockerModal.
+  const interactive = $derived($progress < 0.98);
   const sheetStyle = $derived(
-    `transform: translateY(${$progress * 100}%); pointer-events: ${open ? "auto" : "none"};` +
+    `transform: translateY(${$progress * 100}%); pointer-events: ${interactive ? "auto" : "none"};` +
       `--sheet-dim: ${theme.accentDim}; --sheet-deep: ${theme.deep};`
   );
 </script>
 
-<div class="scrim" style="opacity: {1 - $progress}" class:interactive={open} onclick={() => { open = false; onclose?.(); }}></div>
+<div class="scrim" style="opacity: {1 - $progress}" class:interactive onclick={() => { open = false; onclose?.(); }}></div>
 
 <section class="sheet" style={sheetStyle} aria-hidden={!open}>
   <div
@@ -96,6 +116,23 @@
   >
     <div class="handle"></div>
   </div>
+
+  {#if categories && onselect}
+    <!-- Selector SIEMPRE alcanzable con el sheet abierto — es lo que
+         convierte "cerrar y luego elegir" (dos toques) en "elegir" (uno).
+         Se reusa DesktopNav en su forma horizontal (sin `vertical`): ya es
+         una tira de tabs con scroll horizontal, con los mismos íconos y
+         acentos que el resto de la app. -->
+    <nav class="sheet-switcher" aria-label="Cambiar de categoría">
+      <DesktopNav {categories} {selectedIndex} onselect={(i) => onselect?.(i)} />
+    </nav>
+  {/if}
+
+  <!-- Salir tenía que ser tan fácil de tocar como entrar: antes la ÚNICA
+       salida era tocar el scrim (que se ve como fondo muerto, no como un
+       control) o arrastrar el handle. 44px = mínimo de objetivo táctil
+       WCAG 2.5.5, mismo criterio que las X de los modales. -->
+  <button class="sheet-close" onclick={() => { open = false; onclose?.(); }} aria-label="Cerrar">×</button>
 
   <div class="sheet-inner" style="opacity: {contentOpacity}">
     <CategoryContent
@@ -170,6 +207,48 @@
     height: 5px;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.35);
+  }
+
+  .sheet-switcher {
+    flex-shrink: 0;
+    padding: 2px 0 6px;
+    /* Deja espacio a la X de cerrar, que flota arriba a la derecha. */
+    padding-right: 52px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    /* El sheet entero ya no tiene touch-action:none (se acotó al handle),
+       así que este scroll horizontal funciona con el dedo con normalidad. */
+  }
+
+  /* DesktopNav reparte sus items con `flex: 1 1 0` — correcto en una barra
+     lateral ancha, pero en 375px de ancho comprime 6 etiquetas hasta que
+     se leen pegadas unas con otras. Acá se prefiere que NO se encojan y
+     que la tira desborde con scroll horizontal (que es justo lo que
+     `overflow-x: auto` de .desktop-nav ya hace). */
+  .sheet-switcher :global(.nav-item) {
+    flex: 0 0 auto;
+    min-width: 72px;
+    scroll-snap-align: start;
+  }
+
+  .sheet-switcher :global(.desktop-nav) {
+    scroll-snap-type: x proximity;
+    padding-bottom: 4px;
+  }
+
+  .sheet-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.07);
+    border: none;
+    color: #eef4fb;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 2;
   }
 
   .sheet-inner {

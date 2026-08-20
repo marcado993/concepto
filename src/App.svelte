@@ -417,6 +417,9 @@
       <DetailSheet
         category={activeCategory}
         bind:open={sheetOpen}
+        categories={displayCategories}
+        {selectedIndex}
+        onselect={(i) => (selectedIndex = i)}
         {securityCategory}
         {lockersCategory}
         securityRisk={riskForHour(currentHour)}
