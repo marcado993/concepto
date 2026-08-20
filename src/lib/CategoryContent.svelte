@@ -1,6 +1,8 @@
 <script lang="ts">
   import IsoIcon from "./IsoIcon.svelte";
   import type { Category, LockerStatus } from "./data";
+  import { fetchLockerPricePreview, type LockerPricePreview } from "./api";
+  import { isAuthenticated } from "./auth.svelte";
 
   interface Props {
     category: Category;
@@ -229,6 +231,18 @@
   // "¿queda algo libre?" sin escanear la grilla entera a ojo.
   const availableCount = $derived(visibleLockers.filter((u) => u.status === "available").length);
 
+  // Precio del casillero para mostrarlo ANTES de entrar al flujo (H10):
+  // el backend ya resuelve el descuento de aportante, acá no se calcula
+  // nada. Silencioso si falla — es información de apoyo, no debe romper
+  // la grilla si el endpoint no responde.
+  let lockerPrice = $state<LockerPricePreview | null>(null);
+  $effect(() => {
+    if (!isAuthenticated()) return;
+    fetchLockerPricePreview()
+      .then((p) => (lockerPrice = p))
+      .catch(() => {});
+  });
+
   const theme = $derived(category.theme);
   const wrapStyle = $derived(
     `--sheet-accent: ${theme.accent}; --sheet-dim: ${theme.accentDim}; --sheet-deep: ${theme.deep}; --sheet-glow: ${theme.glow}; --sheet-hue: ${theme.hue}deg;`
@@ -244,10 +258,20 @@
     onpointercancel={onheaderpointerup}
   >
     {#if compact}
-      <!-- Solo la línea de contexto: el título ya lo dice la pestaña
-           activa de arriba, y el ícono de 128px era puro adorno robando
-           el espacio donde debería empezar el contenido. -->
-      <p class="sheet-sub">{category.detailTitle}</p>
+      <!-- El gráfico SIGUE estando (es la identidad visual de la app y se
+           pidió expresamente recuperarlo) — pero en línea con el texto y a
+           56px, no como bloque centrado de 128px. Así conserva el carácter
+           sin empujar el contenido real fuera de la primera pantalla, que
+           era el problema de fondo, no el gráfico en sí. -->
+      <div class="compact-head">
+        <span class="compact-icon" aria-hidden="true">
+          <IsoIcon kind={category.icon} size={56} priority />
+        </span>
+        <span class="compact-text">
+          <span class="compact-title">{category.label}</span>
+          <span class="compact-sub">{category.detailTitle}</span>
+        </span>
+      </div>
     {:else}
       <h2>{category.label}</h2>
       <div class="icon-cluster">
@@ -368,7 +392,13 @@
     {#if lockersCategory}
       <div class="lockers-panel" style:display={isLockersActive ? "block" : "none"}>
         {#if lockersError}
-          <p class="fetch-error">No se pudo cargar la disponibilidad real de casilleros — intenta más tarde.</p>
+          <!-- H9: antes esto era un callejón sin salida ("intenta más
+               tarde" y nada que tocar). Recargar es la única acción que de
+               verdad reintenta la carga inicial de datos. -->
+          <p class="fetch-error">
+            No se pudo cargar la disponibilidad de casilleros.
+            <button class="retry-btn" onclick={() => location.reload()}>Reintentar</button>
+          </p>
         {/if}
 
         {#if zones.length > 1}
@@ -397,6 +427,32 @@
             </p>
           </div>
         {/if}
+
+        <!-- H10 (ayuda) + H1 (estado): el precio solo aparecía DENTRO del
+             modal, o sea que había que empezar el trámite para saber
+             cuánto costaba. Acá se ve antes de tocar nada. El monto sale
+             del backend (ya con el descuento de aportante aplicado), no
+             hardcodeado. -->
+        {#if lockerPrice}
+          <p class="locker-price-note">
+            Alquiler del periodo: <strong>${lockerPrice.price.TRANSFER.toFixed(2)}</strong>
+            {#if lockerPrice.discountPercent > 0}
+              <span class="price-discount">
+                −{lockerPrice.discountPercent}% por tu aportación {lockerPrice.tierName}
+              </span>
+            {/if}
+          </p>
+        {/if}
+
+        <!-- H6 (reconocer en vez de recordar): antes había que deducir qué
+             significaba cada color e ícono de la grilla. Ahora está dicho. -->
+        <ul class="locker-legend" aria-label="Qué significa cada estado">
+          <li><span class="legend-dot legend-free" aria-hidden="true"></span>Libre — puedes alquilarlo</li>
+          <li><span class="legend-dot legend-taken" aria-hidden="true"></span>Ocupado o reservado</li>
+          {#if myRentedLocker || myPendingReceipt}
+            <li><span class="legend-dot legend-mine" aria-hidden="true"></span>Es tuyo</li>
+          {/if}
+        </ul>
 
         <div class="grid">
           {#each visibleLockers as unit, i (unit.id)}
@@ -647,6 +703,39 @@
     touch-action: auto;
   }
 
+  .compact-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .compact-icon {
+    display: flex;
+    flex-shrink: 0;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.45));
+  }
+
+  .compact-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .compact-title {
+    font-family: var(--font-heading);
+    font-size: 19px;
+    letter-spacing: 0.01em;
+    color: #eafff5;
+  }
+
+  .compact-sub {
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(234, 255, 245, 0.6);
+  }
+
   .sheet-header h2 {
     font-family: var(--font-heading);
     font-weight: 500;
@@ -736,6 +825,68 @@
   .zone-count strong {
     color: var(--sheet-accent);
     font-size: 14px;
+  }
+
+  .locker-price-note {
+    margin: 6px 0 0;
+    padding: 0 22px;
+    font-size: 12.5px;
+    color: rgba(238, 244, 251, 0.7);
+  }
+  .locker-price-note strong {
+    color: var(--sheet-accent);
+    font-size: 14px;
+  }
+  .price-discount {
+    display: block;
+    font-size: 11.5px;
+    color: var(--sheet-accent);
+    opacity: 0.85;
+  }
+
+  .locker-legend {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0 22px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: 11.5px;
+    color: rgba(238, 244, 251, 0.6);
+  }
+  .locker-legend li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .legend-free {
+    background: var(--sheet-accent);
+  }
+  .legend-taken {
+    background: rgba(255, 255, 255, 0.22);
+  }
+  .legend-mine {
+    background: var(--sheet-accent);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+  }
+
+  .retry-btn {
+    margin-left: 8px;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
   }
 
   /* ---------- Casilleros: grid ---------- */
