@@ -1,7 +1,7 @@
 <script lang="ts">
   import { spring } from "svelte/motion";
   import CategoryContent from "./CategoryContent.svelte";
-  import DesktopNav from "./DesktopNav.svelte";
+  import SheetCategoryTabs from "./SheetCategoryTabs.svelte";
   import type { Category } from "./data";
 
   interface Props {
@@ -119,13 +119,8 @@
 
   {#if categories && onselect}
     <!-- Selector SIEMPRE alcanzable con el sheet abierto — es lo que
-         convierte "cerrar y luego elegir" (dos toques) en "elegir" (uno).
-         Se reusa DesktopNav en su forma horizontal (sin `vertical`): ya es
-         una tira de tabs con scroll horizontal, con los mismos íconos y
-         acentos que el resto de la app. -->
-    <nav class="sheet-switcher" aria-label="Cambiar de categoría">
-      <DesktopNav {categories} {selectedIndex} onselect={(i) => onselect?.(i)} />
-    </nav>
+         convierte "cerrar y luego elegir" (dos toques) en "elegir" (uno). -->
+    <SheetCategoryTabs {categories} {selectedIndex} onselect={(i) => onselect?.(i)} />
   {/if}
 
   <!-- Salir tenía que ser tan fácil de tocar como entrar: antes la ÚNICA
@@ -207,32 +202,6 @@
     height: 5px;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.35);
-  }
-
-  .sheet-switcher {
-    flex-shrink: 0;
-    padding: 2px 0 6px;
-    /* Deja espacio a la X de cerrar, que flota arriba a la derecha. */
-    padding-right: 52px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-    /* El sheet entero ya no tiene touch-action:none (se acotó al handle),
-       así que este scroll horizontal funciona con el dedo con normalidad. */
-  }
-
-  /* DesktopNav reparte sus items con `flex: 1 1 0` — correcto en una barra
-     lateral ancha, pero en 375px de ancho comprime 6 etiquetas hasta que
-     se leen pegadas unas con otras. Acá se prefiere que NO se encojan y
-     que la tira desborde con scroll horizontal (que es justo lo que
-     `overflow-x: auto` de .desktop-nav ya hace). */
-  .sheet-switcher :global(.nav-item) {
-    flex: 0 0 auto;
-    min-width: 72px;
-    scroll-snap-align: start;
-  }
-
-  .sheet-switcher :global(.desktop-nav) {
-    scroll-snap-type: x proximity;
-    padding-bottom: 4px;
   }
 
   .sheet-close {
