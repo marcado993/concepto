@@ -63,11 +63,38 @@
   let startY = 0;
   let startProgress = 0;
 
+  // CAUSA REAL del "toca hacer doble click" al cerrar deslizando el handle
+  // hacia abajo (reporte textual: "creo que no detecta que se cierra").
+  // onPointerUp estaba atado SOLO a .handle-zone, pero al arrastrar hacia
+  // abajo el dedo se sale de esa zona; si la captura de puntero no se
+  // aplicaba (e.target podía ser un nodo interno), el pointerup caía en
+  // otro elemento y este gesto NUNCA terminaba: el sheet quedaba
+  // VIÉNDOSE cerrado pero con open=true por dentro. El siguiente tap se lo
+  // comía entonces el scrim (invisible pero aún activo) cerrando "de
+  // verdad", y recién el segundo tap llegaba al botón. Con el listener a
+  // nivel de window el gesto siempre termina, suelte donde suelte el dedo.
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    window.removeEventListener("pointerup", endDrag);
+    window.removeEventListener("pointercancel", endDrag);
+    if ($progress > 0.2) {
+      open = false;
+      onclose?.();
+    } else {
+      progress.set(0);
+    }
+  }
+
   function onPointerDown(e: PointerEvent) {
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    // currentTarget (la .handle-zone), no target (que puede ser el .handle
+    // de adentro) — más predecible para capturar el puntero.
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     dragging = true;
     startY = e.clientY;
     startProgress = $progress;
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -78,16 +105,12 @@
     progress.set(Math.min(1, startProgress + dy / sheetHeight), { hard: true });
   }
 
-  function onPointerUp() {
-    if (!dragging) return;
-    dragging = false;
-    if ($progress > 0.2) {
-      open = false;
-      onclose?.();
-    } else {
-      progress.set(0);
-    }
-  }
+  // Si el componente se destruye a mitad de un arrastre, los listeners de
+  // window no deben quedar colgados.
+  $effect(() => () => {
+    window.removeEventListener("pointerup", endDrag);
+    window.removeEventListener("pointercancel", endDrag);
+  });
 
   const contentOpacity = $derived(Math.max(0, 1 - $progress * 1.4));
   const theme = $derived(category.theme);
@@ -98,21 +121,32 @@
   // VIÉNDOSE pero los taps lo atravesaban hasta la lista de atrás. Mismo
   // hallazgo que ya se había corregido en RentLockerModal.
   const interactive = $derived($progress < 0.98);
+  // El scrim exige ADEMÁS que open siga siendo true. Defensa en
+  // profundidad contra el mismo trampa de arriba: si el estado alguna vez
+  // vuelve a desincronizarse (se ve cerrado pero open=true), un scrim
+  // invisible a pantalla completa no debe poder tragarse el siguiente tap
+  // — que es justo el síntoma de "toca hacer doble click".
+  const scrimInteractive = $derived(open && interactive);
   const sheetStyle = $derived(
     `transform: translateY(${$progress * 100}%); pointer-events: ${interactive ? "auto" : "none"};` +
       `--sheet-dim: ${theme.accentDim}; --sheet-deep: ${theme.deep};`
   );
 </script>
 
-<div class="scrim" style="opacity: {1 - $progress}" class:interactive onclick={() => { open = false; onclose?.(); }}></div>
+<div
+  class="scrim"
+  style="opacity: {1 - $progress}"
+  class:interactive={scrimInteractive}
+  onclick={() => { open = false; onclose?.(); }}
+></div>
 
 <section class="sheet" style={sheetStyle} aria-hidden={!open}>
   <div
     class="handle-zone"
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
-    onpointerup={onPointerUp}
-    onpointercancel={onPointerUp}
+    onpointerup={endDrag}
+    onpointercancel={endDrag}
   >
     <div class="handle"></div>
   </div>
@@ -145,7 +179,7 @@
       {onsubscribed}
       onheaderpointerdown={onPointerDown}
       onheaderpointermove={onPointerMove}
-      onheaderpointerup={onPointerUp}
+      onheaderpointerup={endDrag}
     />
   </div>
 </section>

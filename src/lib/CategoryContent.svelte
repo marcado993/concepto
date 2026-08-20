@@ -205,6 +205,23 @@
     [...(lockersCategory?.lockers ?? [])].sort((a, b) => unitPriority(a) - unitPriority(b))
   );
 
+  // Filtro por zona — el hallazgo de usabilidad más grande de esta
+  // sección: son 12 zonas (A–L) de 9 casilleros = 108, y la zona es una
+  // UBICACIÓN FÍSICA real en el edificio. Un estudiante no quiere "un
+  // casillero cualquiera", quiere uno cerca de donde tiene clases, y
+  // antes tenía que recorrer las 108 tarjetas a mano para encontrarlo
+  // (correspondencia con el mundo real + reconocer en vez de recordar).
+  let zoneFilter = $state<string | null>(null);
+  const zones = $derived(
+    [...new Set((lockersCategory?.lockers ?? []).map((u) => u.zone))].sort()
+  );
+  const visibleLockers = $derived(
+    zoneFilter ? sortedLockers.filter((u) => u.zone === zoneFilter) : sortedLockers
+  );
+  // Visibilidad del estado del sistema: sin esto no había forma de saber
+  // "¿queda algo libre?" sin escanear la grilla entera a ojo.
+  const availableCount = $derived(visibleLockers.filter((u) => u.status === "available").length);
+
   const theme = $derived(category.theme);
   const wrapStyle = $derived(
     `--sheet-accent: ${theme.accent}; --sheet-dim: ${theme.accentDim}; --sheet-deep: ${theme.deep}; --sheet-glow: ${theme.glow}; --sheet-hue: ${theme.hue}deg;`
@@ -339,8 +356,36 @@
         {#if lockersError}
           <p class="fetch-error">No se pudo cargar la disponibilidad real de casilleros — intenta más tarde.</p>
         {/if}
+
+        {#if zones.length > 1}
+          <div class="zone-bar">
+            <div class="zone-chips" role="group" aria-label="Filtrar por zona">
+              <button class="zone-chip" class:active={zoneFilter === null} onclick={() => (zoneFilter = null)}>
+                Todas
+              </button>
+              {#each zones as z (z)}
+                <button class="zone-chip" class:active={zoneFilter === z} onclick={() => (zoneFilter = z)}>
+                  {z}
+                </button>
+              {/each}
+            </div>
+            <!-- aria-live: al cambiar de zona el conteo se actualiza sin
+                 recargar nada; sin esto un lector de pantalla no anuncia
+                 que el resultado del filtro cambió. -->
+            <p class="zone-count" aria-live="polite">
+              {#if availableCount === 0}
+                Sin casilleros libres {zoneFilter ? `en la zona ${zoneFilter}` : "por ahora"}
+              {:else}
+                <strong>{availableCount}</strong>
+                {availableCount === 1 ? "libre" : "libres"}
+                {zoneFilter ? `en la zona ${zoneFilter}` : `de ${visibleLockers.length}`}
+              {/if}
+            </p>
+          </div>
+        {/if}
+
         <div class="grid">
-          {#each sortedLockers as unit, i (unit.id)}
+          {#each visibleLockers as unit, i (unit.id)}
             {@const isMine = myPendingReceipt?.lockerCode === unit.number}
             {@const isMineRented = myRentedLocker?.lockerCode === unit.number}
             {@const clickable = unit.status === "available" || isMine || isMineRented}
@@ -606,6 +651,68 @@
   .sheet-body {
     flex: 1;
     overflow-y: auto;
+  }
+
+  /* ---------- Casilleros: filtro por zona ---------- */
+  .zone-bar {
+    padding: 2px 0 10px;
+  }
+
+  .zone-chips {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    padding: 2px 22px 6px;
+    scrollbar-width: none;
+  }
+  .zone-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .zone-chip {
+    flex: 0 0 auto;
+    /* 44px = mínimo de objetivo táctil (WCAG 2.5.5). Las zonas son de una
+       sola letra, así que sin este mínimo quedarían chips diminutos
+       imposibles de acertar con el pulgar. */
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(238, 244, 251, 0.75);
+    font-family: var(--font-heading, sans-serif);
+    font-size: 13px;
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .zone-chip.active {
+    background: var(--sheet-accent);
+    border-color: var(--sheet-accent);
+    color: #07130f;
+    font-weight: 700;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .zone-chip:not(.active):hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #eef4fb;
+    }
+  }
+
+  .zone-count {
+    margin: 0;
+    padding: 0 22px;
+    font-size: 12.5px;
+    color: rgba(238, 244, 251, 0.62);
+  }
+  .zone-count strong {
+    color: var(--sheet-accent);
+    font-size: 14px;
   }
 
   /* ---------- Casilleros: grid ---------- */
