@@ -102,13 +102,18 @@ export class AuthController {
   ) {
     const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();
 
-    // ?connector=github viene del botón "Continuar con GitHub" de
-    // Login.svelte — salta directo al conector social de GitHub en vez de
-    // mostrar el selector genérico de Logto (ver comentario en
-    // logto-oidc.client.ts). Solo se reconoce "github" a propósito: un
-    // valor arbitrario del query string no debería poder inyectar
-    // cualquier direct_sign_in sin que este backend lo valide primero.
-    const directSignIn = connector === "github" ? "social:github" : undefined;
+    // ?connector=github|google viene del botón "Continuar con GitHub/
+    // Google" de Login.svelte — salta directo al conector social
+    // correspondiente en vez de mostrar el selector genérico de Logto
+    // (ver comentario en logto-oidc.client.ts). Solo se reconocen estos
+    // dos valores a propósito: un valor arbitrario del query string no
+    // debería poder inyectar cualquier direct_sign_in sin que este
+    // backend lo valide primero. "google" requiere que el conector social
+    // de Google ya esté configurado en el tenant de Logto (Console →
+    // Connectors) — sin eso, Logto rechaza el direct_sign_in aunque este
+    // backend lo arme bien.
+    const SOCIAL_CONNECTORS: Record<string, string> = { github: "social:github", google: "social:google" };
+    const directSignIn = connector ? SOCIAL_CONNECTORS[connector] : undefined;
 
     // ?email=... viene del campo de correo en Login.svelte — precarga el
     // campo en la pantalla de Logto (login_hint), nunca salta el paso del

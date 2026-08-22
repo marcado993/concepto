@@ -127,6 +127,19 @@ describe("AuthController", () => {
     });
   });
 
+  it("Dado ?connector=google (botón 'Continuar con Google' de Login.svelte), Cuando se llama /auth/login, Entonces pasa direct_sign_in=social:google para saltar el selector de Logto", () => {
+    const res = mockResponse();
+
+    controller.login("google", undefined, res);
+
+    expect(logto.authorizationUrl).toHaveBeenCalledWith({
+      codeChallenge: "challenge-1",
+      state: "state-1",
+      directSignIn: "social:google",
+      loginHint: undefined,
+    });
+  });
+
   it("Dado un ?connector desconocido/no soportado, Cuando se llama /auth/login, Entonces lo ignora en vez de reenviarlo tal cual a Logto (un valor arbitrario no debe inyectar cualquier direct_sign_in)", () => {
     const res = mockResponse();
 
