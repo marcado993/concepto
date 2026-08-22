@@ -150,6 +150,17 @@
   // ACCESIBILIDAD: si el sistema pide menos movimiento, la duración pasa a
   // 0 y el cambio es instantáneo. La animación nunca es un requisito para
   // entender qué pasó.
+  // El tecleo del inicio arrancaba DETRÁS del splash: con ~570ms de
+  // escritura contra 1500ms de splash, terminaba antes de que la pantalla
+  // se descubriera y el usuario solo veía el texto ya completo ("ponle que
+  // se escriba como en el login"). Se espera a que el splash se vaya.
+  // Al volver al menú desde una sección el splash ya no existe, así que
+  // ahí arranca de inmediato — sin tiempo muerto.
+  function retrasoTecleo(base = 0): number {
+    if (typeof document === "undefined") return base;
+    return document.getElementById("boot") ? 1700 + base : base;
+  }
+
   function consolaEntra(_node: Element, { dir = 1 }: { dir?: 1 | -1 }) {
     const reduce =
       typeof window !== "undefined" &&
@@ -496,13 +507,19 @@
                    rueda. Le da el carácter retrofuturista al arranque sin
                    costar nada de rendimiento (es solo texto). -->
               <div class="home-head">
-                <TypeText tag="h1" class="home-title" text="¿Qué necesitas?" speed={38} />
+                <TypeText
+                  tag="h1"
+                  class="home-title"
+                  text="¿Qué necesitas?"
+                  speed={38}
+                  startDelay={retrasoTecleo()}
+                />
                 <TypeText
                   tag="p"
                   class="home-sub"
                   text="Toca una opción para entrar."
                   speed={16}
-                  startDelay={620}
+                  startDelay={retrasoTecleo(620)}
                 />
               </div>
               <AccessibleCategoryNav
