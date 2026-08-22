@@ -331,4 +331,32 @@ describe("AuthController", () => {
     );
     expect(res.cookie).not.toHaveBeenCalled();
   });
+
+  // Bug real reportado en producción: "Sesión de verificación expirada o
+  // inválida" apenas se manda el código. Causa: aeis.app (frontend) y
+  // api.aeis-app.online (backend) son dominios DISTINTOS — el navegador
+  // considera esto cross-site. Login.svelte habla con /auth/email/start y
+  // /auth/email/verify por fetch() (no por navegación de página completa,
+  // a diferencia del login con GitHub), y una cookie SameSite=Lax NUNCA
+  // viaja en un fetch entre sitios distintos, solo en navegaciones reales.
+  // Con Lax, /auth/email/verify jamás veía la cookie que /auth/email/start
+  // acababa de poner — el login por correo estaba roto para cualquiera en
+  // producción. Nunca se detectó en local porque localhost:5173 y
+  // localhost:3000 cuentan como el MISMO sitio (SameSite compara dominio
+  // registrable, no puerto).
+  it("Dado que el frontend (aeis.app) y el backend (api.aeis-app.online) son dominios distintos, Cuando /auth/email/start setea la cookie de verificación pendiente, Entonces usa SameSite=None (no Lax) — Lax nunca viaja en un fetch() cross-site y rompía el login por correo para todos", async () => {
+    const res = mockResponse();
+    logtoExperience.requestEmailCode.mockResolvedValue({
+      cookie: "_interaction=with-code",
+      verificationId: "verif-1",
+    });
+
+    await controller.emailStart("estudiante@epn.edu.ec", res);
+
+    expect(res.cookie).toHaveBeenCalledWith(
+      "aeis_email_pending",
+      expect.any(String),
+      expect.objectContaining({ sameSite: "none", secure: true })
+    );
+  });
 });

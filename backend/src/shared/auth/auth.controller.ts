@@ -257,10 +257,21 @@ export class AuthController {
         interactionCookie: cookieWithCode,
         verificationId,
       };
+      // sameSite: "none", no "lax" — a diferencia de OIDC_COOKIE (que solo
+      // viaja en navegaciones de página completa vía window.location.href,
+      // donde Lax sí funciona), esta cookie la ponen y la leen dos
+      // llamadas `fetch()` desde Login.svelte, y el frontend (aeis.app) y
+      // el backend (api.aeis-app.online) son dominios distintos. Una
+      // cookie Lax jamás viaja en un fetch entre sitios distintos — solo
+      // en navegaciones reales — así que /auth/email/verify nunca veía
+      // esta cookie y el login por correo estaba roto en producción para
+      // TODOS, no solo en casos raros (bug real reportado: "Sesión de
+      // verificación expirada o inválida" apenas se manda el código).
+      // None exige Secure=true, que ya estaba puesto.
       res.cookie(EMAIL_COOKIE, JSON.stringify(pending), {
         httpOnly: true,
         secure: true,
-        sameSite: "lax",
+        sameSite: "none",
         signed: true,
         maxAge: 10 * 60 * 1000, // el código de Logto vence a los 10 minutos
       });
@@ -344,10 +355,12 @@ export class AuthController {
           interactionCookie: cookieWithCode,
           verificationId,
         };
+        // Mismo motivo que arriba: esta cookie también viaja por fetch()
+        // entre sitios distintos (aeis.app <-> api.aeis-app.online).
         res.cookie(EMAIL_COOKIE, JSON.stringify(nextPending), {
           httpOnly: true,
           secure: true,
-          sameSite: "lax",
+          sameSite: "none",
           signed: true,
           maxAge: 10 * 60 * 1000,
         });
