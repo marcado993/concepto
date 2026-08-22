@@ -492,9 +492,18 @@
         {#key mobileView}
           <div class="view-slide" in:consolaEntra={{ dir: navDir }}>
             {#if mobileView === "inicio"}
+              <!-- Tecleo de consola: el mismo TypeText que ya usaba la
+                   rueda. Le da el carácter retrofuturista al arranque sin
+                   costar nada de rendimiento (es solo texto). -->
               <div class="home-head">
-                <h1 class="home-title">¿Qué necesitas?</h1>
-                <p class="home-sub">Toca una opción para entrar.</p>
+                <TypeText tag="h1" class="home-title" text="¿Qué necesitas?" speed={38} />
+                <TypeText
+                  tag="p"
+                  class="home-sub"
+                  text="Toca una opción para entrar."
+                  speed={16}
+                  startDelay={620}
+                />
               </div>
               <AccessibleCategoryNav
                 categories={displayCategories}
@@ -730,14 +739,18 @@
     flex-shrink: 0;
   }
 
-  .home-title {
+  /* :global() porque estos elementos los CREA TypeText (efecto de tecleo),
+     no este componente — el CSS con ámbito de App.svelte no alcanzaría al
+     nodo de un hijo. Mismo motivo por el que .label/.prompt-text de la
+     rueda ya estaban así más abajo. */
+  :global(.home-title) {
     font-family: var(--font-heading);
     font-size: 26px;
     margin: 0;
     color: var(--ink-0, #eafff5);
   }
 
-  .home-sub {
+  :global(.home-sub) {
     margin: 4px 0 0;
     font-size: 13px;
     color: rgba(238, 244, 251, 0.6);

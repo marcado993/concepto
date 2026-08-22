@@ -290,14 +290,26 @@
     {#if category.id === "events" && category.events}
       <div class="timeline">
         {#each category.events as ev, i (ev.id)}
-          <div class="event-row list-in" style="--li: {i}">
+          <!-- El PRIMERO es el más próximo (la lista viene ordenada por
+               fecha). Marcarlo responde a la pregunta que el estudiante
+               trae al entrar — "¿qué es lo siguiente?" — sin obligarle a
+               comparar fechas a ojo. -->
+          <div class="event-row list-in" class:event-next={i === 0} style="--li: {i}">
             <div class="event-date">
               <span class="event-day">{ev.day}</span>
               <span class="event-month">{ev.month}</span>
             </div>
             <div class="event-line"></div>
             <div class="event-body">
-              <span class="event-tag">{ev.tag}</span>
+              <span class="event-tags">
+                <span class="event-tag">{ev.tag}</span>
+                {#if i === 0}
+                  <span class="event-next-badge">
+                    <span class="next-dot" aria-hidden="true"></span>
+                    Próximo
+                  </span>
+                {/if}
+              </span>
               <h3 class="event-title">{ev.title}</h3>
               <p class="event-time">{ev.time}</p>
             </div>
@@ -313,10 +325,22 @@
               <h3 class="repo-name">{r.name}</h3>
             </div>
             <p class="repo-desc">{r.description}</p>
+            <!-- Barra de ocupación: los dos números sueltos ("4 Disponibles /
+                 2 En uso") obligaban a hacer la cuenta mental de cuánto
+                 queda. La proporción se lee de un vistazo. -->
+            {@const total = r.stat1 + r.stat2}
+            {@const pct = total > 0 ? Math.round((r.stat1 / total) * 100) : 0}
+            <div
+              class="repo-gauge"
+              role="img"
+              aria-label="{r.stat1} de {total} {r.stat1Label.toLowerCase()}"
+            >
+              <span class="repo-gauge-fill" style="--pct: {pct}%"></span>
+            </div>
             <div class="repo-foot">
               <span class="repo-tag">{r.tag}</span>
-              <span class="repo-stat">⬡ {r.stat1} {r.stat1Label}</span>
-              <span class="repo-stat">◆ {r.stat2} {r.stat2Label}</span>
+              <span class="repo-stat repo-stat-strong">{r.stat1} {r.stat1Label.toLowerCase()}</span>
+              <span class="repo-stat">{r.stat2} {r.stat2Label.toLowerCase()}</span>
               <span class="repo-updated">{r.updated}</span>
             </div>
           </div>
@@ -333,12 +357,20 @@
               <h3 class="tier-name">{tier.name}</h3>
               <span class="tier-price">${tier.amount}</span>
             </div>
+            {@const labels = tier.benefits.map(formatBenefit).filter(Boolean)}
             <ul class="tier-benefits">
-              {#each tier.benefits as b}
-                {@const label = formatBenefit(b)}
-                {#if label}<li>{label}</li>{/if}
+              {#each labels as label}
+                <li>{label}</li>
               {/each}
+              {#if labels.length === 0}
+                <!-- Sin esto, un tier cuyos beneficios son todos de 0%
+                     (ej. Bronce) se veía COMPLETAMENTE vacío: parecía que
+                     no daba nada y no había forma de saber para qué sirve.
+                     Aportar de por sí ya es el beneficio. -->
+                <li class="tier-benefit-base">Apoyas a AEIS y sus actividades</li>
+              {/if}
             </ul>
+            <span class="tier-cta">Aportar ${tier.amount} →</span>
           </button>
         {/each}
       </div>
@@ -1550,6 +1582,133 @@
     left: 0;
     color: var(--sheet-accent);
     font-size: 11px;
+  }
+
+  .tier-benefit-base {
+    opacity: 0.75;
+    font-style: italic;
+  }
+
+  /* La tarjeta ya era un botón, pero nada lo decía: sin una llamada a la
+     acción visible había que adivinar que tocarla hacía algo. */
+  .tier-cta {
+    display: inline-block;
+    margin-top: 12px;
+    font-family: var(--font-heading, sans-serif);
+    font-size: 12.5px;
+    letter-spacing: 0.03em;
+    color: var(--sheet-accent);
+  }
+
+  /* ---------- Eventos: el próximo se anuncia ---------- */
+  .event-tags {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .event-next-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--sheet-accent);
+    color: #06170f;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .next-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #06170f;
+    animation: next-blink 1.4s ease-in-out infinite;
+  }
+
+  @keyframes next-blink {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  /* Resplandor lento en la fila del próximo evento — llama la atención sin
+     gritar, y solo en UNA fila para que siga siendo una jerarquía y no
+     ruido. */
+  .event-row.event-next {
+    animation:
+      list-materialize 0.44s cubic-bezier(0.18, 0.9, 0.24, 1.06) forwards,
+      next-glow 3.4s ease-in-out 0.6s infinite;
+    border-radius: 14px;
+  }
+
+  @keyframes next-glow {
+    0%,
+    100% {
+      background: transparent;
+    }
+    50% {
+      background: color-mix(in srgb, var(--sheet-accent) 8%, transparent);
+    }
+  }
+
+  /* ---------- Recursos: barra de ocupación ---------- */
+  .repo-gauge {
+    position: relative;
+    height: 8px;
+    margin: 10px 0 2px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    overflow: hidden;
+  }
+
+  .repo-gauge-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--pct, 0%);
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      var(--sheet-accent),
+      color-mix(in srgb, var(--sheet-accent) 55%, white)
+    );
+    /* Crece desde cero al entrar — el movimiento comunica "esto es una
+       cantidad", no un adorno fijo. */
+    transform-origin: left;
+    animation: gauge-grow 0.9s cubic-bezier(0.22, 1, 0.28, 1) 0.15s backwards;
+  }
+
+  @keyframes gauge-grow {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  .repo-stat-strong {
+    color: var(--sheet-accent);
+    font-weight: 700;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .next-dot,
+    .event-row.event-next,
+    .repo-gauge-fill {
+      animation: none;
+    }
+    .event-row.event-next {
+      opacity: 1;
+    }
   }
 
   /* ---------- Comunidad: news feed ---------- */
