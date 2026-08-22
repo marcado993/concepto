@@ -1660,24 +1660,23 @@
     }
   }
 
-  /* Resplandor lento en la fila del próximo evento — llama la atención sin
-     gritar, y solo en UNA fila para que siga siendo una jerarquía y no
-     ruido. */
-  .event-row.event-next {
-    animation:
-      list-materialize 0.44s cubic-bezier(0.18, 0.9, 0.24, 1.06) forwards,
-      next-glow 3.4s ease-in-out 0.6s infinite;
-    border-radius: 14px;
+  /* El próximo evento se destaca con el ACENTO en su fecha, no con un
+     fondo sobre la fila entera.
+     Antes esto pintaba el fondo de todo el grid (columna de fecha + línea
+     de tiempo incluidas) con border-radius y sin relleno propio: se veía
+     una caja con el texto pegado arriba y un hueco enorme debajo, porque
+     el .event-body lleva 26px de padding inferior para separar los hitos
+     de la línea. Se veía desalineado y roto.
+     Colorear la fecha no toca la maquetación en absoluto — y en una línea
+     de tiempo la fecha es justo el dato que uno busca. */
+  .event-row.event-next .event-day {
+    color: var(--sheet-accent);
+    text-shadow: 0 0 12px var(--sheet-glow);
   }
 
-  @keyframes next-glow {
-    0%,
-    100% {
-      background: transparent;
-    }
-    50% {
-      background: color-mix(in srgb, var(--sheet-accent) 8%, transparent);
-    }
+  .event-row.event-next .event-month {
+    color: var(--sheet-accent);
+    opacity: 0.85;
   }
 
   /* ---------- Recursos: barra de ocupación ---------- */
@@ -1722,12 +1721,13 @@
 
   @media (prefers-reduced-motion: reduce) {
     .next-dot,
-    .event-row.event-next,
     .repo-gauge-fill {
       animation: none;
     }
-    .event-row.event-next {
-      opacity: 1;
+    /* El relleno de la barra se anima con scaleX desde 0: sin la
+       animación hay que devolverle la escala, o quedaría invisible. */
+    .repo-gauge-fill {
+      transform: none;
     }
   }
 
