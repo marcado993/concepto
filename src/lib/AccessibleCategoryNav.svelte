@@ -26,7 +26,7 @@
           class="accessible-item"
           aria-current={i === selectedIndex ? "true" : undefined}
           onclick={() => onopen(i)}
-          style="--item-accent: {cat.theme.accent}; --item-glow: {cat.theme.glow};"
+          style="--item-accent: {cat.theme.accent}; --item-glow: {cat.theme.glow}; --item-i: {i};"
         >
           <!-- aria-hidden — IsoIcon trae su propio alt (ej. "Casilleros")
                que, sin esto, se suma al texto visible del botón y un
@@ -81,6 +81,43 @@
     text-align: left;
     cursor: pointer;
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+    /* Entrada en cascada: cada fila se materializa un pelín después que la
+       anterior, así el inicio "se arma" ante el usuario en vez de
+       aparecer de golpe. 55ms por fila × 6 = todo listo en ~0.6s. */
+    opacity: 0;
+    animation: item-materialize 0.5s cubic-bezier(0.18, 0.9, 0.24, 1.06) forwards;
+    animation-delay: calc(var(--item-i, 0) * 55ms);
+  }
+
+  @keyframes item-materialize {
+    0% {
+      opacity: 0;
+      transform: translateY(14px) scale(0.96);
+      filter: brightness(0.5);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: brightness(1);
+    }
+  }
+
+  /* Latido lento en el ícono — el detalle que hace que la pantalla se
+     sienta "viva" y no una captura estática. Muy contenido (escala 1.04 en
+     3.6s) para que no distraiga de leer. */
+  .accessible-icon {
+    animation: icon-float 3.6s ease-in-out infinite;
+    animation-delay: calc(var(--item-i, 0) * 220ms);
+  }
+
+  @keyframes icon-float {
+    0%,
+    100% {
+      transform: translateY(0) scale(1);
+    }
+    50% {
+      transform: translateY(-2px) scale(1.04);
+    }
   }
 
   /* Gateado a (hover: hover) — mismo hallazgo real que .unit:hover en
@@ -151,9 +188,19 @@
     color: var(--ink-1, #9db0d1);
   }
 
+  /* Todo el movimiento de arriba es decorativo: con el sistema pidiendo
+     menos movimiento, las filas quedan visibles y quietas en su estado
+     final. Ninguna información depende de la animación. */
   @media (prefers-reduced-motion: reduce) {
     .accessible-item {
       transition: none;
+      opacity: 1;
+      animation: none;
+      transform: none;
+      filter: none;
+    }
+    .accessible-icon {
+      animation: none;
     }
   }
 </style>
