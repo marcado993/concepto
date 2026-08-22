@@ -289,8 +289,8 @@
   <div class="sheet-body">
     {#if category.id === "events" && category.events}
       <div class="timeline">
-        {#each category.events as ev (ev.id)}
-          <div class="event-row">
+        {#each category.events as ev, i (ev.id)}
+          <div class="event-row list-in" style="--li: {i}">
             <div class="event-date">
               <span class="event-day">{ev.day}</span>
               <span class="event-month">{ev.month}</span>
@@ -306,8 +306,8 @@
       </div>
     {:else if category.id === "resources" && category.resources}
       <div class="repo-list">
-        {#each category.resources as r (r.id)}
-          <div class="repo-card">
+        {#each category.resources as r, i (r.id)}
+          <div class="repo-card list-in" style="--li: {i}">
             <div class="repo-head">
               <span class="repo-dot"></span>
               <h3 class="repo-name">{r.name}</h3>
@@ -327,8 +327,8 @@
         <p class="fetch-error">No se pudo cargar la disponibilidad real de aportaciones — intenta más tarde.</p>
       {/if}
       <div class="tier-list">
-        {#each category.tiers as tier (tier.id)}
-          <button class="tier-card" onclick={() => (subscribingTier = { name: tier.name, amount: tier.amount })}>
+        {#each category.tiers as tier, i (tier.id)}
+          <button class="tier-card list-in" style="--li: {i}" onclick={() => (subscribingTier = { name: tier.name, amount: tier.amount })}>
             <div class="tier-head">
               <h3 class="tier-name">{tier.name}</h3>
               <span class="tier-price">${tier.amount}</span>
@@ -351,8 +351,8 @@
            contenido, no la mecánica de navegación. -->
       <div class="news-list venture-grid">
         {#if category.ventures}
-          {#each category.ventures as v (v.id)}
-            <article class="venture-card" style="--v-hue: {categoryHue(v.category)}">
+          {#each category.ventures as v, i (v.id)}
+            <article class="venture-card list-in" style="--v-hue: {categoryHue(v.category)}; --li: {i}">
               <div class="venture-media">
                 {#if v.photoUrl}
                   <img src={v.photoUrl} alt={v.name} loading="lazy" />
@@ -1003,6 +1003,40 @@
     }
     50% {
       box-shadow: 0 0 20px hsla(var(--unit-hue), 75%, 62%, 0.3);
+    }
+  }
+
+  /* Entrada en cascada para TODAS las listas de contenido (eventos,
+     recursos, tiers, emprendimientos) — antes solo los casilleros se
+     animaban y el resto de secciones aparecía de golpe, estático. Misma
+     curva con rebote leve que los casilleros, para que la app se sienta de
+     una sola pieza. 45ms por elemento: en listas de 4-6 todo termina en
+     ~0.5s, sin hacer esperar. */
+  .list-in {
+    opacity: 0;
+    animation: list-materialize 0.44s cubic-bezier(0.18, 0.9, 0.24, 1.06) forwards;
+    animation-delay: calc(var(--li, 0) * 45ms);
+  }
+
+  @keyframes list-materialize {
+    0% {
+      opacity: 0;
+      transform: translateY(12px) scale(0.97);
+      filter: brightness(0.55);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: brightness(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .list-in {
+      opacity: 1;
+      animation: none;
+      transform: none;
+      filter: none;
     }
   }
 
