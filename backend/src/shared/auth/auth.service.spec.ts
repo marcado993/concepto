@@ -1,0 +1,90 @@
+import { AuthService, isValidEmail } from "./auth.service";
+
+function makeService() {
+  const logto = { exchangeCode: jest.fn() };
+  const prisma = { user: { upsert: jest.fn().mockResolvedValue({ id: "user-1" }) } };
+  const service = new AuthService(logto as any, prisma as any);
+  return { service, logto, prisma };
+}
+
+describe("isValidEmail", () => {
+  it("Dado un correo con forma válida de cualquier dominio, Cuando se valida, Entonces lo acepta — ya no se exige @epn.edu.ec", () => {
+    expect(isValidEmail("estudiante@epn.edu.ec")).toBe(true);
+    expect(isValidEmail("cualquiera@gmail.com")).toBe(true);
+  });
+
+  it("Dado un correo con forma inválida o ausente, Cuando se valida, Entonces lo rechaza", () => {
+    expect(isValidEmail(undefined)).toBe(false);
+    expect(isValidEmail("")).toBe(false);
+    expect(isValidEmail("no-es-un-correo")).toBe(false);
+    expect(isValidEmail("@sin-usuario.com")).toBe(false);
+  });
+});
+
+// Cobertura directa de AuthService, sin pasar por HTTP/cookies — la misma
+// lógica ya se ejerce indirectamente desde auth.controller.spec.ts
+// (callback/emailVerify), pero probarla aislada confirma que de verdad no
+// depende de Express en absoluto (Injectable puro: logto + prisma), que
+// era el punto de sacarla del controlador.
+describe("AuthService.finishTokenExchange", () => {
+  it("Dado un intercambio con correo válido, Cuando se completa, Entonces provisiona el usuario y devuelve el access_token", async () => {
+    const { service, logto, prisma } = makeService();
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-1",
+      claims: () => ({ sub: "github|1", email: "estudiante@epn.edu.ec", name: "Estudiante EPN" }),
+    });
+
+    const result = await service.finishTokenExchange({
+      code: "code-1",
+      state: "state-1",
+      expectedState: "state-1",
+      codeVerifier: "verifier-1",
+    });
+
+    expect(result).toEqual({ ok: true, accessToken: "at-1" });
+    expect(prisma.user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { logtoSub: "github|1" },
+        update: {},
+        create: expect.objectContaining({ logtoSub: "github|1", fullName: "Estudiante EPN" }),
+      })
+    );
+  });
+
+  it("Dado un usuario que ya existe (mismo logtoSub), Cuando se reintercambia, Entonces NO sobreescribe su rol/código único (update: {})", async () => {
+    const { service, logto, prisma } = makeService();
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-2",
+      claims: () => ({ sub: "github|1", email: "estudiante@epn.edu.ec" }),
+    });
+
+    await service.finishTokenExchange({ code: "c", state: "s", expectedState: "s", codeVerifier: "v" });
+
+    expect(prisma.user.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: {} }));
+  });
+
+  it("Dado un token sin claim de correo (GitHub sin correo público/verificado), Cuando se completa, Entonces rechaza SIN tocar la base de datos — nunca un User a medias", async () => {
+    const { service, logto, prisma } = makeService();
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-3",
+      claims: () => ({ sub: "github|2" }),
+    });
+
+    const result = await service.finishTokenExchange({ code: "c", state: "s", expectedState: "s", codeVerifier: "v" });
+
+    expect(result).toEqual({ ok: false, reason: "correo_no_disponible" });
+    expect(prisma.user.upsert).not.toHaveBeenCalled();
+  });
+
+  it("Dado que Logto no devuelve access_token, Cuando se completa, Entonces lanza en vez de silenciar el fallo", async () => {
+    const { service, logto } = makeService();
+    logto.exchangeCode.mockResolvedValue({
+      access_token: undefined,
+      claims: () => ({ sub: "github|3", email: "estudiante@epn.edu.ec" }),
+    });
+
+    await expect(
+      service.finishTokenExchange({ code: "c", state: "s", expectedState: "s", codeVerifier: "v" })
+    ).rejects.toThrow("Logto no devolvió access_token");
+  });
+});

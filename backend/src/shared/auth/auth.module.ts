@@ -5,6 +5,7 @@ import { JwtStrategy } from "./jwt.strategy";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { RolesGuard } from "./roles.guard";
 import { AuthController } from "./auth.controller";
+import { AuthService } from "./auth.service";
 import { LogtoOidcClient } from "./logto-oidc.client";
 import { LogtoExperienceClient } from "./logto-experience.client";
 import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter.service";
@@ -14,6 +15,7 @@ import { EmailPendingTokenService } from "./email-pending-token.service";
   imports: [PassportModule],
   controllers: [AuthController],
   providers: [
+    AuthService,
     JwtStrategy,
     LogtoOidcClient,
     LogtoExperienceClient,

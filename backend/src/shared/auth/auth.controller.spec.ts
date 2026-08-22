@@ -7,6 +7,7 @@ import { ExperienceApiError, LogtoExperienceClient } from "./logto-experience.cl
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter.service";
 import { EmailPendingTokenService } from "./email-pending-token.service";
+import { AuthService } from "./auth.service";
 
 function mockResponse() {
   return {
@@ -84,6 +85,10 @@ describe("AuthController", () => {
         // pendiente) en vez de fingir que existen.
         EmailDestinationLimiter,
         EmailPendingTokenService,
+        // AuthService también es clase real, no un mock — sigue
+        // hablando con `logto`/`prisma`, que SÍ son mocks arriba, así que
+        // esto no toca ninguna red ni base de datos real.
+        AuthService,
       ],
     }).compile();
     controller = moduleRef.get(AuthController);
