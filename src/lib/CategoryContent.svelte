@@ -148,7 +148,25 @@
   // montado queda montado — igual que ya pasa con Casilleros.
   let hasOpenedSecurity = $state(false);
   $effect(() => {
-    if (isSecurityActive) hasOpenedSecurity = true;
+    if (!isSecurityActive || hasOpenedSecurity) return;
+    // Montar el mapa en el MISMO frame en que se entra a Seguridad traba
+    // la pantalla de golpe: crear el contexto WebGL, pedir estilo/sprites/
+    // glyphs/tiles a un tercero y teselar el mapa de calor (~500 puntos)
+    // es de lejos el trabajo más pesado de la app, y caía justo encima de
+    // la animación de entrada — "hay mucho lag de golpe" (reporte real).
+    //
+    // Se deja primero pintar la sección (indicadores incluidos, que es
+    // información útil de inmediato) y el mapa se monta después, con su
+    // overlay "cargando mapa 3d…" ya visible. requestIdleCallback cuando
+    // existe; si no, un respiro corto de dos frames.
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number })
+      .requestIdleCallback;
+    if (idle) {
+      const id = idle(() => (hasOpenedSecurity = true), { timeout: 900 });
+      return () => (window as Window & { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(id);
+    }
+    const t = setTimeout(() => (hasOpenedSecurity = true), 320);
+    return () => clearTimeout(t);
   });
 
   const riskLabel: Record<"low" | "moderate" | "high", string> = {
@@ -319,6 +337,10 @@
     {:else if category.id === "resources" && category.resources}
       <div class="repo-list">
         {#each category.resources as r, i (r.id)}
+          <!-- {@const} tiene que ser hijo INMEDIATO del {#each}, no ir
+               metido más abajo dentro del marcado. -->
+          {@const total = r.stat1 + r.stat2}
+          {@const pct = total > 0 ? Math.round((r.stat1 / total) * 100) : 0}
           <div class="repo-card list-in" style="--li: {i}">
             <div class="repo-head">
               <span class="repo-dot"></span>
@@ -328,8 +350,6 @@
             <!-- Barra de ocupación: los dos números sueltos ("4 Disponibles /
                  2 En uso") obligaban a hacer la cuenta mental de cuánto
                  queda. La proporción se lee de un vistazo. -->
-            {@const total = r.stat1 + r.stat2}
-            {@const pct = total > 0 ? Math.round((r.stat1 / total) * 100) : 0}
             <div
               class="repo-gauge"
               role="img"
@@ -352,12 +372,12 @@
       {/if}
       <div class="tier-list">
         {#each category.tiers as tier, i (tier.id)}
+          {@const labels = tier.benefits.map(formatBenefit).filter(Boolean)}
           <button class="tier-card list-in" style="--li: {i}" onclick={() => (subscribingTier = { name: tier.name, amount: tier.amount })}>
             <div class="tier-head">
               <h3 class="tier-name">{tier.name}</h3>
               <span class="tier-price">${tier.amount}</span>
             </div>
-            {@const labels = tier.benefits.map(formatBenefit).filter(Boolean)}
             <ul class="tier-benefits">
               {#each labels as label}
                 <li>{label}</li>
