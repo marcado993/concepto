@@ -34,3 +34,15 @@ CVE-2026-69192
 # datos de una petición HTTP real. No hay forma de que un atacante le
 # pase el "grafo recursivo" que dispara el CVE.
 CVE-2026-40345
+
+# tar (DoS por archivo .tar con rutas larguísimas): vive en
+# /usr/local/lib/node_modules/npm/node_modules/tar — copia vendored dentro
+# del propio binario npm, mismo caso que brace-expansion e ip-address de
+# arriba. Verificado: `tar` NO está en backend/package.json y no se importa
+# en ninguna parte de backend/src. El único npm que corre en el contenedor
+# es `npx prisma generate` / `prisma migrate deploy`, con nuestro propio
+# schema como entrada — nunca desempaqueta un .tar que venga de una
+# petición HTTP, que es lo que haría falta para disparar esto.
+# La imagen ya hace `npm install -g npm@latest` (backend/Dockerfile): esta
+# copia sigue sin parchear río arriba, no es que estemos desactualizados.
+CVE-2026-73566
