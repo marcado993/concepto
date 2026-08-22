@@ -8,6 +8,7 @@ import { AuthController } from "./auth.controller";
 import { LogtoOidcClient } from "./logto-oidc.client";
 import { LogtoExperienceClient } from "./logto-experience.client";
 import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter.service";
+import { EmailPendingTokenService } from "./email-pending-token.service";
 
 @Module({
   imports: [PassportModule],
@@ -17,6 +18,7 @@ import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter
     LogtoOidcClient,
     LogtoExperienceClient,
     EmailDestinationLimiter,
+    EmailPendingTokenService,
     // Autenticación global (JWT de Logto) + autorización global (jerarquía
     // de roles) — cada endpoint nuevo queda protegido por defecto; se abre
     // explícitamente con @Public() (auth/login, auth/callback, datos de

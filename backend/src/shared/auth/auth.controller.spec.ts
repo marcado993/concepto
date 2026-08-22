@@ -6,6 +6,7 @@ import { LogtoOidcClient } from "./logto-oidc.client";
 import { ExperienceApiError, LogtoExperienceClient } from "./logto-experience.client";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter.service";
+import { EmailPendingTokenService } from "./email-pending-token.service";
 
 function mockResponse() {
   return {
@@ -25,6 +26,9 @@ describe("AuthController", () => {
     setInteractionEvent: jest.Mock;
     requestEmailCode: jest.Mock;
     verifyEmailCode: jest.Mock;
+    submitIdentification: jest.Mock;
+    submitInteraction: jest.Mock;
+    completeAuthorization: jest.Mock;
   };
   let prisma: { user: { upsert: jest.Mock; findUnique: jest.Mock } };
   let config: ConfigService;
@@ -40,6 +44,9 @@ describe("AuthController", () => {
       setInteractionEvent: jest.fn().mockResolvedValue("_interaction=cookie-2"),
       requestEmailCode: jest.fn(),
       verifyEmailCode: jest.fn(),
+      submitIdentification: jest.fn(),
+      submitInteraction: jest.fn(),
+      completeAuthorization: jest.fn(),
     };
     prisma = {
       user: {
@@ -64,13 +71,19 @@ describe("AuthController", () => {
           provide: ConfigService,
           useValue: {
             getOrThrow: (key: string) =>
-              ({ FRONTEND_ORIGIN: "https://aeis-app.vercel.app", LOGTO_ISSUER: "https://tenant.logto.app/oidc" })[key],
+              ({
+                FRONTEND_ORIGIN: "https://aeis-app.vercel.app",
+                LOGTO_ISSUER: "https://tenant.logto.app/oidc",
+                COOKIE_SECRET: "test-secret",
+              })[key],
           },
         },
-        // Clase real, no un mock — es en memoria y sin dependencias
-        // externas, así que usarla tal cual prueba el comportamiento real
-        // del límite por correo destino en vez de fingir que existe.
+        // Clases reales, no mocks — son en memoria y sin dependencias
+        // externas, así que usarlas tal cual prueba el comportamiento real
+        // (límite por correo destino, firma/verificación del estado
+        // pendiente) en vez de fingir que existen.
         EmailDestinationLimiter,
+        EmailPendingTokenService,
       ],
     }).compile();
     controller = moduleRef.get(AuthController);
@@ -333,18 +346,20 @@ describe("AuthController", () => {
   });
 
   // Bug real reportado en producción: "Sesión de verificación expirada o
-  // inválida" apenas se manda el código. Causa: aeis.app (frontend) y
+  // inválida" apenas se manda el código. Causa raíz: aeis.app (frontend) y
   // api.aeis-app.online (backend) son dominios DISTINTOS — el navegador
   // considera esto cross-site. Login.svelte habla con /auth/email/start y
   // /auth/email/verify por fetch() (no por navegación de página completa,
-  // a diferencia del login con GitHub), y una cookie SameSite=Lax NUNCA
-  // viaja en un fetch entre sitios distintos, solo en navegaciones reales.
-  // Con Lax, /auth/email/verify jamás veía la cookie que /auth/email/start
-  // acababa de poner — el login por correo estaba roto para cualquiera en
-  // producción. Nunca se detectó en local porque localhost:5173 y
-  // localhost:3000 cuentan como el MISMO sitio (SameSite compara dominio
-  // registrable, no puerto).
-  it("Dado que el frontend (aeis.app) y el backend (api.aeis-app.online) son dominios distintos, Cuando /auth/email/start setea la cookie de verificación pendiente, Entonces usa SameSite=None (no Lax) — Lax nunca viaja en un fetch() cross-site y rompía el login por correo para todos", async () => {
+  // a diferencia del login con GitHub), y CUALQUIER cookie entre sitios
+  // distintos es frágil: primero se intentó SameSite=None+Secure (en el
+  // papel debía bastar) y en producción real SEGUÍA fallando — varios
+  // navegadores bloquean cookies de terceros sin importar SameSite. El fix
+  // real fue dejar de depender de que el navegador reenvíe una cookie:
+  // ahora el estado pendiente viaja EXPLÍCITO en el cuerpo JSON
+  // (pendingToken), igual que ya viaja el access_token final. Nunca se
+  // detectó en local porque ahí frontend/backend corren en el mismo
+  // origen o mismo sitio.
+  it("Dado que /auth/email/start ya no usa cookies para el estado pendiente, Cuando se llama, Entonces devuelve un pendingToken explícito en el cuerpo JSON (nada de res.cookie)", async () => {
     const res = mockResponse();
     logtoExperience.requestEmailCode.mockResolvedValue({
       cookie: "_interaction=with-code",
@@ -353,10 +368,73 @@ describe("AuthController", () => {
 
     await controller.emailStart("estudiante@epn.edu.ec", res);
 
-    expect(res.cookie).toHaveBeenCalledWith(
-      "aeis_email_pending",
-      expect.any(String),
-      expect.objectContaining({ sameSite: "none", secure: true })
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ pendingToken: expect.any(String) });
+  });
+
+  it("Dado un pendingToken válido y un código correcto, Cuando se llama /auth/email/verify, Entonces intercambia el token real sin depender de ninguna cookie", async () => {
+    const startRes = mockResponse();
+    logtoExperience.requestEmailCode.mockResolvedValue({
+      cookie: "_interaction=with-code",
+      verificationId: "verif-1",
+    });
+    await controller.emailStart("estudiante@epn.edu.ec", startRes);
+    const { pendingToken } = startRes.json.mock.calls[0][0];
+
+    logtoExperience.verifyEmailCode.mockResolvedValue("_interaction=verified");
+    logtoExperience.submitIdentification.mockResolvedValue({ status: 204, cookie: "_interaction=identified" });
+    logtoExperience.submitInteraction.mockResolvedValue({ cookie: "_interaction=submitted", redirectTo: "https://tenant.logto.app/callback" });
+    logtoExperience.completeAuthorization.mockResolvedValue({ code: "auth-code-1", state: "state-1", iss: undefined });
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-email-1",
+      claims: () => ({ sub: "email|estudiante", email: "estudiante@epn.edu.ec", name: "Estudiante EPN" }),
+    });
+
+    const verifyRes = mockResponse();
+    await controller.emailVerify("123456", pendingToken, verifyRes);
+
+    expect(logtoExperience.verifyEmailCode).toHaveBeenCalledWith("_interaction=with-code", "estudiante@epn.edu.ec", "123456", "verif-1");
+    expect(verifyRes.json).toHaveBeenCalledWith({ accessToken: "at-email-1" });
+  });
+
+  it("Dado un pendingToken ausente, vacío o alterado, Cuando se llama /auth/email/verify, Entonces rechaza con el mismo mensaje genérico — nunca intenta leer una cookie", async () => {
+    const res = mockResponse();
+    await expect(controller.emailVerify("123456", undefined, res)).rejects.toThrow(
+      "Sesión de verificación expirada o inválida — solicita un nuevo código"
     );
+    await expect(controller.emailVerify("123456", "token-inventado-a-mano", res)).rejects.toThrow(
+      "Sesión de verificación expirada o inválida — solicita un nuevo código"
+    );
+    expect(logtoExperience.verifyEmailCode).not.toHaveBeenCalled();
+  });
+
+  it("Dado un correo nuevo (primera vez), Cuando /auth/email/verify recibe user.user_not_exist, Entonces reinicia como registro y devuelve un pendingToken NUEVO — el viejo ya no debe servir", async () => {
+    const startRes = mockResponse();
+    logtoExperience.requestEmailCode.mockResolvedValue({
+      cookie: "_interaction=with-code",
+      verificationId: "verif-1",
+    });
+    await controller.emailStart("nuevo@epn.edu.ec", startRes);
+    const { pendingToken: oldToken } = startRes.json.mock.calls[0][0];
+
+    logtoExperience.verifyEmailCode.mockResolvedValue("_interaction=verified");
+    logtoExperience.submitIdentification.mockResolvedValue({
+      status: 422,
+      errorCode: "user.user_not_exist",
+      cookie: "_interaction=identified",
+    });
+    logtoExperience.requestEmailCode.mockResolvedValue({
+      cookie: "_interaction=with-code-register",
+      verificationId: "verif-2",
+    });
+
+    const verifyRes = mockResponse();
+    await controller.emailVerify("123456", oldToken, verifyRes);
+
+    expect(verifyRes.status).toHaveBeenCalledWith(202);
+    const body = verifyRes.json.mock.calls[0][0];
+    expect(body.needsNewCode).toBe(true);
+    expect(body.pendingToken).toEqual(expect.any(String));
+    expect(body.pendingToken).not.toBe(oldToken);
   });
 });
