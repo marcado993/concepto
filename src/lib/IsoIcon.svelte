@@ -117,7 +117,23 @@
        (CategoryContent.svelte) — barato porque no depende de la silueta
        real de la imagen. -->
   <span class="photo-wrap unit-photo" class:unit-dim-photo={!tone.glow} style="width: {size}px; height: {size}px">
-    <img src="/locker-mini.png" alt="" class="kind-photo" draggable="false" decoding="async" />
+    <!-- loading="lazy" + width/height: con hasta 108 casilleros en pantalla
+         esto son 108 <img>. Sin lazy, el navegador decodifica las 108 de
+         golpe al entrar (aunque solo se vean ~12) — es la causa real de que
+         la grilla "cargue lento" en gama baja. Con lazy solo decodifica las
+         cercanas al viewport y el resto conforme se desplaza. width/height
+         explícitos evitan que el layout salte al ir apareciendo. -->
+    <img
+      src="/locker-mini.png"
+      alt=""
+      class="kind-photo"
+      draggable="false"
+      decoding="async"
+      loading="lazy"
+      fetchpriority="low"
+      width={size}
+      height={size}
+    />
   </span>
 {:else if photo && !unit}
   {#key photo.src}

@@ -94,16 +94,52 @@
   // vez de un cambio brusco de pantalla.
   let navDir = $state<1 | -1>(1);
 
+  // El botón "atrás" del teléfono/navegador sacaba de la app (y con el
+  // login por GitHub caía en las URLs del flujo de OAuth que quedaron en
+  // el historial, o sea de vuelta al login) porque la app NUNCA registraba
+  // historial propio: al no haber ninguna entrada que consumir, "atrás"
+  // salía del sitio directamente.
+  //
+  // Ahora entrar a una sección empuja una entrada real, así "atrás"
+  // devuelve al menú — que es lo que cualquiera espera en un celular — en
+  // vez de abandonar la app.
   function abrirSeccion(i: number) {
     selectedIndex = i;
     navDir = 1;
     mobileView = "seccion";
+    if (typeof history !== "undefined") {
+      history.pushState({ aeisView: "seccion", i }, "");
+    }
   }
 
   function volverAlInicio() {
+    // history.back() en vez de cambiar el estado a mano: así el botón
+    // "Volver" de la pantalla y el "atrás" del teléfono recorren EL MISMO
+    // historial. Si se hicieran por caminos distintos, el historial se
+    // desincronizaría y "atrás" empezaría a saltarse pantallas.
+    if (typeof history !== "undefined" && history.state?.aeisView === "seccion") {
+      history.back();
+      return;
+    }
     navDir = -1;
     mobileView = "inicio";
   }
+
+  $effect(() => {
+    if (typeof window === "undefined") return;
+    // Entrada base del menú: sin esto, el primer "atrás" desde una sección
+    // no tendría a dónde volver dentro de la app.
+    if (!history.state?.aeisView) {
+      history.replaceState({ aeisView: "inicio" }, "");
+    }
+    const onPop = (e: PopStateEvent) => {
+      const vista = (e.state as { aeisView?: string } | null)?.aeisView;
+      navDir = vista === "seccion" ? 1 : -1;
+      mobileView = vista === "seccion" ? "seccion" : "inicio";
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  });
 
   // Transición de pantalla estilo consola: deslizamiento + escala + fundido
   // con salida suave (cubicOut), que es lo que da la sensación "orgánica"
