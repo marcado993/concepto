@@ -19,6 +19,7 @@ import { LogtoOidcClient } from "./logto-oidc.client";
 import { ExperienceApiError, LogtoExperienceClient } from "./logto-experience.client";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter.service";
+import { EmailPendingTokenService } from "./email-pending-token.service";
 
 // Flujo de login — 2 saltos de red (navegador → Logto → GitHub → Logto →
 // backend), el mínimo posible para OIDC con un proveedor externo (mismo
@@ -30,15 +31,24 @@ import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter
 // solo sirve para anti-CSRF, no para guardar el secreto de PKCE.
 const OIDC_COOKIE = "aeis_oidc_pending";
 
-// Login por correo institucional embebido — a diferencia de OIDC_COOKIE
-// (que solo guarda codeVerifier/state mientras el navegador está AFUERA,
-// en Logto), esta cookie vive durante TODO el intercambio con la
-// Experience API: el estudiante nunca navega a Logto, así que el estado
-// de la interacción (sus cookies internas, el verificationId pendiente)
-// tiene que sobrevivir entre el POST /auth/email/start y el POST
-// /auth/email/verify de este mismo backend. Ver logto-experience.client.ts
-// para el detalle de qué es cada campo.
-const EMAIL_COOKIE = "aeis_email_pending";
+// Login por correo institucional embebido — el estado de la interacción
+// (sus cookies internas, el verificationId pendiente) tiene que sobrevivir
+// entre el POST /auth/email/start y el POST /auth/email/verify de este
+// mismo backend, mientras el estudiante nunca navega fuera de Login.svelte.
+//
+// Este estado viaja EXPLÍCITO en el cuerpo JSON (signPending/verifyPending
+// más abajo), no en una cookie — mismo patrón que ya usa el access_token
+// final (fragmento de URL → localStorage → header Authorization, nunca
+// cookie). Se intentó primero con una cookie SameSite=None+Secure (aeis.app
+// y api.aeis-app.online son dominios distintos) y en el papel debía
+// funcionar, pero en producción real seguía fallando para usuarios reales:
+// varios navegadores (Safari con ITP, Chrome con el apagado gradual de
+// cookies de terceros) bloquean cookies entre sitios distintos SIN
+// IMPORTAR el valor de SameSite — no hay combinación de atributos de
+// cookie que lo arregle de forma confiable. Pasar el estado como dato
+// explícito evita depender de una política de cookies que cada navegador
+// decide distinto y sigue cambiando con el tiempo. Ver
+// logto-experience.client.ts para el detalle de qué es cada campo.
 
 interface EmailPending {
   email: string;
@@ -72,7 +82,8 @@ export class AuthController {
     private readonly logtoExperience: LogtoExperienceClient,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly emailDestinationLimiter: EmailDestinationLimiter
+    private readonly emailDestinationLimiter: EmailDestinationLimiter,
+    private readonly pendingTokens: EmailPendingTokenService
   ) {}
 
   // NUNCA reenviar ExperienceApiError.message tal cual al cliente — es el
@@ -257,25 +268,11 @@ export class AuthController {
         interactionCookie: cookieWithCode,
         verificationId,
       };
-      // sameSite: "none", no "lax" — a diferencia de OIDC_COOKIE (que solo
-      // viaja en navegaciones de página completa vía window.location.href,
-      // donde Lax sí funciona), esta cookie la ponen y la leen dos
-      // llamadas `fetch()` desde Login.svelte, y el frontend (aeis.app) y
-      // el backend (api.aeis-app.online) son dominios distintos. Una
-      // cookie Lax jamás viaja en un fetch entre sitios distintos — solo
-      // en navegaciones reales — así que /auth/email/verify nunca veía
-      // esta cookie y el login por correo estaba roto en producción para
-      // TODOS, no solo en casos raros (bug real reportado: "Sesión de
-      // verificación expirada o inválida" apenas se manda el código).
-      // None exige Secure=true, que ya estaba puesto.
-      res.cookie(EMAIL_COOKIE, JSON.stringify(pending), {
-        httpOnly: true,
-        secure: true,
-        sameSite: "none",
-        signed: true,
-        maxAge: 10 * 60 * 1000, // el código de Logto vence a los 10 minutos
-      });
-      return res.json({});
+      // pendingToken explícito en el cuerpo, no una cookie — ver el
+      // comentario grande donde vivía EMAIL_COOKIE más arriba.
+      // Login.svelte lo guarda en memoria y lo reenvía tal cual en
+      // /auth/email/verify.
+      return res.json({ pendingToken: this.pendingTokens.sign(pending) });
     } catch (err) {
       if (err instanceof ExperienceApiError) {
         throw this.sanitizedEmailError(
@@ -297,12 +294,15 @@ export class AuthController {
   @Public()
   @Throttle({ short: { limit: 5, ttl: 10_000 } })
   @Post("email/verify")
-  async emailVerify(@Body("code") code: string | undefined, @Req() req: Request, @Res() res: Response) {
-    const pendingRaw = req.signedCookies?.[EMAIL_COOKIE];
-    if (!pendingRaw || !code) {
+  async emailVerify(
+    @Body("code") code: string | undefined,
+    @Body("pendingToken") pendingToken: string | undefined,
+    @Res() res: Response
+  ) {
+    const pending = this.pendingTokens.verify<EmailPending>(pendingToken);
+    if (!pending || !code) {
       throw new BadRequestException("Sesión de verificación expirada o inválida — solicita un nuevo código");
     }
-    const pending = JSON.parse(pendingRaw) as EmailPending;
 
     let cookie: string;
     try {
@@ -355,17 +355,11 @@ export class AuthController {
           interactionCookie: cookieWithCode,
           verificationId,
         };
-        // Mismo motivo que arriba: esta cookie también viaja por fetch()
-        // entre sitios distintos (aeis.app <-> api.aeis-app.online).
-        res.cookie(EMAIL_COOKIE, JSON.stringify(nextPending), {
-          httpOnly: true,
-          secure: true,
-          sameSite: "none",
-          signed: true,
-          maxAge: 10 * 60 * 1000,
-        });
+        // El código anterior ya no sirve (nueva interacción de registro) —
+        // Login.svelte debe reemplazar el pendingToken guardado por este.
         return res.status(202).json({
           needsNewCode: true,
+          pendingToken: this.pendingTokens.sign(nextPending),
           message: "Es tu primera vez con este correo — te mandamos un código nuevo para crear tu cuenta",
         });
       }
@@ -386,7 +380,6 @@ export class AuthController {
       expectedState: pending.state,
       codeVerifier: pending.codeVerifier,
     });
-    res.clearCookie(EMAIL_COOKIE);
 
     if (!result.ok) {
       return res.status(403).json({ error: result.reason });

@@ -74,6 +74,18 @@ export function login(connector?: string, loginHint?: string) {
 // que pone /auth/email/start y que /auth/email/verify necesita releer.
 export class EmailLoginError extends Error {}
 
+// El estado del login por correo entre pasos (código PKCE, cookie interna
+// de la Experience API de Logto, verificationId) viaja explícito en el
+// cuerpo JSON, NO en una cookie — aeis.app y api.aeis-app.online son
+// dominios distintos, y aunque la cookie ya iba con SameSite=None+Secure,
+// seguía sin llegar en producción real: varios navegadores (Safari con
+// ITP, Chrome apagando cookies de terceros) bloquean cookies entre sitios
+// distintos sin importar SameSite. Mismo patrón que el access_token final
+// (que tampoco es una cookie). Se guarda en memoria del módulo — no en
+// localStorage — porque no necesita sobrevivir un refresco de página; si
+// el usuario recarga a medio código, pedir uno nuevo es aceptable.
+let pendingEmailToken: string | null = null;
+
 export async function startEmailLogin(email: string): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/auth/email/start`, {
     method: "POST",
@@ -81,10 +93,11 @@ export async function startEmailLogin(email: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
+  const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
     throw new EmailLoginError(body.message ?? "No se pudo enviar el código — intenta de nuevo");
   }
+  pendingEmailToken = body.pendingToken ?? null;
 }
 
 export interface EmailVerifyResult {
@@ -95,15 +108,22 @@ export interface EmailVerifyResult {
 }
 
 export async function verifyEmailLogin(code: string): Promise<EmailVerifyResult> {
+  if (!pendingEmailToken) {
+    throw new EmailLoginError("Sesión de verificación expirada o inválida — solicita un nuevo código");
+  }
   const res = await fetch(`${API_BASE_URL}/auth/email/verify`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, pendingToken: pendingEmailToken }),
   });
   const body = await res.json().catch(() => ({}));
 
   if (res.status === 202 && body.needsNewCode) {
+    // El backend reinició la interacción como registro (primera vez con
+    // este correo) y mandó un código nuevo — el pendingToken viejo ya no
+    // sirve, hay que reemplazarlo por el que vino en esta respuesta.
+    pendingEmailToken = body.pendingToken ?? null;
     return { needsNewCode: true };
   }
   if (!res.ok) {
@@ -113,6 +133,7 @@ export async function verifyEmailLogin(code: string): Promise<EmailVerifyResult>
     throw new EmailLoginError("Logto no devolvió una sesión válida — intenta de nuevo");
   }
 
+  pendingEmailToken = null;
   token = body.accessToken;
   localStorage.setItem(STORAGE_KEY, body.accessToken);
   return { needsNewCode: false };
