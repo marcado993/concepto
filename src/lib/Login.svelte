@@ -37,6 +37,37 @@
   let localError = $state<string | null>(null);
   let infoMessage = $state<string | null>(null);
 
+  // Botón "Reenviar código" con espera de 3 minutos — antes la ÚNICA
+  // forma de pedir un código nuevo era "‹ Usar otro correo" (que además
+  // no reenviaba nada por sí sola, solo volvía al paso 1). Bug real
+  // reportado: un código de Logto puede vencer o quedar inválido después
+  // de usarse una vez, y sin un botón de reenvío a mano, quien recibía un
+  // error reintentaba con ESE MISMO código vencido una y otra vez. Los 3
+  // minutos coinciden con el límite real del backend (máximo 3 códigos
+  // por correo cada 15 min, ver EmailDestinationLimiter) — sin este
+  // límite en la propia UI, alguien podría gastar ese cupo entero
+  // reenviando de golpe antes de que el primer código ni siquiera llegue.
+  const RESEND_COOLDOWN_MS = 3 * 60 * 1000;
+  let resendAvailableAt = $state(0);
+  let nowTick = $state(Date.now());
+  const resendSecondsLeft = $derived(Math.max(0, Math.ceil((resendAvailableAt - nowTick) / 1000)));
+  const canResend = $derived(resendSecondsLeft === 0 && !sending);
+
+  function formatCountdown(totalSeconds: number): string {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  // Tictac de un segundo SOLO mientras se está en el paso de código — no
+  // tiene sentido gastar un setInterval corriendo de fondo mientras se
+  // escribe el correo o después de haber iniciado sesión.
+  $effect(() => {
+    if (step !== "code") return;
+    const id = setInterval(() => (nowTick = Date.now()), 1000);
+    return () => clearInterval(id);
+  });
+
   function continueWithGithub() {
     login("github");
   }
@@ -48,6 +79,7 @@
     try {
       await startEmailLogin(email.trim());
       step = "code";
+      resendAvailableAt = Date.now() + RESEND_COOLDOWN_MS;
     } catch (err) {
       localError = err instanceof EmailLoginError ? err.message : "No se pudo enviar el código — intenta de nuevo";
     } finally {
@@ -65,12 +97,34 @@
       if (result.needsNewCode) {
         otpCode = "";
         infoMessage = "Es tu primera vez con este correo — te mandamos un código nuevo para crear tu cuenta";
+        // El backend ya mandó un código nuevo en este mismo paso — el
+        // reenvío manual debe esperar desde AHORA, no desde el envío
+        // original (si no, el botón quedaría disponible casi de
+        // inmediato para un código que recién acaba de salir).
+        resendAvailableAt = Date.now() + RESEND_COOLDOWN_MS;
         return;
       }
       // sesión ya quedó guardada por verifyEmailLogin() — App.svelte
       // reacciona solo a isAuthenticated() cambiando de pantalla.
     } catch (err) {
       localError = err instanceof EmailLoginError ? err.message : "Código incorrecto o vencido — intenta de nuevo";
+    } finally {
+      sending = false;
+    }
+  }
+
+  async function resendCode() {
+    if (!canResend) return;
+    sending = true;
+    localError = null;
+    infoMessage = null;
+    try {
+      await startEmailLogin(email.trim());
+      otpCode = "";
+      resendAvailableAt = Date.now() + RESEND_COOLDOWN_MS;
+      infoMessage = "Te mandamos un código nuevo";
+    } catch (err) {
+      localError = err instanceof EmailLoginError ? err.message : "No se pudo reenviar el código — intenta de nuevo";
     } finally {
       sending = false;
     }
@@ -182,7 +236,12 @@
       <button class="cta" disabled={otpCode.trim().length < 6 || sending} onclick={confirmCode}>
         {sending ? "Verificando…" : "Confirmar código"}
       </button>
-      <button class="link-btn" onclick={backToEmail} disabled={sending}>‹ Usar otro correo</button>
+      <div class="code-footer">
+        <button class="link-btn" onclick={resendCode} disabled={!canResend}>
+          {canResend ? "Reenviar código" : `Reenviar código en ${formatCountdown(resendSecondsLeft)}`}
+        </button>
+        <button class="link-btn" onclick={backToEmail} disabled={sending}>‹ Usar otro correo</button>
+      </div>
     {/if}
     </div>
   </div>
@@ -326,6 +385,13 @@
     font-weight: 700;
   }
 
+  .code-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 14px;
+  }
+
   .link-btn {
     display: block;
     width: 100%;
@@ -335,8 +401,14 @@
     font-size: 12.5px;
     text-align: center;
     cursor: pointer;
-    margin-top: 14px;
     padding: 4px;
+    /* font-variant-numeric: la cuenta regresiva cambia de dígitos varias
+       veces por minuto ("2:59" → "2:58" ...) — sin esto los números
+       proporcionales hacen que el botón cambie de ancho y "tiemble". */
+    font-variant-numeric: tabular-nums;
+  }
+  .code-footer .link-btn {
+    margin-top: 0;
   }
   @media (hover: hover) and (pointer: fine) {
     .link-btn:hover:not(:disabled) {
