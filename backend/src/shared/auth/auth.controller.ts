@@ -270,11 +270,21 @@ export class AuthController {
       );
     } catch (err) {
       if (err instanceof ExperienceApiError) {
-        throw this.sanitizedEmailError(
-          err,
-          `emailVerify.verifyEmailCode(${pending.email})`,
-          "No se pudo verificar el código — intenta de nuevo."
-        );
+        // "not_found" (el código venció o ya se usó) y "code_mismatch"
+        // (el código está mal escrito) son casos DISTINTOS que Logto ya
+        // distingue — antes ambos caían en el mismo "intenta de nuevo"
+        // genérico. Bug real reportado en producción: con ese mensaje
+        // vago, quien recibía "not_found" reintentaba con EL MISMO código
+        // ya vencido (el único que tenía a mano) y volvía a fallar exacto
+        // igual — dos errores idénticos seguidos en los logs. El mensaje
+        // ahora dice qué pasó de verdad y apunta al único camino que sí
+        // funciona: "‹ Usar otro correo" deja el correo ya escrito y
+        // dispara un código nuevo con un solo toque en "Continuar".
+        const safeMessage =
+          err.code === "verification_code.not_found"
+            ? "Ese código ya venció o ya se usó — toca «Usar otro correo» abajo y pide uno nuevo (el correo se queda escrito, no hay que repetirlo)."
+            : "Código incorrecto — revisa los 6 dígitos e intenta de nuevo.";
+        throw this.sanitizedEmailError(err, `emailVerify.verifyEmailCode(${pending.email})`, safeMessage);
       }
       throw err;
     }

@@ -402,6 +402,54 @@ describe("AuthController", () => {
     expect(verifyRes.json).toHaveBeenCalledWith({ accessToken: "at-email-1" });
   });
 
+  // Bug real reportado en producción: Logto distingue "el código venció o
+  // ya se usó" (verification_code.not_found) de "el código está mal
+  // escrito" (verification_code.code_mismatch), pero ambos caían en el
+  // mismo "No se pudo verificar el código — intenta de nuevo" genérico —
+  // quien recibía un código vencido reintentaba con ESE MISMO código (el
+  // único que tenía a mano) y volvía a fallar exacto igual, dos veces
+  // seguidas en los logs. Cada caso ahora dice qué pasó de verdad.
+  it("Dado que Logto dice que el código YA VENCIÓ O YA SE USÓ (verification_code.not_found), Cuando se llama /auth/email/verify, Entonces el mensaje dice eso — no un genérico 'intenta de nuevo'", async () => {
+    const startRes = mockResponse();
+    logtoExperience.requestEmailCode.mockResolvedValue({ cookie: "_interaction=with-code", verificationId: "verif-1" });
+    await controller.emailStart("estudiante@epn.edu.ec", startRes);
+    const { pendingToken } = startRes.json.mock.calls[0][0];
+
+    logtoExperience.verifyEmailCode.mockRejectedValue(
+      new ExperienceApiError(400, "verification_code.not_found", "Verification code not found. Please send verification code first.")
+    );
+
+    const verifyRes = mockResponse();
+    let caught: unknown;
+    try {
+      await controller.emailVerify("123456", pendingToken, verifyRes);
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as Error).message).toContain("venció o ya se usó");
+  });
+
+  it("Dado que Logto dice que el código está MAL ESCRITO (verification_code.code_mismatch), Cuando se llama /auth/email/verify, Entonces el mensaje invita a revisar los dígitos, no a pedir uno nuevo", async () => {
+    const startRes = mockResponse();
+    logtoExperience.requestEmailCode.mockResolvedValue({ cookie: "_interaction=with-code", verificationId: "verif-1" });
+    await controller.emailStart("estudiante@epn.edu.ec", startRes);
+    const { pendingToken } = startRes.json.mock.calls[0][0];
+
+    logtoExperience.verifyEmailCode.mockRejectedValue(
+      new ExperienceApiError(400, "verification_code.code_mismatch", "Invalid verification code.")
+    );
+
+    const verifyRes = mockResponse();
+    let caught: unknown;
+    try {
+      await controller.emailVerify("123456", pendingToken, verifyRes);
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as Error).message).toContain("Código incorrecto");
+    expect((caught as Error).message).not.toContain("venció");
+  });
+
   it("Dado un pendingToken ausente, vacío o alterado, Cuando se llama /auth/email/verify, Entonces rechaza con el mismo mensaje genérico — nunca intenta leer una cookie", async () => {
     const res = mockResponse();
     await expect(controller.emailVerify("123456", undefined, res)).rejects.toThrow(
