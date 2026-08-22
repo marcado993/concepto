@@ -23,6 +23,10 @@
     venturesError?: boolean;
     /** true si fetchLockers() falló — mismo patrón que securityIndicatorsError. */
     lockersError?: boolean;
+    /** true mientras los casilleros reales todavía vienen en camino. Antes
+        no había NINGUNA señal: la grilla se veía vacía y no se distinguía
+        "cargando" de "no hay nada" (H1, visibilidad del estado). */
+    lockersLoading?: boolean;
     /** La reserva propia (por transferencia) que sigue esperando comprobante,
         si hay una — deja tocar ESE casillero puntual para resubir la foto
         aunque su estado sea RESERVED. Verificado por el backend contra la
@@ -61,6 +65,7 @@
     securityIndicatorsError = false,
     venturesError = false,
     lockersError = false,
+    lockersLoading = false,
     myPendingReceipt = null,
     myRentedLocker = null,
     wide = false,
@@ -454,7 +459,25 @@
           {/if}
         </ul>
 
-        <div class="grid">
+        {#if lockersLoading}
+          <!-- Esqueleto de carga: 12 celdas fantasma con un barrido de luz
+               que las recorre en cascada, como un sistema inicializando.
+               Ocupan el mismo espacio que los casilleros reales, así que
+               cuando llegan los datos nada salta de sitio. Con
+               prefers-reduced-motion el barrido se apaga y quedan estáticas
+               (ver el bloque al final de este archivo). -->
+          <div class="grid grid-skeleton" aria-hidden="true">
+            {#each Array(12) as _, i}
+              <div class="unit-skeleton" style="--skel-delay: {i * 90}ms"></div>
+            {/each}
+          </div>
+          <p class="loading-line" role="status">
+            <span class="loading-dot"></span>
+            Leyendo disponibilidad de casilleros…
+          </p>
+        {/if}
+
+        <div class="grid" class:grid-hidden={lockersLoading}>
           {#each visibleLockers as unit, i (unit.id)}
             {@const isMine = myPendingReceipt?.lockerCode === unit.number}
             {@const isMineRented = myRentedLocker?.lockerCode === unit.number}
@@ -478,7 +501,7 @@
                 : isMine
                   ? `Resubir comprobante del casillero ${unit.number}`
                   : `Alquilar casillero ${unit.number}`}
-              style="--unit-hue: {unitHue(i)}; animation-delay: {unitDelay(i)}ms"
+              style="--unit-hue: {unitHue(i)}; --unit-i: {Math.min(i, 16)}; animation-delay: {unitDelay(i)}ms"
             >
               {#if isMineRented}
                 <!-- Casillero propio ya confirmado — pedido real: en vez de
@@ -933,14 +956,142 @@
     animation: unit-enter 0.45s ease-out forwards;
   }
 
-  /* En la pantalla única de móvil los casilleros aparecen YA, sin ola de
-     entrada. Con hasta 108 unidades, ese escalonado hacía esperar hasta
-     ~950ms para ver la grilla completa cada vez que entrabas — se lee
-     como "la app va lenta", que es textualmente lo que se reportó. La
-     animación era adorno; ver el contenido es el trabajo real. */
+  /* Entrada orgánica en móvil: la ola vuelve, pero MUY corta. Antes el
+     escalonado llegaba a ~950ms para los 108 (se leía como app lenta);
+     ahora el retardo se corta a 220ms como máximo, así que la grilla
+     entera termina de aparecer en ~0.5s. El movimiento se siente vivo sin
+     hacer esperar — que era el equilibrio que faltaba. */
   .content-wrap.compact .unit {
-    opacity: 1;
-    animation: none;
+    opacity: 0;
+    animation: unit-materialize 0.42s cubic-bezier(0.18, 0.9, 0.24, 1.08) forwards;
+    animation-delay: calc(var(--unit-i, 0) * 14ms);
+  }
+
+  /* Materializar, no solo aparecer: entra desde un poco abajo, con un
+     apagado de brillo que sube — como algo que se enciende, no como algo
+     que se desliza. El cubic-bezier con rebote leve (1.08) es lo que le da
+     el carácter orgánico frente a un ease lineal. */
+  @keyframes unit-materialize {
+    0% {
+      opacity: 0;
+      transform: translateY(10px) scale(0.9);
+      filter: brightness(0.4);
+    }
+    60% {
+      filter: brightness(1.25);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: brightness(1);
+    }
+  }
+
+  /* Respiración lenta y muy sutil en los libres — el "latido" retrofuturista
+     de un sistema encendido. 4s y una variación mínima de brillo: se
+     percibe de reojo, nunca compite con la lectura. */
+  .content-wrap.compact .unit:not(.dim):not(.mine-pending) {
+    animation:
+      unit-materialize 0.42s cubic-bezier(0.18, 0.9, 0.24, 1.08) forwards,
+      unit-breathe 4s ease-in-out 1.2s infinite;
+  }
+
+  @keyframes unit-breathe {
+    0%,
+    100% {
+      box-shadow: 0 0 14px hsla(var(--unit-hue), 75%, 60%, 0.18);
+    }
+    50% {
+      box-shadow: 0 0 20px hsla(var(--unit-hue), 75%, 62%, 0.3);
+    }
+  }
+
+  /* ---------- Esqueleto de carga (retrofuturista) ---------- */
+  .grid-hidden {
+    display: none;
+  }
+
+  .unit-skeleton {
+    position: relative;
+    height: 118px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(var(--sheet-hue, 160), 100%, 70%, 0.1);
+    overflow: hidden;
+  }
+
+  /* Barrido de luz que recorre cada celda — el retardo por celda
+     (--skel-delay, inline) hace que la luz viaje en cascada por la grilla
+     en vez de parpadear todo a la vez: se lee como un escaneo. */
+  .unit-skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 30%,
+      var(--sheet-accent) 50%,
+      transparent 70%
+    );
+    opacity: 0.14;
+    transform: translateX(-100%);
+    animation: skel-scan 1.6s ease-in-out infinite;
+    animation-delay: var(--skel-delay, 0ms);
+  }
+
+  @keyframes skel-scan {
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  .loading-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 0;
+    padding: 0 22px 10px;
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+    color: rgba(238, 244, 251, 0.6);
+  }
+
+  .loading-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sheet-accent);
+    animation: dot-pulse 1.1s ease-in-out infinite;
+  }
+
+  @keyframes dot-pulse {
+    0%,
+    100% {
+      opacity: 0.25;
+      transform: scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15);
+      box-shadow: 0 0 10px var(--sheet-accent);
+    }
+  }
+
+  /* ACCESIBILIDAD — todo lo de arriba es decorativo: con el sistema
+     pidiendo menos movimiento, cada pieza queda en su estado final legible
+     y quieta. Nada de la información depende de la animación. */
+  @media (prefers-reduced-motion: reduce) {
+    .content-wrap.compact .unit,
+    .content-wrap.compact .unit:not(.dim):not(.mine-pending) {
+      opacity: 1;
+      animation: none;
+      transform: none;
+      filter: none;
+    }
+    .unit-skeleton::after,
+    .loading-dot {
+      animation: none;
+    }
   }
 
   @keyframes unit-enter {

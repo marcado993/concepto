@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fade } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import Background from "./lib/Background.svelte";
   import ArcMenu from "./lib/ArcMenu.svelte";
   import AccessibleCategoryNav from "./lib/AccessibleCategoryNav.svelte";
@@ -86,6 +87,45 @@
   // haber capas superpuestas es imposible que algo intercepte un toque
   // (la causa de todos los bugs de doble toque de esta sesión).
   let mobileView = $state<"inicio" | "seccion">("inicio");
+
+  // Dirección del último movimiento, para que la transición "empuje" hacia
+  // el lado correcto: entrar va hacia adelante, Volver va hacia atrás.
+  // Es lo que hace que se sienta como navegar en una consola (Wii/PS4) en
+  // vez de un cambio brusco de pantalla.
+  let navDir = $state<1 | -1>(1);
+
+  function abrirSeccion(i: number) {
+    selectedIndex = i;
+    navDir = 1;
+    mobileView = "seccion";
+  }
+
+  function volverAlInicio() {
+    navDir = -1;
+    mobileView = "inicio";
+  }
+
+  // Transición de pantalla estilo consola: deslizamiento + escala + fundido
+  // con salida suave (cubicOut), que es lo que da la sensación "orgánica"
+  // en vez de lineal/robótica. Solo entra la pantalla nueva — la anterior
+  // se quita de una: sin superposición no hay forma de que dos capas
+  // convivan y una intercepte toques (la causa de los bugs de esta sesión).
+  //
+  // ACCESIBILIDAD: si el sistema pide menos movimiento, la duración pasa a
+  // 0 y el cambio es instantáneo. La animación nunca es un requisito para
+  // entender qué pasó.
+  function consolaEntra(_node: Element, { dir = 1 }: { dir?: 1 | -1 }) {
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    return {
+      duration: reduce ? 0 : 340,
+      easing: cubicOut,
+      css: (t: number, u: number) =>
+        `transform: translate3d(${dir * 34 * u}px, 0, 0) scale(${0.965 + 0.035 * t});` +
+        `opacity: ${t}; filter: brightness(${0.75 + 0.25 * t});`,
+    };
+  }
 
   // Seguridad's tone tracks the actual clock — not fixed like every other
   // module's theme — so it re-derives from the wall time on a slow tick
@@ -413,45 +453,47 @@
            completa, el panel deslizante que seguía capturando toques
            mientras se iba, el gesto de arrastre con sus carreras). -->
       <main class="mobile-main">
-        {#if mobileView === "inicio"}
-          <div class="home-head">
-            <h1 class="home-title">¿Qué necesitas?</h1>
-            <p class="home-sub">Toca una opción para entrar.</p>
+        {#key mobileView}
+          <div class="view-slide" in:consolaEntra={{ dir: navDir }}>
+            {#if mobileView === "inicio"}
+              <div class="home-head">
+                <h1 class="home-title">¿Qué necesitas?</h1>
+                <p class="home-sub">Toca una opción para entrar.</p>
+              </div>
+              <AccessibleCategoryNav
+                categories={displayCategories}
+                {selectedIndex}
+                onopen={abrirSeccion}
+              />
+            {:else}
+              <!-- Volver: texto + flecha, alto de 48px y ancho completo del
+                   área táctil. Un ícono suelto de flecha obliga a interpretar;
+                   la palabra "Volver" no se interpreta, se lee. -->
+              <button class="back-btn" onclick={volverAlInicio}>
+                <span class="back-arrow" aria-hidden="true">‹</span>
+                Volver
+              </button>
+              <div class="mobile-content">
+                <CategoryContent
+                  category={activeCategory}
+                  {securityCategory}
+                  {lockersCategory}
+                  securityRisk={riskForHour(currentHour)}
+                  {securityIndicatorsError}
+                  {venturesError}
+                  {lockersError}
+                  lockersLoading={lockers === null && !lockersError}
+                  {myPendingReceipt}
+                  {myRentedLocker}
+                  onlockerrented={onLockerRented}
+                  {subscriptionTiersError}
+                  onsubscribed={loadSubscriptionTiers}
+                  compact
+                />
+              </div>
+            {/if}
           </div>
-          <AccessibleCategoryNav
-            categories={displayCategories}
-            {selectedIndex}
-            onopen={(i) => {
-              selectedIndex = i;
-              mobileView = "seccion";
-            }}
-          />
-        {:else}
-          <!-- Volver: texto + flecha, alto de 48px y ancho completo del
-               área táctil. Un ícono suelto de flecha obliga a interpretar;
-               la palabra "Volver" no se interpreta, se lee. -->
-          <button class="back-btn" onclick={() => (mobileView = "inicio")}>
-            <span class="back-arrow" aria-hidden="true">‹</span>
-            Volver
-          </button>
-          <div class="mobile-content">
-            <CategoryContent
-              category={activeCategory}
-              {securityCategory}
-              {lockersCategory}
-              securityRisk={riskForHour(currentHour)}
-              {securityIndicatorsError}
-              {venturesError}
-              {lockersError}
-              {myPendingReceipt}
-              {myRentedLocker}
-              onlockerrented={onLockerRented}
-              {subscriptionTiersError}
-              onsubscribed={loadSubscriptionTiers}
-              compact
-            />
-          </div>
-        {/if}
+        {/key}
       </main>
     {:else}
       <main class="menu-layer" class:receded={sheetOpen}>
@@ -635,6 +677,16 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  /* Contenedor de la pantalla que entra — necesita ser el flex column
+     completo para que el contenido interno siga repartiéndose igual. */
+  .view-slide {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    will-change: transform, opacity;
   }
 
   .home-head {
