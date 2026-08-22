@@ -3,7 +3,6 @@
   import Background from "./lib/Background.svelte";
   import ArcMenu from "./lib/ArcMenu.svelte";
   import AccessibleCategoryNav from "./lib/AccessibleCategoryNav.svelte";
-  import SheetCategoryTabs from "./lib/SheetCategoryTabs.svelte";
   import DetailSheet from "./lib/DetailSheet.svelte";
   import DesktopNav from "./lib/DesktopNav.svelte";
   import CategoryContent from "./lib/CategoryContent.svelte";
@@ -79,6 +78,14 @@
   let selectedIndex = $state(0);
   let sheetOpen = $state(false);
   let firstVisit = $state(false);
+
+  // Navegación de móvil: dos pantallas que se REEMPLAZAN, nunca se
+  // encinan. "inicio" = las 6 opciones grandes; "seccion" = el contenido
+  // con un botón Volver bien visible. Es el patrón de Ajustes del iPhone:
+  // no hay nada oculto, nada que deslizar, nada que recordar — y al no
+  // haber capas superpuestas es imposible que algo intercepte un toque
+  // (la causa de todos los bugs de doble toque de esta sesión).
+  let mobileView = $state<"inicio" | "seccion">("inicio");
 
   // Seguridad's tone tracks the actual clock — not fixed like every other
   // module's theme — so it re-derives from the wall time on a slow tick
@@ -394,42 +401,57 @@
         </section>
       </main>
     {:else if uiVariant === "B"}
-      <!-- UNA sola pantalla: pestañas fijas arriba + contenido debajo.
-           Antes esto era una lista de 6 categorías y ENCIMA un panel
-           deslizante que tapaba el 86% de la pantalla — dos navegaciones
-           para las mismas 6 cosas, con la lista de atrás inservible.
-           Feedback textual del cliente: "la app no es muy usable",
-           señalando navegación y exceso de adorno.
+      <!-- Dos pantallas que se REEMPLAZAN, nunca se encinan (patrón de
+           Ajustes del iPhone: lista → detalle → Volver). Todo lo que se
+           puede hacer está a la vista: las 6 opciones en el inicio, y un
+           Volver grande dentro de la sección. Nada oculto tras un gesto,
+           un desplazamiento lateral ni un menú.
 
-           Quitar el panel se lleva por delante, además, TODA la
-           maquinaria que produjo los bugs de toques de esta sesión: el
-           scrim a pantalla completa que se comía el primer tap, el gesto
-           de arrastre con sus dos condiciones de carrera, el spring y el
-           malabar de pointer-events entre apariencia y estado. Menos
-           piezas móviles = menos formas de fallar. -->
+           Al no existir capas superpuestas, es estructuralmente imposible
+           que algo intercepte un toque — que fue la causa de TODOS los
+           bugs de doble toque de esta sesión (el scrim a pantalla
+           completa, el panel deslizante que seguía capturando toques
+           mientras se iba, el gesto de arrastre con sus carreras). -->
       <main class="mobile-main">
-        <SheetCategoryTabs
-          categories={displayCategories}
-          {selectedIndex}
-          onselect={(i) => (selectedIndex = i)}
-        />
-        <div class="mobile-content">
-          <CategoryContent
-            category={activeCategory}
-            {securityCategory}
-            {lockersCategory}
-            securityRisk={riskForHour(currentHour)}
-            {securityIndicatorsError}
-            {venturesError}
-            {lockersError}
-            {myPendingReceipt}
-            {myRentedLocker}
-            onlockerrented={onLockerRented}
-            {subscriptionTiersError}
-            onsubscribed={loadSubscriptionTiers}
-            compact
+        {#if mobileView === "inicio"}
+          <div class="home-head">
+            <h1 class="home-title">¿Qué necesitas?</h1>
+            <p class="home-sub">Toca una opción para entrar.</p>
+          </div>
+          <AccessibleCategoryNav
+            categories={displayCategories}
+            {selectedIndex}
+            onopen={(i) => {
+              selectedIndex = i;
+              mobileView = "seccion";
+            }}
           />
-        </div>
+        {:else}
+          <!-- Volver: texto + flecha, alto de 48px y ancho completo del
+               área táctil. Un ícono suelto de flecha obliga a interpretar;
+               la palabra "Volver" no se interpreta, se lee. -->
+          <button class="back-btn" onclick={() => (mobileView = "inicio")}>
+            <span class="back-arrow" aria-hidden="true">‹</span>
+            Volver
+          </button>
+          <div class="mobile-content">
+            <CategoryContent
+              category={activeCategory}
+              {securityCategory}
+              {lockersCategory}
+              securityRisk={riskForHour(currentHour)}
+              {securityIndicatorsError}
+              {venturesError}
+              {lockersError}
+              {myPendingReceipt}
+              {myRentedLocker}
+              onlockerrented={onLockerRented}
+              {subscriptionTiersError}
+              onsubscribed={loadSubscriptionTiers}
+              compact
+            />
+          </div>
+        {/if}
       </main>
     {:else}
       <main class="menu-layer" class:receded={sheetOpen}>
@@ -613,6 +635,63 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  .home-head {
+    padding: 10px 22px 14px;
+    flex-shrink: 0;
+  }
+
+  .home-title {
+    font-family: var(--font-heading);
+    font-size: 26px;
+    margin: 0;
+    color: var(--ink-0, #eafff5);
+  }
+
+  .home-sub {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: rgba(238, 244, 251, 0.6);
+  }
+
+  /* Objetivo táctil de 48px de alto (por encima del mínimo WCAG 2.5.5 de
+     44px) y con la palabra "Volver" escrita: una flecha suelta hay que
+     interpretarla, la palabra se lee y ya. Pegado arriba a la izquierda,
+     que es donde la convención de iOS lo pone. */
+  .back-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    align-self: flex-start;
+    flex-shrink: 0;
+    min-height: 48px;
+    margin: 4px 12px 2px;
+    padding: 0 14px 0 8px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--accent, #21e0a0);
+    font-family: var(--font-heading, sans-serif);
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+
+  .back-arrow {
+    font-size: 24px;
+    line-height: 1;
+    margin-top: -2px;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .back-btn:hover {
+      background: rgba(255, 255, 255, 0.11);
+    }
+  }
+
+  .back-btn:active {
+    transform: scale(0.97);
   }
 
   .menu-layer {

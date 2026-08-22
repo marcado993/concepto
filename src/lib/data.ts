@@ -96,6 +96,12 @@ export interface CategoryTheme {
 export interface Category {
   id: "lockers" | "events" | "resources" | "community" | "security" | "subscriptions";
   label: string;
+  /** Nombre corto para la barra inferior, donde cada botón tiene ~62px de
+      ancho en un celular de 375px. Solo se define donde `label` no cabe
+      entero — y siempre como una palabra real, nunca una abreviatura
+      cortada tipo "Emprend.", que obliga a adivinar (H2: hablar el idioma
+      del usuario). Si no está, se usa `label`. */
+  navLabel?: string;
   sublabel: string;
   prompt: string;
   icon: IconKind;
@@ -205,6 +211,7 @@ export const categories: Category[] = [
   {
     id: "community",
     label: "Emprendimientos",
+    navLabel: "Negocios",
     sublabel: "Politécnicos emprendedores",
     prompt: "Elige esto para descubrir emprendimientos de estudiantes",
     icon: "community",
@@ -219,6 +226,7 @@ export const categories: Category[] = [
   {
     id: "subscriptions",
     label: "Aportaciones",
+    navLabel: "Aportar",
     sublabel: "Bronce · Platino · Pantera",
     prompt: "Elige esto para apoyar a AEIS y ver tus beneficios",
     icon: "subscriptions",
