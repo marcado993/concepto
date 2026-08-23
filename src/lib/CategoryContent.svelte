@@ -236,12 +236,32 @@
   const zones = $derived(
     [...new Set((lockersCategory?.lockers ?? []).map((u) => u.zone))].sort()
   );
+
+  // Buscador por número — con 108 casilleros, alguien que ya sabe que
+  // quiere "B05" no debería tener que escanear la grilla entero a ojo
+  // (hallazgo real de auditoría de usabilidad: solo existía el filtro por
+  // zona, sin forma de ir directo a un número). Coincidencia parcial
+  // ("05" encuentra "B05") — no exige el prefijo de zona de memoria.
+  let numberQuery = $state("");
   const visibleLockers = $derived(
-    zoneFilter ? sortedLockers.filter((u) => u.zone === zoneFilter) : sortedLockers
+    (zoneFilter ? sortedLockers.filter((u) => u.zone === zoneFilter) : sortedLockers).filter(
+      (u) => !numberQuery.trim() || u.number.toLowerCase().includes(numberQuery.trim().toLowerCase())
+    )
   );
   // Visibilidad del estado del sistema: sin esto no había forma de saber
   // "¿queda algo libre?" sin escanear la grilla entera a ojo.
   const availableCount = $derived(visibleLockers.filter((u) => u.status === "available").length);
+
+  // Dónde termina el grupo "disponible / tuyo" (prioridad 0) y empieza el
+  // de "ocupado / reservado" (prioridad 1) dentro de la lista YA ordenada
+  // — hallazgo real de auditoría de usabilidad: el orden salta los
+  // números tomados (A01 → A05 → A08...) sin explicar por qué, y eso se
+  // lee como un error de numeración, no como una regla a propósito. Con
+  // el índice del corte, el markup inserta un rótulo justo ahí (ver más
+  // abajo) — mismo principio que la leyenda: nombrar la regla en vez de
+  // dejar que se adivine. -1 si no hay ningún casillero tomado en la vista
+  // actual (no hace falta rótulo si todo es del mismo grupo).
+  const firstTakenIndex = $derived(visibleLockers.findIndex((u) => unitPriority(u) === 1));
 
   // Precio del casillero para mostrarlo ANTES de entrar al flujo (H10):
   // el backend ya resuelve el descuento de aportante, acá no se calcula
@@ -447,6 +467,27 @@
           </p>
         {/if}
 
+        <!-- Buscador por número — con 108 casilleros, quien ya sabe que
+             quiere "B05" no debería tener que escanearlos todos a ojo.
+             role="search" + label visualmente oculto: el placeholder ya
+             comunica el propósito a la vista, pero un lector de pantalla
+             necesita su propio nombre accesible. -->
+        <div class="locker-search" role="search">
+          <label for="locker-search-input" class="sr-only">Buscar casillero por número</label>
+          <svg class="locker-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+          <input
+            id="locker-search-input"
+            class="locker-search-input"
+            type="search"
+            inputmode="text"
+            placeholder="Buscar por número (ej. B05)"
+            bind:value={numberQuery}
+          />
+        </div>
+
         {#if zones.length > 1}
           <div class="zone-bar">
             <div class="zone-chips" role="group" aria-label="Filtrar por zona">
@@ -492,9 +533,16 @@
 
         <!-- H6 (reconocer en vez de recordar): antes había que deducir qué
              significaba cada color e ícono de la grilla. Ahora está dicho. -->
+        <!-- Ocupado y Reservado ya se ven distintos en la grilla misma
+             (pastilla sólida vs. borde punteado) — hallazgo real de
+             auditoría: la leyenda los mezclaba en una sola línea aunque el
+             propio diseño ya los diferenciaba, así que nadie sabía que
+             "reservado" es un estado aparte (pago iniciado, esperando
+             confirmación) hasta toparse con uno. -->
         <ul class="locker-legend" aria-label="Qué significa cada estado">
           <li><span class="legend-dot legend-free" aria-hidden="true"></span>Libre — puedes alquilarlo</li>
-          <li><span class="legend-dot legend-taken" aria-hidden="true"></span>Ocupado o reservado</li>
+          <li><span class="legend-dot legend-taken" aria-hidden="true"></span>Ocupado</li>
+          <li><span class="legend-dot legend-reserved" aria-hidden="true"></span>Reservado — pago en trámite</li>
           {#if myRentedLocker}
             <li><span class="legend-dot legend-mine" aria-hidden="true"></span>Es tuyo</li>
           {/if}
@@ -522,6 +570,13 @@
           {#each visibleLockers as unit, i (unit.id)}
             {@const isMineRented = myRentedLocker?.lockerCode === unit.number}
             {@const clickable = unit.status === "available" || isMineRented}
+            {#if i === firstTakenIndex && firstTakenIndex > 0}
+              <!-- Explica el salto de numeración en vez de dejar que se
+                   lea como un bug — hallazgo real de auditoría: sin este
+                   rótulo, pasar de "A01" a "A05" sin más parecía un error,
+                   no una regla a propósito (libres primero). -->
+              <p class="grid-divider" role="separator">Ocupados y reservados</p>
+            {/if}
             <button
               class="unit"
               class:dim={unit.status !== "available" && !isMineRented}
@@ -571,7 +626,13 @@
               <IsoIcon unit status={unit.status} size={64} />
               <span class="unit-number">{unit.number}</span>
               <span class="unit-status status-{unit.status}" class:status-mine={isMineRented}>
-                {isMineRented ? "Es tuyo — toca para ver" : statusLabel[unit.status]}
+                {#if isMineRented}
+                  Es tuyo — toca para ver
+                {:else if unit.status === "available"}
+                  Toca para alquilar
+                {:else}
+                  {statusLabel[unit.status]}
+                {/if}
               </span>
             </button>
           {/each}
@@ -807,6 +868,71 @@
     overflow-y: auto;
   }
 
+  /* Visualmente oculto, pero presente para lectores de pantalla — patrón
+     estándar; el placeholder ya comunica el propósito a la vista. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* ---------- Casilleros: buscador por número ---------- */
+  .locker-search {
+    position: relative;
+    margin: 0 22px 10px;
+  }
+  .locker-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    color: rgba(238, 244, 251, 0.45);
+    pointer-events: none;
+  }
+  .locker-search-input {
+    width: 100%;
+    padding: 10px 12px 10px 34px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #eef4fb;
+    font-size: 13px;
+  }
+  .locker-search-input::placeholder {
+    color: rgba(238, 244, 251, 0.4);
+  }
+  .locker-search-input:focus {
+    outline: none;
+    border-color: var(--sheet-accent);
+  }
+  /* Safari/iOS agrega su propio botón de limpiar en type="search" con un
+     tamaño distinto al resto del input — se deja el nativo (gratis, ya
+     accesible) en vez de reinventar uno con JS. */
+  .locker-search-input::-webkit-search-cancel-button {
+    filter: invert(0.7);
+  }
+
+  /* Explica el salto de numeración (libres primero) en vez de dejar que
+     se lea como un bug — spans las 3 columnas del grid. */
+  .grid-divider {
+    grid-column: 1 / -1;
+    margin: 4px 0 -2px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: rgba(238, 244, 251, 0.45);
+  }
+
   /* ---------- Casilleros: filtro por zona ---------- */
   .zone-bar {
     padding: 2px 0 10px;
@@ -912,6 +1038,13 @@
   }
   .legend-taken {
     background: rgba(255, 255, 255, 0.22);
+  }
+  /* Mismo tratamiento con borde punteado que .status-reserved en la
+     grilla — la muestra tiene que verse como lo que representa, no solo
+     un color más de la lista. */
+  .legend-reserved {
+    background: transparent;
+    border: 1.5px dashed rgba(255, 255, 255, 0.4);
   }
   .legend-mine {
     background: var(--sheet-accent);
