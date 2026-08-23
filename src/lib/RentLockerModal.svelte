@@ -9,6 +9,7 @@
   import { loadPayphoneSdk } from "./payphoneSdk";
   import { isAuthenticated } from "./auth.svelte";
   import Login from "./Login.svelte";
+  import PayphoneLogo from "./PayphoneLogo.svelte";
   import { scale } from "svelte/transition";
 
   interface Props {
@@ -226,7 +227,9 @@
         />
 
         <div class="price-row">
-          <span class="price-label">Pago con PayPhone</span>
+          <span class="price-label">
+            Pago con <PayphoneLogo height={13} />
+          </span>
           <span class="price-amount">{PRICE}</span>
         </div>
         {#if pricePreviewError}
@@ -261,6 +264,9 @@
           un momento.
         </p>
       {:else}
+        <div class="payphone-brand">
+          <PayphoneLogo height={20} />
+        </div>
         <p class="modal-copy">
           Vas a pagar {PRICE} con PayPhone por el casillero {lockerCode}. Se abrirá el formulario
           seguro de PayPhone — al terminar, vuelves aquí y confirmamos el pago automáticamente.
@@ -504,9 +510,30 @@
     font-size: 13px;
     margin-bottom: 16px;
   }
+  .price-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .price-label :global(svg) {
+    color: #eef4fb;
+    opacity: 0.9;
+  }
   .price-amount {
     font-weight: 700;
     color: var(--accent, #21e0a0);
+  }
+
+  /* Logo real de PayPhone antes de abrir su widget — confirma de un
+     vistazo con QUIÉN se está por pagar, antes de que aparezca el
+     formulario blanco aislado por PCI (ver comentario de .payphone-widget
+     más abajo). */
+  .payphone-brand {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 10px;
+    color: #eef4fb;
+    opacity: 0.92;
   }
 
   .cta {
