@@ -75,10 +75,59 @@ export class EmailLoginError extends Error {}
 // seguía sin llegar en producción real: varios navegadores (Safari con
 // ITP, Chrome apagando cookies de terceros) bloquean cookies entre sitios
 // distintos sin importar SameSite. Mismo patrón que el access_token final
-// (que tampoco es una cookie). Se guarda en memoria del módulo — no en
-// localStorage — porque no necesita sobrevivir un refresco de página; si
-// el usuario recarga a medio código, pedir uno nuevo es aceptable.
-let pendingEmailToken: string | null = null;
+// (que tampoco es una cookie).
+//
+// Bug real reportado en producción: "sigo con problemas con el correo".
+// Reproducido a mano — pedir el código, esperar el tiempo real que toma
+// revisar el correo (aunque sea solo un minuto), y confirmar terminaba en
+// "Sesión de verificación expirada o inválida" con un código recién
+// llegado y sin vencer. Causa raíz: esto vivía en una variable de módulo
+// (`let`) en memoria pura — CUALQUIER motivo que descarte el contexto de
+// JS de la pestaña (el caso real y común: un celular con poca RAM
+// descarga pestañas en segundo plano cuando el estudiante cambia a su
+// app de correo a buscar el código, exactamente el flujo que este login
+// pide) la pierde en silencio. Confirmado a mano que ADEMÁS el paso
+// "code" de Login.svelte tampoco sobrevive por su cuenta (es $state local
+// del componente, se resetea a "email" en cuanto la pestaña recarga) —
+// por eso Login.svelte también restaura `step`/`email` leyendo el token
+// pendiente al montar (ver getPendingEmailFromToken más abajo), no solo
+// este archivo. sessionStorage sí sobrevive esa recarga dentro de la
+// MISMA pestaña — a diferencia de localStorage, igual se limpia sola al
+// cerrar la pestaña/app del todo, que es lo correcto para un estado que
+// solo debe vivir mientras dura un login en curso.
+const PENDING_EMAIL_KEY = "aeis_pending_email_token";
+
+function readPendingEmailToken(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  return sessionStorage.getItem(PENDING_EMAIL_KEY);
+}
+
+function writePendingEmailToken(value: string | null) {
+  if (typeof sessionStorage === "undefined") return;
+  if (value) sessionStorage.setItem(PENDING_EMAIL_KEY, value);
+  else sessionStorage.removeItem(PENDING_EMAIL_KEY);
+}
+
+/** El pendingToken es firmado, NO cifrado (ver el comentario grande en
+ *  backend/src/shared/auth/email-pending-token.service.ts: "el cliente
+ *  puede LEER este blob, pero no puede alterarlo sin invalidar la
+ *  firma") — así que el correo ya viaja legible en su payload, sin
+ *  necesitar guardarlo en una clave de sessionStorage aparte. Login.svelte
+ *  usa esto al montar para saber si debe volver a mostrar el paso "code"
+ *  en vez de "email" tras una recarga a medio login. */
+export function getPendingEmailFromToken(): string | null {
+  const t = readPendingEmailToken();
+  if (!t) return null;
+  try {
+    const [json] = t.split(".");
+    const base64 = json.replace(/-/g, "+").replace(/_/g, "/");
+    const envelope = JSON.parse(atob(base64));
+    if (typeof envelope.exp === "number" && Date.now() > envelope.exp) return null;
+    return envelope.payload?.email ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function startEmailLogin(email: string): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/auth/email/start`, {
@@ -91,7 +140,7 @@ export async function startEmailLogin(email: string): Promise<void> {
   if (!res.ok) {
     throw new EmailLoginError(body.message ?? "No se pudo enviar el código — intenta de nuevo");
   }
-  pendingEmailToken = body.pendingToken ?? null;
+  writePendingEmailToken(body.pendingToken ?? null);
 }
 
 export interface EmailVerifyResult {
@@ -102,6 +151,7 @@ export interface EmailVerifyResult {
 }
 
 export async function verifyEmailLogin(code: string): Promise<EmailVerifyResult> {
+  const pendingEmailToken = readPendingEmailToken();
   if (!pendingEmailToken) {
     throw new EmailLoginError("Sesión de verificación expirada o inválida — solicita un nuevo código");
   }
@@ -117,7 +167,7 @@ export async function verifyEmailLogin(code: string): Promise<EmailVerifyResult>
     // El backend reinició la interacción como registro (primera vez con
     // este correo) y mandó un código nuevo — el pendingToken viejo ya no
     // sirve, hay que reemplazarlo por el que vino en esta respuesta.
-    pendingEmailToken = body.pendingToken ?? null;
+    writePendingEmailToken(body.pendingToken ?? null);
     return { needsNewCode: true };
   }
   if (!res.ok) {
@@ -127,7 +177,7 @@ export async function verifyEmailLogin(code: string): Promise<EmailVerifyResult>
     throw new EmailLoginError("Logto no devolvió una sesión válida — intenta de nuevo");
   }
 
-  pendingEmailToken = null;
+  writePendingEmailToken(null);
   token = body.accessToken;
   localStorage.setItem(STORAGE_KEY, body.accessToken);
   return { needsNewCode: false };

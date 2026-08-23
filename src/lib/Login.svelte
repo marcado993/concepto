@@ -13,7 +13,7 @@
   // Logto nunca se llega a mostrar (ver auth.svelte.ts).
   import Background from "./Background.svelte";
   import TypeText from "./TypeText.svelte";
-  import { loginSocial, startEmailLogin, verifyEmailLogin, EmailLoginError } from "./auth.svelte";
+  import { loginSocial, startEmailLogin, verifyEmailLogin, getPendingEmailFromToken, EmailLoginError } from "./auth.svelte";
 
   interface Props {
     onclose: () => void;
@@ -22,17 +22,28 @@
   }
   let { onclose, showBack = true, errorMessage = null }: Props = $props();
 
+  // Bug real reportado en producción: pedir el código, tardarse en volver
+  // a la app (revisar el correo toma un rato real) y encontrar "Sesión de
+  // verificación expirada o inválida" con un código recién llegado. Causa
+  // raíz: `step` es $state LOCAL de este componente — una recarga de la
+  // pestaña (celular con poca RAM descartando pestañas en segundo plano,
+  // el caso real más común mientras se revisa el correo) lo resetea a
+  // "email" sin avisar, aunque el pendingToken siga vigente en
+  // sessionStorage (ver auth.svelte.ts). Arrancar ya en "code" cuando
+  // existe un token pendiente sin vencer evita el reinicio invisible.
+  const restoredEmail = getPendingEmailFromToken();
+
   // Ya no se exige dominio @epn.edu.ec (decisión de DGIP, 2026-08-19) —
   // cualquier correo válido sirve para registrarse/entrar, ver el
   // comentario de isValidEmail en backend/src/shared/auth/auth.controller.ts.
-  let email = $state("");
+  let email = $state(restoredEmail ?? "");
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const isValidEmailInput = $derived(EMAIL_RE.test(email.trim()));
 
   // El paso de código nunca sale a la pantalla de Logto — se queda acá
   // mismo (ver startEmailLogin/verifyEmailLogin en auth.svelte.ts, que
   // hablan con la Experience API de Logto por dentro, vía el backend).
-  let step = $state<"email" | "code">("email");
+  let step = $state<"email" | "code">(restoredEmail ? "code" : "email");
   let otpCode = $state("");
   let sending = $state(false);
   let localError = $state<string | null>(null);
