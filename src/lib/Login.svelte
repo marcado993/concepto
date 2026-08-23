@@ -7,12 +7,13 @@
   // (backend/src/shared/auth/logto-oidc.client.ts) — solo deja de ser lo
   // primero que el estudiante ve.
   //
-  // "Continuar con GitHub" pasa ?connector=github a /auth/login, que el
-  // backend traduce a direct_sign_in=social:github — salta el selector de
-  // Logto y va directo a la pantalla real de GitHub para autorizar la app.
+  // "Continuar con GitHub"/"Continuar con Google" llaman a
+  // /auth/social/start, que habla con la Experience API de Logto por
+  // dentro y redirige derecho al proveedor real — la pantalla hospedada de
+  // Logto nunca se llega a mostrar (ver auth.svelte.ts).
   import Background from "./Background.svelte";
   import TypeText from "./TypeText.svelte";
-  import { login, startEmailLogin, verifyEmailLogin, EmailLoginError } from "./auth.svelte";
+  import { loginSocial, startEmailLogin, verifyEmailLogin, EmailLoginError } from "./auth.svelte";
 
   interface Props {
     onclose: () => void;
@@ -82,13 +83,13 @@
   function continueWithGithub() {
     if (oauthRedirecting) return;
     oauthRedirecting = true;
-    login("github");
+    loginSocial("github");
   }
 
   function continueWithGoogle() {
     if (oauthRedirecting) return;
     oauthRedirecting = true;
-    login("google");
+    loginSocial("google");
   }
 
   async function continueWithEmail() {

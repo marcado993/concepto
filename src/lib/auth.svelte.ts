@@ -48,21 +48,15 @@ export function getAccessToken(): string | null {
   return token;
 }
 
-/** connector opcional (ej. "github") — ver Login.svelte, que es quien
- *  realmente decide el conector según qué botón tocó el estudiante. Sin
- *  connector, el backend deja que Logto muestre su propio selector.
- *
- *  loginHint opcional — el correo que el estudiante ya escribió en
- *  NUESTRO formulario, para no hacer que lo vuelva a escribir
- *  en la pantalla de Logto. Precarga el campo, no salta el paso (el
- *  código de verificación lo sigue mostrando/pidiendo Logto — no hay
- *  forma de recibir/validar ese código sin su propia pantalla). */
-export function login(connector?: string, loginHint?: string) {
-  const params = new URLSearchParams();
-  if (connector) params.set("connector", connector);
-  if (loginHint) params.set("email", loginHint);
-  const qs = params.toString();
-  window.location.href = `${API_BASE_URL}/auth/login${qs ? `?${qs}` : ""}`;
+/** "Continuar con GitHub"/"Continuar con Google" de Login.svelte — a
+ *  diferencia del correo (que se queda en esta pantalla de principio a
+ *  fin), acá el navegador SÍ sale hacia GitHub/Google: inherente a
+ *  cualquier OAuth social, no algo que se pueda evitar. Lo que sí se evita
+ *  es la pantalla hospedada de Logto en el camino — /auth/social/start
+ *  habla con la Experience API de Logto server-side y redirige derecho al
+ *  proveedor real (ver backend/src/shared/auth/auth.controller.ts). */
+export function loginSocial(connector: "github" | "google") {
+  window.location.href = `${API_BASE_URL}/auth/social/start?connector=${connector}`;
 }
 
 // Login por correo — a diferencia de login("github") (que
