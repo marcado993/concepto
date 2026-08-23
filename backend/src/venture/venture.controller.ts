@@ -14,6 +14,12 @@ export class VentureController {
   // Directorio público — sin PII, sin autenticación (coincide con
   // security.controller.ts: no hay motivo de negocio para exigir login
   // solo para ver la vitrina).
+  //
+  // Techo mucho más alto que el global — se pide en paralelo apenas la app
+  // abre, así que el límite global por sí solo castigaba a varios
+  // estudiantes reales compartiendo la misma IP de WiFi del campus (ver
+  // rate-limit.module.ts).
+  @Throttle({ short: { limit: 50, ttl: 1000 }, medium: { limit: 3000, ttl: 60_000 } })
   @Public()
   @Get()
   list() {

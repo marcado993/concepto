@@ -20,6 +20,14 @@ export class LockerController {
   // Público — mismo criterio que security/ y ventures/: ver disponibilidad
   // de casilleros no expone nada sensible, no hay motivo de negocio para
   // exigir login solo para mirar el mapa de casilleros.
+  //
+  // Techo mucho más alto que el global (5/seg, 100/min) a propósito —
+  // hallazgo real de una prueba de carga: abrir la app sin sesión dispara
+  // 5 GET en paralelo, así que el límite global por sí solo bastaba para
+  // que un SEGUNDO estudiante en la misma IP de WiFi del campus (NAT) ya
+  // se quedara afuera. Esta ruta es una lectura barata (SELECT indexado)
+  // — ver rate-limit.module.ts para el razonamiento completo.
+  @Throttle({ short: { limit: 50, ttl: 1000 }, medium: { limit: 3000, ttl: 60_000 } })
   @Public()
   @Get()
   list() {
