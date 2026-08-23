@@ -575,7 +575,12 @@
              hardcodeado. -->
         {#if lockerPrice}
           <p class="locker-price-note">
-            Alquiler del periodo: <strong>${lockerPrice.price.PAYPHONE.toFixed(2)}</strong>
+            <!-- "Alquiler del periodo" no decía de cuánto tiempo se habla —
+                 un monto sin unidad no se puede evaluar. El semestre sale
+                 del backend (mismo dato con el que se asigna el alquiler),
+                 nunca escrito a mano acá. -->
+            {lockerPrice.period ? `Alquiler del semestre ${lockerPrice.period.label}` : "Alquiler del semestre"}:
+            <strong>${lockerPrice.price.PAYPHONE.toFixed(2)}</strong>
             {#if lockerPrice.discountPercent > 0}
               <span class="price-discount">
                 −{lockerPrice.discountPercent}% por tu aportación {lockerPrice.tierName}
@@ -776,6 +781,7 @@
     lockerCode={rentingLockerCode}
     onclose={() => (rentingLockerCode = null)}
     onrented={() => onlockerrented?.()}
+    ontaken={() => onlockerrented?.()}
   />
 {/if}
 
@@ -1468,9 +1474,22 @@
     border-radius: 999px;
   }
 
+  /* "Toca para alquilar" es la llamada a la acción de toda la pantalla,
+     pero se perdía entre las hasta 108 tarjetas: el CONTRASTE de color ya
+     era altísimo (10.4:1, tinta oscura sobre el acento — medido, no a
+     ojo), lo que fallaba era el TAMAÑO. A 10px en mayúsculas y con mucho
+     espaciado entre letras se leía diminuto en pantalla de escritorio,
+     así que no se notaba que era una invitación a tocar. Sube de peso y
+     tamaño, y baja el espaciado, solo en el estado disponible — ocupado y
+     reservado siguen discretos a propósito: no hay nada que hacer ahí. */
   .status-available {
     color: #0a1a12;
     background: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 3px 10px;
+    box-shadow: 0 0 12px var(--sheet-glow);
   }
 
   .status-occupied {

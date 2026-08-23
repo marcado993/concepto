@@ -16,9 +16,15 @@
     lockerCode: string;
     onclose: () => void;
     onrented?: () => void;
+    /** Otro estudiante ganó la carrera por este casillero (409 del
+     *  backend). El padre debe recargar la grilla: sin esto el error se
+     *  mostraba acá pero la grilla de atrás seguía pintando el casillero
+     *  como libre, invitando a reintentar exactamente lo que acaba de
+     *  fallar. */
+    ontaken?: () => void;
   }
 
-  let { lockerCode, onclose, onrented }: Props = $props();
+  let { lockerCode, onclose, onrented, ontaken }: Props = $props();
 
   type Step = "identity" | "payphone" | "confirmed";
   let step = $state<Step>("identity");
@@ -69,6 +75,29 @@
   const PRICE = $derived(pricePreview ? `$${pricePreview.price.PAYPHONE.toFixed(2)}` : "…");
   const PRICE_CENTS = $derived(pricePreview ? Math.round(pricePreview.price.PAYPHONE * 100) : 0);
 
+  // El semestre que se firma sale del backend, nunca escrito a mano acá —
+  // hallazgo real de auditoría: este texto decía "hasta fin del semestre
+  // 2026-A" cuando el periodo activo en producción ya era 2026-B, o sea
+  // que el estudiante aceptaba (y quedaba archivado en AuditLog como
+  // prueba) un texto que nombraba el semestre equivocado.
+  //
+  // `?.period?.` con las DOS interrogaciones: durante los minutos entre el
+  // despliegue del frontend (Vercel, segundos) y el del backend (Actions →
+  // VPS, minutos) esta versión habla con un backend que todavía no manda
+  // `period`. Con una sola interrogación esto reventaría con "cannot read
+  // properties of undefined" justo en la pantalla de pago (ver el
+  // comentario de LockerPricePreview.period en api.ts).
+  const periodLabel = $derived(pricePreview?.period?.label ?? null);
+  const periodEnds = $derived(
+    pricePreview?.period
+      ? new Date(pricePreview.period.endsAt).toLocaleDateString("es-EC", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      : null
+  );
+
   // El alquiler queda creado (PENDING/RESERVED) de una vez — el cobro real
   // todavía no pasó, pasa en el widget del paso 2 (ver
   // backend/src/locker/locker.service.ts confirmPayphonePayment).
@@ -87,6 +116,13 @@
       step = "payphone";
     } catch (err) {
       errorMessage = err instanceof ApiError ? err.message : "No se pudo iniciar el alquiler";
+      // 409 = alguien más lo tomó entre que se pintó la grilla y este
+      // toque (LockerUnavailableError en el backend, garantizado por la
+      // restricción @@unique([lockerId, periodId]), no por el chequeo
+      // optimista de status). Refrescar la grilla ES parte del mensaje de
+      // error: si no, el estudiante cierra el modal, ve el mismo casillero
+      // todavía en verde, y vuelve a intentar lo único que no puede salir.
+      if (err instanceof ApiError && err.status === 409) ontaken?.();
     } finally {
       busy = false;
     }
@@ -229,6 +265,11 @@
         <div class="price-row">
           <span class="price-label">
             Pago con <PayphoneLogo height={13} />
+            {#if periodLabel}
+              <!-- Un monto sin unidad de tiempo no se puede evaluar: "$6.50"
+                   a secas no dice si es por mes, por semestre o por día. -->
+              <span class="price-period">semestre {periodLabel}</span>
+            {/if}
           </span>
           <span class="price-amount">{PRICE}</span>
         </div>
@@ -239,7 +280,11 @@
         <label class="terms-row">
           <input type="checkbox" bind:checked={acceptedTerms} />
           <span>
-            Acepto usar el casillero hasta fin del semestre 2026-A y cuidarlo.
+            {#if periodLabel && periodEnds}
+              Acepto usar el casillero durante el semestre {periodLabel} (hasta el {periodEnds}) y cuidarlo.
+            {:else}
+              Acepto usar el casillero durante el semestre vigente y cuidarlo.
+            {/if}
             <em>Esto queda firmado digitalmente con tu identidad, fecha y hora.</em>
           </span>
         </label>
@@ -464,19 +509,79 @@
     border-color: #ff8a8a;
   }
 
+  /* El checkbox nativo se veía gris y plano en Windows/Chrome —
+     `accent-color` solo tiñe la palomita, no da ningún contraste real
+     entre "aceptado" y "sin aceptar", que es justo la distinción que más
+     importa acá: es la casilla que hace de firma del contrato. Ahora la
+     fila entera cambia de estado, no solo un cuadrito de 13px. */
   .terms-row {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
+    gap: 10px;
     font-size: 12px;
     line-height: 1.4;
     color: rgba(238, 244, 251, 0.75);
     margin: 4px 0 16px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease,
+      color 0.15s ease;
   }
+  .terms-row:has(input:checked) {
+    border-color: var(--accent, #21e0a0);
+    background: color-mix(in srgb, var(--accent, #21e0a0) 10%, transparent);
+    color: #eef4fb;
+  }
+
   .terms-row input {
-    margin-top: 2px;
-    accent-color: var(--accent, #21e0a0);
+    appearance: none;
+    -webkit-appearance: none;
+    flex-shrink: 0;
+    /* 20px, no los ~13px del nativo: es el control que confirma un cobro
+       real, y a 13px es tanto difícil de acertar con el dedo como difícil
+       de leer si quedó marcado o no. */
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    border-radius: 6px;
+    border: 2px solid rgba(238, 244, 251, 0.45);
+    background: rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+    display: grid;
+    place-content: center;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+  /* Palomita dibujada con clip-path (no un carácter de texto): así el
+     check queda del color del FONDO OSCURO sobre el relleno de acento —
+     el contraste más alto posible, en vez de un tilde claro sobre claro. */
+  .terms-row input::before {
+    content: "";
+    width: 11px;
+    height: 11px;
+    transform: scale(0);
+    transition: transform 0.12s cubic-bezier(0.3, 1.4, 0.6, 1);
+    background: #04150d;
+    clip-path: polygon(14% 46%, 0 60%, 39% 100%, 100% 22%, 85% 8%, 39% 71%);
+  }
+  .terms-row input:checked {
+    background: var(--accent, #21e0a0);
+    border-color: var(--accent, #21e0a0);
+  }
+  .terms-row input:checked::before {
+    transform: scale(1);
+  }
+  /* Foco visible para quien navega con teclado — el outline por defecto
+     desaparece al quitar la apariencia nativa. */
+  .terms-row input:focus-visible {
+    outline: 2px solid var(--accent, #21e0a0);
+    outline-offset: 2px;
   }
   .terms-row em {
     display: block;
@@ -513,7 +618,12 @@
   .price-label {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
+  }
+  .price-period {
+    color: rgba(238, 244, 251, 0.6);
+    font-size: 11.5px;
   }
   .price-label :global(svg) {
     color: #eef4fb;

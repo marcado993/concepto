@@ -55,9 +55,16 @@ test.describe('AEIS App — casilleros (directorio real + modal de alquiler)', (
     const units = page.locator('.unit');
     await expect(units).toHaveCount(108, { timeout: 5_000 });
 
-    // Códigos reales sembrados por prisma/seed.ts (zona + 2 dígitos, "A01"),
-    // no los "A1".."A9" que generaba el mock viejo de data.ts.
-    await expect(page.locator('.unit-number').first()).toHaveText('A01');
+    // Códigos reales sembrados por prisma/seed.ts: zona + DOS dígitos
+    // ("A01"), no los "A1".."A9" que generaba el mock viejo de data.ts.
+    //
+    // Se comprueba el FORMATO, ya no que el primero sea literalmente
+    // "A01": desde que la grilla ordena los libres primero (mejora de
+    // usabilidad — lo accionable arriba), cuál cae en primer lugar
+    // depende de qué esté ocupado en ese momento en producción. Fijar
+    // "A01" hacía que este test fallara el día que A01 se alquilara de
+    // verdad, sin que nada estuviera roto.
+    await expect(page.locator('.unit-number').first()).toHaveText(/^[A-Z]\d{2}$/);
   });
 
   test('click en un casillero disponible abre el modal de alquiler', async ({ page }) => {

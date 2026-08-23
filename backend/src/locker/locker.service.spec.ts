@@ -8,12 +8,31 @@ import { PayphoneClient } from "../shared/payment/payphone.client";
 import { PeriodService } from "../shared/period/period.service";
 import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
 
+// El periodo activo real, no solo su id: el texto de términos que el
+// estudiante firma y la etiqueta con que se archiva esa aceptación salen
+// de acá (ver PeriodService.getCurrentPeriod — antes el semestre estaba
+// escrito a mano en el modal y nombraba uno que ya no era el vigente).
+const TEST_PERIOD = {
+  id: "period-1",
+  label: "2026-B",
+  startsAt: new Date("2026-09-01T00:00:00Z"),
+  endsAt: new Date("2027-02-28T00:00:00Z"),
+};
+
+function makePeriodMock() {
+  return {
+    getCurrentPeriodId: jest.fn().mockResolvedValue(TEST_PERIOD.id),
+    getCurrentPeriod: jest.fn().mockResolvedValue(TEST_PERIOD),
+  };
+}
+
 describe("LockerService.rent", () => {
   let service: LockerService;
   let prisma: any;
   let audit: { record: jest.Mock };
   let payphone: { confirm: jest.Mock; getPublicConfig: jest.Mock };
   let subscriptionBenefits: { getLockerDiscountPercent: jest.Mock; getLockerDiscountInfo: jest.Mock };
+  let period: ReturnType<typeof makePeriodMock>;
 
   const locker = { id: "locker-1", code: "A07", zone: "A", status: "AVAILABLE" };
   const params = {
@@ -44,6 +63,7 @@ describe("LockerService.rent", () => {
       getLockerDiscountPercent: jest.fn().mockResolvedValue(0),
       getLockerDiscountInfo: jest.fn().mockResolvedValue({ discountPercent: 0, tierName: null }),
     };
+    period = makePeriodMock();
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -51,7 +71,7 @@ describe("LockerService.rent", () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: payphone },
-        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
+        { provide: PeriodService, useValue: period },
         { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
       ],
     }).compile();
@@ -139,7 +159,27 @@ describe("LockerService.rent", () => {
 
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: expect.objectContaining({ termsAccepted: true, termsVersion: "2026-A-v1" }),
+        metadata: expect.objectContaining({ termsAccepted: true, termsVersion: "2026-B-v1" }),
+      }),
+      prisma.__tx
+    );
+  });
+
+  // Hallazgo real de auditoría: termsVersion era la constante escrita a
+  // mano "2026-A-v1" mientras el periodo activo en producción ya era
+  // 2026-B — o sea que cada aceptación se archivaba con la etiqueta del
+  // semestre equivocado, y el modal le mostraba al estudiante ese mismo
+  // semestre incorrecto. Este test fija que la etiqueta SIGA al periodo
+  // real: si vuelve a quedar fija, falla acá y no seis meses después en
+  // un AuditLog que ya no se puede corregir.
+  it("Dado que cambia el periodo activo, Cuando se alquila, Entonces la versión de términos archivada sigue al periodo real — nunca una constante fija", async () => {
+    period.getCurrentPeriod.mockResolvedValue({ ...TEST_PERIOD, label: "2027-A" });
+
+    await service.rent(params);
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ termsVersion: "2027-A-v1" }),
       }),
       prisma.__tx
     );
@@ -173,7 +213,7 @@ describe("LockerService.getPricePreview", () => {
         { provide: PrismaService, useValue: {} },
         { provide: AuditService, useValue: {} },
         { provide: PayphoneClient, useValue: {} },
-        { provide: PeriodService, useValue: {} },
+        { provide: PeriodService, useValue: makePeriodMock() },
         { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
       ],
     }).compile();
@@ -194,6 +234,7 @@ describe("LockerService.getPricePreview", () => {
       discountPercent: 10,
       tierName: "Platino",
       price: { PAYPHONE: 5.85 }, // 6.5*0.9
+      period: { label: "2026-B", endsAt: TEST_PERIOD.endsAt.toISOString() },
     });
   });
 
@@ -207,6 +248,7 @@ describe("LockerService.getPricePreview", () => {
       discountPercent: 0,
       tierName: null,
       price: { PAYPHONE: 6.5 },
+      period: { label: "2026-B", endsAt: TEST_PERIOD.endsAt.toISOString() },
     });
   });
 });
@@ -245,7 +287,7 @@ describe("LockerService.confirmPayphonePayment", () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: payphone },
-        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
+        { provide: PeriodService, useValue: makePeriodMock() },
         {
           provide: SubscriptionBenefitsService,
           useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
@@ -407,7 +449,7 @@ describe("LockerService.releaseExpiredTransferReservations (limpieza de datos le
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
-        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
+        { provide: PeriodService, useValue: makePeriodMock() },
         {
           provide: SubscriptionBenefitsService,
           useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
@@ -474,11 +516,11 @@ describe("LockerService.releaseExpiredTransferReservations (limpieza de datos le
 describe("LockerService.getMyRentedLocker", () => {
   let service: LockerService;
   let prisma: any;
-  let period: { getCurrentPeriodId: jest.Mock };
+  let period: ReturnType<typeof makePeriodMock>;
 
   beforeEach(async () => {
     prisma = { lockerRental: { findFirst: jest.fn() } };
-    period = { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") };
+    period = makePeriodMock();
 
     const moduleRef = await Test.createTestingModule({
       providers: [

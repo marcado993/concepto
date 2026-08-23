@@ -207,6 +207,19 @@ export interface LockerPricePreview {
   discountPercent: number;
   tierName: string | null;
   price: { PAYPHONE: number };
+  /** El semestre al que va el alquiler — viene del backend, NUNCA se
+   *  escribe a mano en la UI: es el mismo dato con el que se asigna el
+   *  alquiler y con el que se archiva la aceptación de términos (ver
+   *  PeriodService.getCurrentPeriod). Antes el modal lo tenía hardcodeado
+   *  y nombraba un semestre que ya no era el vigente.
+   *
+   *  Opcional a propósito: el frontend (Vercel) se despliega en segundos y
+   *  el backend (GitHub Actions → VPS) tarda minutos, así que SIEMPRE hay
+   *  una ventana real en la que esta versión del frontend habla con un
+   *  backend que todavía no manda este campo. Marcarlo opcional obliga a
+   *  cubrir ese caso en la UI en vez de reventar con "cannot read
+   *  properties of undefined" justo en la pantalla de precio. */
+  period?: { label: string; endsAt: string };
 }
 
 export function fetchLockerPricePreview(): Promise<LockerPricePreview> {

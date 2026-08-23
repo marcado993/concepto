@@ -6,14 +6,14 @@ import { test, expect } from '@playwright/test';
 // tenía ninguna guardia — un doble toque disparaba window.location.href
 // DOS VECES, cortando la primera navegación e iniciando otra, que es
 // justo lo que se ve como "la carga dos veces". Se interceptan las
-// peticiones a /auth/login para poder contar cuántas veces se disparó la
+// peticiones a /auth/social/start para poder contar cuántas veces se disparó la
 // navegación sin dejar que realmente salga del sitio (Playwright no puede
 // seguir un window.location.href real hacia un dominio externo en un
 // test).
 
 test('un doble clic en "Continuar con GitHub" dispara la navegación una sola vez', async ({ page }) => {
   const hits: string[] = [];
-  await page.route('**/auth/login**', (route) => {
+  await page.route('**/auth/social/start**', (route) => {
     hits.push(new URL(route.request().url()).search);
     // No cumple la redirección real — solo cuenta cuántas veces llegó.
     return route.fulfill({ status: 204 });
@@ -38,7 +38,7 @@ test('un doble clic en "Continuar con GitHub" dispara la navegación una sola ve
 
 test('un doble clic en "Continuar con Google" también dispara la navegación una sola vez', async ({ page }) => {
   const hits: string[] = [];
-  await page.route('**/auth/login**', (route) => {
+  await page.route('**/auth/social/start**', (route) => {
     hits.push(new URL(route.request().url()).search);
     return route.fulfill({ status: 204 });
   });
@@ -56,7 +56,7 @@ test('un doble clic en "Continuar con Google" también dispara la navegación un
 });
 
 test('mientras GitHub está "conectando", el botón de Google también queda bloqueado (y viceversa)', async ({ page }) => {
-  await page.route('**/auth/login**', (route) => route.fulfill({ status: 204 }));
+  await page.route('**/auth/social/start**', (route) => route.fulfill({ status: 204 }));
   await page.goto('/');
 
   const githubBtn = page.locator('button.provider-btn.github');
