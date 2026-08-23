@@ -5,7 +5,6 @@ import { LockerService, LockerUnavailableError } from "./locker.service";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
-import { OcrService } from "../shared/ocr/ocr.service";
 import { PeriodService } from "../shared/period/period.service";
 import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
 
@@ -14,14 +13,12 @@ describe("LockerService.rent", () => {
   let prisma: any;
   let audit: { record: jest.Mock };
   let payphone: { confirm: jest.Mock; getPublicConfig: jest.Mock };
-  let ocr: { extractText: jest.Mock };
   let subscriptionBenefits: { getLockerDiscountPercent: jest.Mock; getLockerDiscountInfo: jest.Mock };
 
   const locker = { id: "locker-1", code: "A07", zone: "A", status: "AVAILABLE" };
   const params = {
     userId: "user-1",
     lockerCode: "A07",
-    method: "TRANSFER" as const,
     cedula: "1723456789",
     phone: "0991234567",
     acceptedTerms: true,
@@ -43,7 +40,6 @@ describe("LockerService.rent", () => {
     };
     audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
     payphone = { confirm: jest.fn(), getPublicConfig: jest.fn() };
-    ocr = { extractText: jest.fn().mockResolvedValue("") };
     subscriptionBenefits = {
       getLockerDiscountPercent: jest.fn().mockResolvedValue(0),
       getLockerDiscountInfo: jest.fn().mockResolvedValue({ discountPercent: 0, tierName: null }),
@@ -55,7 +51,6 @@ describe("LockerService.rent", () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: payphone },
-        { provide: OcrService, useValue: ocr },
         { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
         { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
       ],
@@ -70,23 +65,12 @@ describe("LockerService.rent", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("Dado un pago por transferencia, Cuando se alquila, Entonces el pago queda PENDING y el casillero RESERVED (no RENTED hasta que el OCR confirme)", async () => {
+  it("Dado un casillero disponible, Cuando se alquila, Entonces el pago queda PENDING y el casillero RESERVED — la Cajita de Pagos real cobra en el navegador, no aquí (ver confirmPayphonePayment)", async () => {
     await service.rent(params);
-
-    expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "PENDING" }) })
-    );
-    expect(prisma.__tx.locker.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "RESERVED" } })
-    );
-  });
-
-  it("Dado un pago por PayPhone, Cuando se alquila, Entonces el pago queda PENDING y el casillero RESERVED — la Cajita de Pagos real cobra en el navegador, no aquí (ver confirmPayphonePayment)", async () => {
-    await service.rent({ ...params, method: "PAYPHONE" });
 
     expect(payphone.confirm).not.toHaveBeenCalled();
     expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "PENDING" }) })
+      expect.objectContaining({ data: expect.objectContaining({ method: "PAYPHONE", status: "PENDING" }) })
     );
     expect(prisma.__tx.locker.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: "RESERVED" } })
@@ -121,13 +105,13 @@ describe("LockerService.rent", () => {
   // Subscription, solo confía en lo que le devuelve
   // SubscriptionBenefitsService (mockeado aquí, probado de verdad en
   // subscription-benefits.service.spec.ts).
-  it("Dado un estudiante con 20% de descuento en casilleros (tier de Aportaciones), Cuando alquila por transferencia, Entonces el precio ya viene descontado", async () => {
+  it("Dado un estudiante con 20% de descuento en casilleros (tier de Aportaciones), Cuando alquila, Entonces el precio ya viene descontado", async () => {
     subscriptionBenefits.getLockerDiscountPercent.mockResolvedValue(20);
 
     await service.rent(params);
 
     expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ amount: 5.2 }) }) // 6.50 × 0.8
+      expect.objectContaining({ data: expect.objectContaining({ amount: 5.2 }) }) // 6.50×0.8
     );
   });
 
@@ -189,7 +173,6 @@ describe("LockerService.getPricePreview", () => {
         { provide: PrismaService, useValue: {} },
         { provide: AuditService, useValue: {} },
         { provide: PayphoneClient, useValue: {} },
-        { provide: OcrService, useValue: {} },
         { provide: PeriodService, useValue: {} },
         { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
       ],
@@ -201,7 +184,7 @@ describe("LockerService.getPricePreview", () => {
   // tienes?" del formulario en papel — el frontend llama a este preview
   // ANTES de mostrar el precio, y el descuento ya viene resuelto solo con
   // la sesión del estudiante, sin que declare nada.
-  it("Dado un aportante Plan Platino (10% de descuento), Cuando pide el preview de precio, Entonces devuelve el nombre del tier y el precio ya descontado en los dos métodos", async () => {
+  it("Dado un aportante Plan Platino (10% de descuento), Cuando pide el preview de precio, Entonces devuelve el nombre del tier y el precio ya descontado", async () => {
     subscriptionBenefits.getLockerDiscountInfo.mockResolvedValue({ discountPercent: 10, tierName: "Platino" });
 
     const preview = await service.getPricePreview("user-1");
@@ -210,7 +193,7 @@ describe("LockerService.getPricePreview", () => {
       basePrice: 6.5,
       discountPercent: 10,
       tierName: "Platino",
-      price: { TRANSFER: 5.85, PAYPHONE: 6.25 }, // 6.5*0.9=5.85; +0.40 de recargo PayPhone
+      price: { PAYPHONE: 5.85 }, // 6.5*0.9
     });
   });
 
@@ -223,131 +206,8 @@ describe("LockerService.getPricePreview", () => {
       basePrice: 6.5,
       discountPercent: 0,
       tierName: null,
-      price: { TRANSFER: 6.5, PAYPHONE: 6.9 },
+      price: { PAYPHONE: 6.5 },
     });
-  });
-});
-
-describe("LockerService.confirmReceipt", () => {
-  let service: LockerService;
-  let prisma: any;
-  let audit: { record: jest.Mock };
-  let ocr: { extractText: jest.Mock };
-
-  const pendingRental = {
-    id: "rental-1",
-    userId: "user-1",
-    lockerId: "locker-1",
-    paymentId: "payment-1",
-    payment: { id: "payment-1", method: "TRANSFER", status: "PENDING", amount: 6.5 },
-    locker: { id: "locker-1", code: "A07" },
-  };
-
-  beforeEach(async () => {
-    const tx = {
-      payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
-      locker: { update: jest.fn().mockResolvedValue({ id: "locker-1", status: "RENTED" }) },
-    };
-    prisma = {
-      lockerRental: { findUnique: jest.fn().mockResolvedValue(pendingRental) },
-      $transaction: jest.fn((cb: any) => cb(tx)),
-      __tx: tx,
-    };
-    audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
-    ocr = { extractText: jest.fn() };
-
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        LockerService,
-        { provide: PrismaService, useValue: prisma },
-        { provide: AuditService, useValue: audit },
-        { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
-        { provide: OcrService, useValue: ocr },
-        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
-        {
-          provide: SubscriptionBenefitsService,
-          useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
-        },
-      ],
-    }).compile();
-    service = moduleRef.get(LockerService);
-  });
-
-  it("Dado un alquiler que no existe, Cuando se confirma el comprobante, Entonces lanza NotFoundException", async () => {
-    prisma.lockerRental.findUnique.mockResolvedValue(null);
-
-    await expect(service.confirmReceipt("rental-x", "user-1", Buffer.from(""))).rejects.toBeInstanceOf(
-      NotFoundException
-    );
-  });
-
-  it("Dado un alquiler de otro estudiante, Cuando se confirma el comprobante, Entonces lanza ForbiddenException", async () => {
-    await expect(service.confirmReceipt("rental-1", "user-otro", Buffer.from(""))).rejects.toBeInstanceOf(
-      ForbiddenException
-    );
-  });
-
-  it("Dado que el OCR no encuentra el monto esperado en la imagen, Cuando se confirma, Entonces rechaza sin tocar el pago ni el casillero, y audita el rechazo", async () => {
-    ocr.extractText.mockResolvedValue("comprobante ilegible");
-
-    await expect(service.confirmReceipt("rental-1", "user-1", Buffer.from("img"))).rejects.toBeInstanceOf(
-      BadRequestException
-    );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "locker.receipt.rejected", entityId: "rental-1" })
-    );
-  });
-
-  it("Dado que el OCR encuentra el monto esperado, Cuando se confirma, Entonces el pago pasa a CONFIRMED y el casillero a RENTED dentro de la misma transacción", async () => {
-    ocr.extractText.mockResolvedValue("Transferencia exitosa por $6.50");
-
-    await service.confirmReceipt("rental-1", "user-1", Buffer.from("img"));
-
-    expect(prisma.__tx.payment.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "payment-1", status: "PENDING" },
-        data: expect.objectContaining({ status: "CONFIRMED" }),
-      })
-    );
-    expect(prisma.__tx.locker.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "RENTED" } })
-    );
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "locker.receipt.confirmed", entityId: "rental-1" }),
-      prisma.__tx
-    );
-  });
-
-  it("Dado un alquiler ya confirmado, Cuando se intenta confirmar de nuevo, Entonces lanza BadRequestException", async () => {
-    prisma.lockerRental.findUnique.mockResolvedValue({
-      ...pendingRental,
-      payment: { ...pendingRental.payment, status: "CONFIRMED" },
-    });
-
-    await expect(service.confirmReceipt("rental-1", "user-1", Buffer.from("img"))).rejects.toBeInstanceOf(
-      BadRequestException
-    );
-  });
-
-  // CONCURRENCIA — el chequeo `payment.status !== "PENDING"` de arriba lee
-  // ANTES de la transacción, así que dos peticiones para el MISMO
-  // comprobante (doble click, reintento de red) pueden pasar ambas ese
-  // chequeo antes de que cualquiera escriba. Este test simula justo esa
-  // ventana: el mock representa "otra petición ya ganó la carrera y puso
-  // status=CONFIRMED entre el findUnique() de esta petición y su propio
-  // updateMany()" — el WHERE status:"PENDING" de la transacción real
-  // (no simulable con un mock de Prisma, que no tiene estado) es lo que
-  // hace esto imposible en producción; aquí se prueba que el servicio SÍ
-  // reacciona correctamente cuando ese WHERE no encuentra fila que tocar.
-  it("Dado que otra petición ya confirmó el mismo comprobante justo antes de esta transacción (condición de carrera), Cuando updateMany no encuentra ninguna fila PENDING que tocar, Entonces lanza ConflictException y NUNCA toca el casillero", async () => {
-    ocr.extractText.mockResolvedValue("Transferencia exitosa por $6.50");
-    prisma.__tx.payment.updateMany.mockResolvedValue({ count: 0 });
-
-    await expect(service.confirmReceipt("rental-1", "user-1", Buffer.from("img"))).rejects.toBeInstanceOf(
-      ConflictException
-    );
-    expect(prisma.__tx.locker.update).not.toHaveBeenCalled();
   });
 });
 
@@ -362,7 +222,7 @@ describe("LockerService.confirmPayphonePayment", () => {
     userId: "user-1",
     lockerId: "locker-1",
     paymentId: "payment-1",
-    payment: { id: "payment-1", method: "PAYPHONE", status: "PENDING", amount: 6.9 },
+    payment: { id: "payment-1", method: "PAYPHONE", status: "PENDING", amount: 6.5 },
     locker: { id: "locker-1", code: "A07" },
   };
 
@@ -385,7 +245,6 @@ describe("LockerService.confirmPayphonePayment", () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: payphone },
-        { provide: OcrService, useValue: { extractText: jest.fn() } },
         { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
         {
           provide: SubscriptionBenefitsService,
@@ -415,7 +274,7 @@ describe("LockerService.confirmPayphonePayment", () => {
       approved: false,
       transactionId: 999,
       clientTransactionId: "rental-1",
-      amountCents: 690,
+      amountCents: 650,
       raw: {},
     });
 
@@ -433,7 +292,7 @@ describe("LockerService.confirmPayphonePayment", () => {
       approved: true,
       transactionId: 999,
       clientTransactionId: "rental-1",
-      amountCents: 100, // el rental espera 690 ($6.90)
+      amountCents: 100, // el rental espera 650 ($6.50)
       raw: {},
     });
 
@@ -453,7 +312,7 @@ describe("LockerService.confirmPayphonePayment", () => {
       approved: true,
       transactionId: 999,
       clientTransactionId: "rental-de-otro-alquiler",
-      amountCents: 690,
+      amountCents: 650,
       raw: {},
     });
 
@@ -468,7 +327,7 @@ describe("LockerService.confirmPayphonePayment", () => {
       approved: true,
       transactionId: 999,
       clientTransactionId: "rental-1",
-      amountCents: 690,
+      amountCents: 650,
       raw: {},
     });
 
@@ -490,16 +349,15 @@ describe("LockerService.confirmPayphonePayment", () => {
     );
   });
 
-  // CONCURRENCIA — mismo patrón que confirmReceipt(): simula que otra
-  // petición (ej. el usuario recargando la página de respuesta de
-  // PayPhone) ya confirmó este mismo pago entre el findUnique() y el
-  // updateMany() de esta petición.
+  // CONCURRENCIA — simula que otra petición (ej. el usuario recargando la
+  // página de respuesta de PayPhone) ya confirmó este mismo pago entre el
+  // findUnique() y el updateMany() de esta petición.
   it("Dado que otra petición ya confirmó el mismo pago justo antes (condición de carrera), Cuando updateMany no encuentra ninguna fila PENDING, Entonces lanza ConflictException y NUNCA toca el casillero", async () => {
     payphone.confirm.mockResolvedValue({
       approved: true,
       transactionId: 999,
       clientTransactionId: "rental-1",
-      amountCents: 690,
+      amountCents: 650,
       raw: {},
     });
     prisma.__tx.payment.updateMany.mockResolvedValue({ count: 0 });
@@ -511,7 +369,13 @@ describe("LockerService.confirmPayphonePayment", () => {
   });
 });
 
-describe("LockerService.releaseExpiredTransferReservations", () => {
+// Transferencia + comprobante por OCR se retiró como método de pago
+// (PayPhone es el único desde acá en adelante) — este job se queda SOLO
+// para drenar cualquier LockerRental RESERVED por transferencia que haya
+// quedado de ANTES del retiro (ver comentario en locker.service.ts). No se
+// pueden crear NUEVAS reservas por transferencia, así que este escenario
+// solo aplica a datos legacy.
+describe("LockerService.releaseExpiredTransferReservations (limpieza de datos legacy)", () => {
   let service: LockerService;
   let prisma: any;
   let audit: { record: jest.Mock };
@@ -543,7 +407,6 @@ describe("LockerService.releaseExpiredTransferReservations", () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
-        { provide: OcrService, useValue: { extractText: jest.fn() } },
         { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") } },
         {
           provide: SubscriptionBenefitsService,
@@ -554,7 +417,7 @@ describe("LockerService.releaseExpiredTransferReservations", () => {
     service = moduleRef.get(LockerService);
   });
 
-  it("Dado un alquiler RESERVED por transferencia sin comprobante hace más de 24h, Cuando corre el job, Entonces marca el pago REJECTED, borra el LockerRental (libera @@unique[lockerId,periodId]), pone el casillero AVAILABLE y audita locker.rental.expired", async () => {
+  it("Dado un alquiler RESERVED por transferencia sin comprobante hace más de 24h (dato legacy), Cuando corre el job, Entonces marca el pago REJECTED, borra el LockerRental (libera @@unique[lockerId,periodId]), pone el casillero AVAILABLE y audita locker.rental.expired", async () => {
     const released = await service.releaseExpiredTransferReservations();
 
     expect(prisma.lockerRental.findMany).toHaveBeenCalledWith(
@@ -594,10 +457,10 @@ describe("LockerService.releaseExpiredTransferReservations", () => {
     expect(released).toBe(0);
   });
 
-  // CONCURRENCIA — mismo patrón que confirmReceipt()/confirmPayphonePayment():
-  // el estudiante sube el comprobante justo en el instante en que el cron
-  // ya había leído esta reserva como "vencida" pero todavía no la liberó.
-  it("Dado que el estudiante confirma el pago justo antes de que el job libere esa reserva (condición de carrera), Cuando updateMany no encuentra ninguna fila PENDING, Entonces NO borra el alquiler ni toca el casillero", async () => {
+  // CONCURRENCIA — mismo patrón que confirmPayphonePayment(): el estudiante
+  // confirma el pago justo en el instante en que el cron ya había leído
+  // esta reserva legacy como "vencida" pero todavía no la liberó.
+  it("Dado que se confirma el pago justo antes de que el job libere esa reserva (condición de carrera), Cuando updateMany no encuentra ninguna fila PENDING, Entonces NO borra el alquiler ni toca el casillero", async () => {
     prisma.__tx.payment.updateMany.mockResolvedValue({ count: 0 });
 
     const released = await service.releaseExpiredTransferReservations();
@@ -605,53 +468,6 @@ describe("LockerService.releaseExpiredTransferReservations", () => {
     expect(prisma.__tx.lockerRental.delete).not.toHaveBeenCalled();
     expect(prisma.__tx.locker.update).not.toHaveBeenCalled();
     expect(released).toBe(0);
-  });
-});
-
-describe("LockerService.getMyPendingReceipt", () => {
-  let service: LockerService;
-  let prisma: any;
-
-  beforeEach(async () => {
-    prisma = { lockerRental: { findFirst: jest.fn() } };
-
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        LockerService,
-        { provide: PrismaService, useValue: prisma },
-        { provide: AuditService, useValue: { record: jest.fn() } },
-        { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
-        { provide: OcrService, useValue: { extractText: jest.fn() } },
-        { provide: PeriodService, useValue: { getCurrentPeriodId: jest.fn() } },
-        { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountInfo: jest.fn() } },
-      ],
-    }).compile();
-    service = moduleRef.get(LockerService);
-  });
-
-  it("Dado un estudiante con una reserva por transferencia sin comprobante todavía, Cuando pide su reserva pendiente, Entonces devuelve el rentalId y el código del casillero — SOLO filtrado por su propio userId (nunca por algo que mande el cliente)", async () => {
-    prisma.lockerRental.findFirst.mockResolvedValue({
-      id: "rental-1",
-      userId: "user-1",
-      locker: { code: "E08" },
-    });
-
-    const result = await service.getMyPendingReceipt("user-1");
-
-    expect(prisma.lockerRental.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { userId: "user-1", payment: { method: "TRANSFER", status: "PENDING" } },
-      })
-    );
-    expect(result).toEqual({ rentalId: "rental-1", lockerCode: "E08" });
-  });
-
-  it("Dado un estudiante sin ninguna reserva pendiente, Cuando pide su reserva pendiente, Entonces devuelve null (no puede tocar ningún casillero reservado ajeno)", async () => {
-    prisma.lockerRental.findFirst.mockResolvedValue(null);
-
-    const result = await service.getMyPendingReceipt("user-1");
-
-    expect(result).toBeNull();
   });
 });
 
@@ -670,7 +486,6 @@ describe("LockerService.getMyRentedLocker", () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: { record: jest.fn() } },
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
-        { provide: OcrService, useValue: { extractText: jest.fn() } },
         { provide: PeriodService, useValue: period },
         { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountInfo: jest.fn() } },
       ],

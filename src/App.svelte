@@ -15,7 +15,6 @@
     fetchSecurityIndicators,
     fetchVentures,
     fetchLockers,
-    fetchMyPendingReceipt,
     fetchMyRentedLocker,
     fetchSubscriptionTiers,
     confirmLockerPayphonePayment,
@@ -248,26 +247,6 @@
   }
   $effect(loadLockers);
 
-  // Reserva propia (por transferencia) esperando comprobante — null si no
-  // hay ninguna, o si el comprobante ya se confirmó. Deja que la grilla
-  // habilite tocar ESE casillero puntual (y solo ese) aunque esté RESERVED,
-  // para resubir la foto si el primer intento falló (red caída, foto
-  // ilegible). El backend ya filtra por sesión — acá solo se guarda lo que
-  // devuelve, nunca se asume nada del lado del cliente.
-  let myPendingReceipt = $state<{ rentalId: string; lockerCode: string } | null>(null);
-  function loadMyPendingReceipt() {
-    if (!isAuthenticated()) return;
-    fetchMyPendingReceipt()
-      .then((data) => (myPendingReceipt = data))
-      .catch(() => {
-        // Silencioso a propósito: esto solo habilita un atajo (resubir sin
-        // buscar el casillero en la grilla ya lo cubre igual, solo que
-        // aparecería como bloqueado) — no es un dato crítico para mostrar
-        // un error aparte.
-      });
-  }
-  $effect(loadMyPendingReceipt);
-
   // El casillero que el estudiante ya tiene confirmado este periodo, si
   // hay uno — pedido real: en vez de que busque el suyo entre hasta 108,
   // la grilla lo distingue y lo deja tocar para ver el estado.
@@ -277,17 +256,18 @@
     fetchMyRentedLocker()
       .then((data) => (myRentedLocker = data))
       .catch(() => {
-        // Silencioso a propósito, mismo criterio que loadMyPendingReceipt.
+        // Silencioso a propósito — no es un dato crítico para mostrar un
+        // error aparte, la grilla igual sigue funcionando sin distinguir
+        // "es tuyo".
       });
   }
   $effect(loadMyRentedLocker);
 
   // Tras un alquiler/confirmación exitosos, la grilla necesita refrescar
-  // disponibilidad + si sigue habiendo una reserva propia pendiente + si
-  // ya hay un casillero propio confirmado (el que se acaba de confirmar).
+  // disponibilidad + si ya hay un casillero propio confirmado (el que se
+  // acaba de confirmar).
   function onLockerRented() {
     loadLockers();
-    loadMyPendingReceipt();
     loadMyRentedLocker();
   }
 
@@ -476,7 +456,6 @@
                 {securityIndicatorsError}
                 {venturesError}
                 {lockersError}
-                {myPendingReceipt}
                 {myRentedLocker}
                 onlockerrented={onLockerRented}
                 {subscriptionTiersError}
@@ -545,7 +524,6 @@
                   {venturesError}
                   {lockersError}
                   lockersLoading={lockers === null && !lockersError}
-                  {myPendingReceipt}
                   {myRentedLocker}
                   onlockerrented={onLockerRented}
                   {subscriptionTiersError}
@@ -600,7 +578,6 @@
         {securityIndicatorsError}
         {venturesError}
         {lockersError}
-        {myPendingReceipt}
         {myRentedLocker}
         onlockerrented={onLockerRented}
         {subscriptionTiersError}

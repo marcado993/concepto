@@ -1,5 +1,4 @@
-import { IsIn, IsString } from "class-validator";
-import { PaymentMethod } from "../../locker/rental-calculator";
+import { IsIn } from "class-validator";
 
 // Nombres de tier confirmados por el sponsor
 // (docs/dominio/02-necesidades-stakeholders.md §2.2): Bronce, Platino,
@@ -13,7 +12,4 @@ export type SubscriptionTierName = (typeof SUBSCRIPTION_TIER_NAMES)[number];
 export class SubscribeDto {
   @IsIn(SUBSCRIPTION_TIER_NAMES)
   tierName!: SubscriptionTierName;
-
-  @IsIn(["TRANSFER", "PAYPHONE"] satisfies PaymentMethod[])
-  method!: PaymentMethod;
 }

@@ -1,12 +1,8 @@
 import { IsIn, IsString, Matches } from "class-validator";
-import { PaymentMethod } from "../rental-calculator";
 
 export class RentLockerDto {
   @IsString()
   lockerCode!: string;
-
-  @IsIn(["TRANSFER", "PAYPHONE"] satisfies PaymentMethod[])
-  method!: PaymentMethod;
 
   // Cédula ecuatoriana — 10 dígitos, sin guiones ni espacios (el frontend
   // los limpia antes de mandar). Se guarda en User (ver locker.service.ts)

@@ -1,22 +1,13 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { LockerRental } from "@prisma/client";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
-import { OcrService } from "../shared/ocr/ocr.service";
 import { PeriodService } from "../shared/period/period.service";
 import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
 import { executeMoneyMutation } from "../shared/payment/money-mutation.helper";
-import { calculateLockerPrice, PaymentMethod } from "./rental-calculator";
-import { receiptMentionsAmount } from "../shared/payment/receipt-validator";
+import { calculateLockerPrice } from "./rental-calculator";
 
 // Precio base semestral — configurable porque el sponsor puede fijarlo
 // entre $5.50 y $9.00 según utilidad objetivo (ver rental-calculator.ts).
@@ -38,18 +29,23 @@ export const LOCKER_TERMS_VERSION = "2026-A-v1";
 export interface RentLockerParams {
   userId: string;
   lockerCode: string;
-  method: PaymentMethod;
   cedula: string;
   phone: string;
   acceptedTerms: boolean;
   ipAddress?: string;
 }
 
-// Cuánto tiempo se le da al ganador de un casillero por TRANSFERENCIA para
-// subir el comprobante antes de que otro estudiante pueda tomarlo — pedido
-// real del cliente: "solo se reservan 1 día... si no sube evidencias se
-// libera". PayPhone no aplica: ahí no hay comprobante que subir, la
-// confirmación pasa por confirmPayphonePayment() contra la API real.
+// Transferencia + comprobante por OCR se retiró (PayPhone es el único
+// método de pago desde acá en adelante) — esta constante y el Cron job
+// de abajo se quedan SOLO para drenar reservas RESERVED por transferencia
+// que hayan quedado de ANTES de este cambio (dato real de producción:
+// había una reserva pendiente exacta el día del retiro). No se puede
+// borrar esa fila a mano sin perder la evidencia de auditoría — el mismo
+// camino ya probado (marcar el pago REJECTED, liberar el casillero,
+// dejar el registro en AuditLog) es más seguro que un DELETE manual.
+// Una vez confirmado que no queda ningún LockerRental con
+// payment.method="TRANSFER" y status="PENDING", este job y todo lo que
+// referencia TRANSFER en este archivo puede borrarse sin más.
 const TRANSFER_RECEIPT_GRACE_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
@@ -60,7 +56,6 @@ export class LockerService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly payphone: PayphoneClient,
-    private readonly ocr: OcrService,
     private readonly period: PeriodService,
     private readonly subscriptionBenefits: SubscriptionBenefitsService
   ) {}
@@ -72,30 +67,9 @@ export class LockerService {
     });
   }
 
-  // La lista pública (list(), arriba) es @Public() y nunca dice de QUIÉN es
-  // un casillero RESERVED — con buena razón, exponer eso a cualquiera
-  // filtraría quién está tramitando qué. Pero un estudiante cuyo comprobante
-  // falló (red caída, foto ilegible) necesita poder volver a su PROPIA
-  // reserva para resubir la foto sin quedar bloqueado — este método (detrás
-  // de @Roles(ESTUDIANTE), filtrado por userId real del JWT, nunca por algo
-  // que mande el cliente) es la única forma de saber "esto es mío" sin
-  // filtrar nada de nadie más.
-  async getMyPendingReceipt(userId: string) {
-    const rental = await this.prisma.lockerRental.findFirst({
-      where: { userId, payment: { method: "TRANSFER", status: "PENDING" } },
-      include: { locker: true },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!rental) return null;
-    return { rentalId: rental.id, lockerCode: rental.locker.code };
-  }
-
-  // Mismo criterio que getMyPendingReceipt (arriba) pero para el caso
-  // "ya tiene un casillero" — pedido real: en vez de obligar al estudiante
-  // a buscar el suyo entre hasta 108, la grilla lo distingue y deja tocarlo
-  // para ver su estado directamente. status:"CONFIRMED" (no PENDING) porque
-  // acá el pago YA se validó — a diferencia de la reserva pendiente, esto
-  // no depende del método de pago (TRANSFER o PAYPHONE, cualquiera vale).
+  // "¿Ya tengo un casillero confirmado este periodo?" — pedido real: en vez
+  // de obligar al estudiante a buscar el suyo entre hasta 108, la grilla lo
+  // distingue y lo deja tocar para ver su estado directamente.
   async getMyRentedLocker(userId: string) {
     // Filtrado por periodo actual — un casillero confirmado en un semestre
     // anterior no debe seguir apareciendo como "tu casillero" para siempre.
@@ -120,10 +94,7 @@ export class LockerService {
       basePrice: DEFAULT_LOCKER_BASE_PRICE,
       discountPercent,
       tierName,
-      price: {
-        TRANSFER: calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, "TRANSFER", discountPercent).amount,
-        PAYPHONE: calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, "PAYPHONE", discountPercent).amount,
-      },
+      price: { PAYPHONE: calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, discountPercent).amount },
     };
   }
 
@@ -146,7 +117,7 @@ export class LockerService {
     // no aporta o su tier no trae ese beneficio) — ver
     // subscription/subscription-benefits.service.ts.
     const discountPercent = await this.subscriptionBenefits.getLockerDiscountPercent(params.userId);
-    const price = calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, params.method, discountPercent);
+    const price = calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, discountPercent);
 
     // Cédula/celular se piden una sola vez — se guardan en User acá mismo
     // (no en un endpoint de perfil aparte) para no agregar un paso extra al
@@ -162,7 +133,7 @@ export class LockerService {
       {
         userId: params.userId,
         amount: price.amount,
-        method: params.method,
+        method: "PAYPHONE",
         ipAddress: params.ipAddress,
         auditAction: "locker.rental.created",
         auditEntityType: "LockerRental",
@@ -188,11 +159,11 @@ export class LockerService {
           const rental = await tx.lockerRental.create({
             data: { lockerId: locker.id, userId: params.userId, periodId, paymentId },
           });
-          // RESERVED para los dos métodos ahora — PAYPHONE ya no cobra de
-          // forma síncrona aquí (ver money-mutation.helper.ts), así que no
-          // hay forma de saber en este punto si el estudiante de verdad va
-          // a completar el pago en el widget. RENTED solo llega después,
-          // vía confirmPayphonePayment() o confirmReceipt().
+          // RESERVED, no RENTED de una vez — PAYPHONE no cobra de forma
+          // síncrona aquí (ver money-mutation.helper.ts), así que no hay
+          // forma de saber en este punto si el estudiante de verdad va a
+          // completar el pago en el widget. RENTED solo llega después, vía
+          // confirmPayphonePayment().
           await tx.locker.update({
             where: { id: locker.id },
             data: { status: "RESERVED" },
@@ -206,85 +177,6 @@ export class LockerService {
     );
   }
 
-  // Confirmación de comprobante de transferencia — el paso que faltaba
-  // para que un alquiler TRANSFER pase de RESERVED a RENTED (ver comentario
-  // en `rent()` y el escenario BDD en locker.service.spec.ts). El OCR es un
-  // filtro de primera línea, no una aprobación bancaria real — por eso
-  // igual queda todo en AuditLog.metadata (incluida la razón de un
-  // rechazo), para que sea revisable a mano si algo no calza.
-  async confirmReceipt(rentalId: string, userId: string, receiptImage: Buffer, ipAddress?: string) {
-    const rental = await this.prisma.lockerRental.findUnique({
-      where: { id: rentalId },
-      include: { payment: true, locker: true },
-    });
-    if (!rental) throw new NotFoundException("Alquiler no encontrado");
-    if (rental.userId !== userId) throw new ForbiddenException("Este alquiler no te pertenece");
-    if (rental.payment.method !== "TRANSFER") {
-      throw new BadRequestException("Este alquiler no requiere confirmación de comprobante");
-    }
-    if (rental.payment.status !== "PENDING") {
-      throw new BadRequestException("Este comprobante ya fue procesado");
-    }
-
-    const ocrText = await this.ocr.extractText(receiptImage);
-    const amount = Number(rental.payment.amount);
-    const valid = receiptMentionsAmount(ocrText, amount);
-
-    if (!valid) {
-      // ocrTextPreview: sin esto, un rechazo por "el OCR se cayó bajo
-      // presión" y uno por "el OCR leyó bien pero el comprobante de verdad
-      // no coincide" se veían idénticos en el AuditLog — hallazgo real
-      // (comprobante genuino rechazado durante un redeploy). Con el texto
-      // extraído ahí, un vistazo al log basta para saber cuál fue sin
-      // tener que volver a subir la imagen a mano para probarla.
-      await this.audit.record({
-        actorId: userId,
-        action: "locker.receipt.rejected",
-        entityType: "LockerRental",
-        entityId: rental.id,
-        ipAddress,
-        metadata: { reason: "monto_no_coincide", expectedAmount: amount, ocrTextPreview: ocrText.slice(0, 500) },
-      });
-      throw new BadRequestException(
-        "No pudimos confirmar el monto en el comprobante — verifica que la foto sea legible e intenta de nuevo"
-      );
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      // updateMany + where status:"PENDING", no update() simple — el chequeo
-      // de `rental.payment.status !== "PENDING"` de arriba NO es atómico con
-      // esta escritura (condición de carrera real: dos peticiones para el
-      // MISMO comprobante — doble click, o el navegador reintentando una
-      // petición que ya llegó — pueden pasar ambas ese chequeo antes de que
-      // cualquiera confirme). El WHERE status:"PENDING" aquí es lo que
-      // garantiza que como máximo una gana; la otra ve count=0 y se entera
-      // de que ya no hay nada que confirmar, en vez de confirmar dos veces.
-      const { count } = await tx.payment.updateMany({
-        where: { id: rental.paymentId, status: "PENDING" },
-        data: { status: "CONFIRMED", confirmedAt: new Date(), providerRef: `receipt-${rental.id}` },
-      });
-      if (count === 0) {
-        throw new ConflictException("Este comprobante ya fue procesado por otra petición");
-      }
-      const updatedLocker = await tx.locker.update({
-        where: { id: rental.lockerId },
-        data: { status: "RENTED" },
-      });
-      await this.audit.record(
-        {
-          actorId: userId,
-          action: "locker.receipt.confirmed",
-          entityType: "LockerRental",
-          entityId: rental.id,
-          ipAddress,
-          metadata: { amount },
-        },
-        tx
-      );
-      return { rental, locker: updatedLocker };
-    });
-  }
-
   // Config pública del widget de PayPhone (token + storeId) — se sirve
   // desde el backend, no se hardcodea en el bundle del frontend, para
   // poder rotar credenciales o cambiar de comercio sin un redeploy del
@@ -294,9 +186,8 @@ export class LockerService {
     return this.payphone.getPublicConfig();
   }
 
-  // Confirmación de pago con PayPhone (Cajita de Pagos) — el paso
-  // equivalente a confirmReceipt() pero para el otro método de pago. El
-  // widget corre en el navegador del estudiante; cuando termina, PayPhone
+  // Confirmación de pago con PayPhone (Cajita de Pagos) — el widget corre
+  // en el navegador del estudiante; cuando termina, PayPhone
   // redirige la página completa con ?id=&clientTransactionId= en la URL
   // (App.svelte los captura). clientTransactionId es el id de ESTE
   // LockerRental — lo usamos como tal desde que se creó en rent().
@@ -360,10 +251,9 @@ export class LockerService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // Mismo patrón atómico que confirmReceipt() — updateMany + WHERE
-      // status:"PENDING" en vez de update() simple, para que un doble
-      // callback de PayPhone (o el usuario recargando la página de
-      // respuesta) no pueda confirmar el mismo pago dos veces.
+      // updateMany + WHERE status:"PENDING" en vez de update() simple,
+      // para que un doble callback de PayPhone (o el usuario recargando la
+      // página de respuesta) no pueda confirmar el mismo pago dos veces.
       const { count } = await tx.payment.updateMany({
         where: { id: rental.paymentId, status: "PENDING" },
         data: {
@@ -414,8 +304,8 @@ export class LockerService {
     for (const rental of expired) {
       const freed = await this.prisma.$transaction(async (tx) => {
         // updateMany + WHERE status:"PENDING", no update() simple — mismo
-        // motivo que confirmReceipt()/confirmPayphonePayment(): si el
-        // estudiante sube el comprobante justo en este instante, esto evita
+        // motivo que confirmPayphonePayment(): si esta reserva legacy se
+        // confirmara por otra vía justo en este instante, esto evita
         // liberar un casillero que ya se confirmó por debajo.
         const { count } = await tx.payment.updateMany({
           where: { id: rental.paymentId, status: "PENDING" },

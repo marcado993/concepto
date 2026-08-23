@@ -103,6 +103,14 @@ Característica: Alquiler de casillero con pago dual
     Y la otra recibe un error explícito de "casillero ya no disponible", no un cobro fantasma
 ```
 
+> Nota (actualización posterior): el diseño de pago dual de arriba — transferencia +
+> comprobante por OCR a $6.50 vs. PayPhone a $6.90 — se retiró en la implementación real.
+> PayPhone es hoy el único método, sin recargo: $6.50 para todos (ver
+> `backend/src/locker/rental-calculator.ts` y `docs/dominio/12-concurrencia-y-testing.md`).
+> Los escenarios BDD de arriba se dejan tal cual como registro de la especificación
+> original (Spec-Driven: la especificación antecedió al código), no como comportamiento
+> vigente.
+
 ```gherkin
 Característica: Aportaciones con niveles
 
