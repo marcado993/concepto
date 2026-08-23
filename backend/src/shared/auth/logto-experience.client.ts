@@ -150,6 +150,65 @@ export class LogtoExperienceClient {
     return { cookie: r.cookie, redirectTo };
   }
 
+  // Login social embebido (GitHub/Google) — mismo principio que el correo:
+  // hablar con la Experience API en vez de mandar al navegador a la
+  // pantalla hospedada de Logto. La diferencia real con el correo es que
+  // acá SÍ hay una salida obligatoria del navegador (a github.com /
+  // accounts.google.com — inherente a cualquier OAuth social, Logto no
+  // puede evitarlo), pero nunca pasa por la UI de Logto en el camino.
+  //
+  // {connectorId} tiene que ser el ID INTERNO de Logto para el conector
+  // (ej. "ep6908ab5xm112n37jkf3"), no el nombre humano ("google") que sí
+  // acepta direct_sign_in en logto-oidc.client.ts — usar el nombre humano
+  // acá devuelve 404 entity.not_found (confirmado a mano contra el tenant
+  // real, agosto 2026). El ID real de cada conector se lee del propio
+  // Callback URI que Logto muestra en el detalle del conector, o del JSON
+  // público de GET /api/.well-known/sign-in-exp (campo socialConnectors).
+  async getSocialAuthorizationUri(
+    cookie: string,
+    connectorId: string,
+    state: string,
+    redirectUri: string
+  ): Promise<{ cookie: string; authorizationUri: string; verificationId: string }> {
+    const r = await this.call(cookie, `/api/experience/verification/social/${connectorId}/authorization-uri`, "POST", {
+      state,
+      redirectUri,
+    });
+    if (r.status !== 200) {
+      const body = r.json as { code?: string; message?: string } | undefined;
+      throw new ExperienceApiError(r.status, body?.code, body?.message ?? "No se pudo iniciar el login social");
+    }
+    const { authorizationUri, verificationId } = r.json as { authorizationUri: string; verificationId: string };
+    return { cookie: r.cookie, authorizationUri, verificationId };
+  }
+
+  // `code` es el código real que GitHub/Google le mandó de vuelta a
+  // nuestro propio `redirectUri` (nunca a Logto directamente) — Logto
+  // internamente hace el intercambio con el proveedor usando SU credencial
+  // de conector guardada, nosotros solo le pasamos el código.
+  //
+  // Contrato de `connectorData` confirmado a mano contra el tenant real
+  // (sin usar ninguna cuenta real): un `connectorData: {}` vacío dispara
+  // "Error occurred in connector" (el conector recibe el objeto pero le
+  // faltan campos), y `{code: "..."}` con un código inventado SÍ dispara
+  // una llamada real de Logto al token endpoint de GitHub (falla después,
+  // por invalid_grant, con un error de FORMA distinta — "connector's
+  // response is invalid" en vez de rechazar la entrada) — confirma que
+  // `code` es el campo correcto. `redirectUri` se manda también porque el
+  // intercambio de código de OAuth2 exige el MISMO redirect_uri usado al
+  // pedir la autorización.
+  async verifySocial(cookie: string, connectorId: string, verificationId: string, code: string, redirectUri: string): Promise<string> {
+    const r = await this.call(cookie, `/api/experience/verification/social/${connectorId}/verify`, "POST", {
+      verificationId,
+      connectorData: { code, redirectUri },
+    });
+    if (r.status !== 200 && r.status !== 204) {
+      const body = r.json as { code?: string; message?: string } | undefined;
+      throw new ExperienceApiError(r.status, body?.code, body?.message ?? "No se pudo verificar la identidad social");
+    }
+    return r.cookie;
+  }
+
   // Sigue la cadena de redirecciones tras /submit — puede pasar por
   // /consent (primera vez que este usuario autoriza la app; hay que
   // aceptarlo con un POST) antes de llegar al callback real de este

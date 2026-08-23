@@ -30,6 +30,8 @@ describe("AuthController", () => {
     submitIdentification: jest.Mock;
     submitInteraction: jest.Mock;
     completeAuthorization: jest.Mock;
+    getSocialAuthorizationUri: jest.Mock;
+    verifySocial: jest.Mock;
   };
   let prisma: { user: { upsert: jest.Mock; findUnique: jest.Mock } };
   let config: ConfigService;
@@ -48,6 +50,8 @@ describe("AuthController", () => {
       submitIdentification: jest.fn(),
       submitInteraction: jest.fn(),
       completeAuthorization: jest.fn(),
+      getSocialAuthorizationUri: jest.fn(),
+      verifySocial: jest.fn(),
     };
     prisma = {
       user: {
@@ -76,6 +80,12 @@ describe("AuthController", () => {
                 FRONTEND_ORIGIN: "https://aeis-app.vercel.app",
                 LOGTO_ISSUER: "https://tenant.logto.app/oidc",
                 COOKIE_SECRET: "test-secret",
+                SOCIAL_REDIRECT_URI: "https://api.aeis-app.online/auth/social/callback",
+              })[key],
+            get: (key: string) =>
+              ({
+                LOGTO_GITHUB_CONNECTOR_ID: "gh-connector-1",
+                LOGTO_GOOGLE_CONNECTOR_ID: "google-connector-1",
               })[key],
           },
         },
@@ -293,6 +303,196 @@ describe("AuthController", () => {
     await controller.callback("code-5", "state-1", "https://tenant.logto.app/oidc", req, res);
 
     expect(prisma.user.upsert).toHaveBeenCalled();
+  });
+
+  // Login social embebido (GitHub/Google vía Experience API) — reemplaza a
+  // /auth/login?connector=... para estos dos botones. Ver el comentario
+  // grande sobre SOCIAL_COOKIE en auth.controller.ts: a diferencia del
+  // correo, acá SÍ sirve una cookie porque ambos extremos son siempre una
+  // navegación completa del mismo dominio, nunca un fetch cross-site.
+  it("Dado ?connector=github, Cuando se llama /auth/social/start, Entonces arranca la interacción con Logto, guarda una cookie firmada con el estado pendiente, y redirige DIRECTO a la URL real de GitHub (nunca a Logto)", async () => {
+    const res = mockResponse();
+    logtoExperience.getSocialAuthorizationUri.mockResolvedValue({
+      cookie: "_interaction=with-social-uri",
+      authorizationUri: "https://github.com/login/oauth/authorize?client_id=real-client-id&state=xyz",
+      verificationId: "verif-social-1",
+    });
+
+    await controller.socialStart("github", res);
+
+    expect(logtoExperience.startInteraction).toHaveBeenCalled();
+    expect(logtoExperience.setInteractionEvent).toHaveBeenCalledWith("_interaction=cookie-1", "SignIn");
+    expect(logtoExperience.getSocialAuthorizationUri).toHaveBeenCalledWith(
+      "_interaction=cookie-2",
+      "gh-connector-1",
+      expect.any(String),
+      "https://api.aeis-app.online/auth/social/callback"
+    );
+    expect(res.cookie).toHaveBeenCalledWith(
+      "aeis_social_pending",
+      expect.stringContaining("gh-connector-1"),
+      expect.objectContaining({ httpOnly: true, signed: true, secure: true })
+    );
+    expect(res.redirect).toHaveBeenCalledWith(
+      "https://github.com/login/oauth/authorize?client_id=real-client-id&state=xyz"
+    );
+  });
+
+  it("Dado un connector desconocido o ausente, Cuando se llama /auth/social/start, Entonces redirige con auth_error=connector_invalido sin tocar Logto", async () => {
+    const res = mockResponse();
+
+    await controller.socialStart("facebook", res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=connector_invalido");
+    expect(logtoExperience.startInteraction).not.toHaveBeenCalled();
+  });
+
+  it("Dado que Logto sigue con credenciales placeholder, Cuando se llama /auth/social/start, Entonces redirige con auth_error=logto_not_configured en vez de un 500 crudo", async () => {
+    const res = mockResponse();
+    logto.authorizationUrl.mockImplementationOnce(() => {
+      throw new Error("Logto no está configurado o no respondió al arrancar el backend — revisa LOGTO_ISSUER");
+    });
+
+    await controller.socialStart("github", res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=logto_not_configured");
+  });
+
+  it("Dado que la Experience API rechaza el inicio del login social, Cuando se llama /auth/social/start, Entonces redirige con auth_error=social_login_failed sin exponer el detalle interno", async () => {
+    const res = mockResponse();
+    logtoExperience.getSocialAuthorizationUri.mockRejectedValue(
+      new ExperienceApiError(404, "entity.not_found", "The resource does not exist.")
+    );
+
+    await controller.socialStart("google", res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=social_login_failed");
+  });
+
+  function socialCookieReq(overrides: Partial<Record<string, unknown>> = {}) {
+    const pending = {
+      connectorId: "gh-connector-1",
+      redirectUri: "https://api.aeis-app.online/auth/social/callback",
+      interactionCookie: "_interaction=pending",
+      verificationId: "verif-social-1",
+      codeVerifier: "verifier-social-1",
+      logtoState: "logto-state-1",
+      oauthState: "oauth-state-1",
+      ...overrides,
+    };
+    return { signedCookies: { aeis_social_pending: JSON.stringify(pending) } } as any;
+  }
+
+  it("Dado un callback de GitHub válido (code+state coinciden con la cookie), Cuando se llama /auth/social/callback, Entonces verifica, completa la interacción de Logto, y redirige al frontend con el access_token en el FRAGMENTO", async () => {
+    const req = socialCookieReq();
+    const res = mockResponse();
+    logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
+    logtoExperience.submitIdentification.mockResolvedValue({ status: 204, cookie: "_interaction=identified" });
+    logtoExperience.submitInteraction.mockResolvedValue({
+      cookie: "_interaction=submitted",
+      redirectTo: "https://tenant.logto.app/callback",
+    });
+    logtoExperience.completeAuthorization.mockResolvedValue({ code: "auth-code-1", state: "logto-state-1", iss: undefined });
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-social-1",
+      claims: () => ({ sub: "github|social1", email: "estudiante@gmail.com", name: "Estudiante" }),
+    });
+
+    await controller.socialCallback("gh-code-1", "oauth-state-1", undefined, req, res);
+
+    expect(logtoExperience.verifySocial).toHaveBeenCalledWith(
+      "_interaction=pending",
+      "gh-connector-1",
+      "verif-social-1",
+      "gh-code-1",
+      "https://api.aeis-app.online/auth/social/callback"
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith("aeis_social_pending");
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/#access_token=at-social-1");
+  });
+
+  it("Dado que falta la cookie de estado pendiente (expiró o nunca se puso), Cuando se llama /auth/social/callback, Entonces redirige con auth_error=social_session_expired sin llamar a Logto", async () => {
+    const req = { signedCookies: {} } as any;
+    const res = mockResponse();
+
+    await controller.socialCallback("gh-code-1", "oauth-state-1", undefined, req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=social_session_expired");
+    expect(logtoExperience.verifySocial).not.toHaveBeenCalled();
+  });
+
+  it("Dado que el `state` que vuelve NO coincide con el guardado en la cookie (posible CSRF), Cuando se llama /auth/social/callback, Entonces rechaza con auth_error=social_login_cancelled sin llamar a verifySocial", async () => {
+    const req = socialCookieReq();
+    const res = mockResponse();
+
+    await controller.socialCallback("gh-code-1", "state-distinto-al-guardado", undefined, req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=social_login_cancelled");
+    expect(logtoExperience.verifySocial).not.toHaveBeenCalled();
+  });
+
+  it("Dado que GitHub/Google devuelve ?error= (el estudiante canceló el consentimiento), Cuando se llama /auth/social/callback, Entonces redirige con auth_error=social_login_cancelled sin llamar a Logto", async () => {
+    const req = socialCookieReq();
+    const res = mockResponse();
+
+    await controller.socialCallback(undefined, "oauth-state-1", "access_denied", req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=social_login_cancelled");
+    expect(logtoExperience.verifySocial).not.toHaveBeenCalled();
+  });
+
+  it("Dado un correo nuevo (primera vez con GitHub/Google), Cuando /auth/social/callback recibe user.user_not_exist, Entonces reintenta la MISMA verificación como registro — sin pedir un código nuevo, a diferencia del correo", async () => {
+    const req = socialCookieReq();
+    const res = mockResponse();
+    logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
+    logtoExperience.submitIdentification
+      .mockResolvedValueOnce({ status: 422, errorCode: "user.user_not_exist", cookie: "_interaction=identified" })
+      .mockResolvedValueOnce({ status: 204, cookie: "_interaction=registered" });
+    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=register-event");
+    logtoExperience.submitInteraction.mockResolvedValue({
+      cookie: "_interaction=submitted",
+      redirectTo: "https://tenant.logto.app/callback",
+    });
+    logtoExperience.completeAuthorization.mockResolvedValue({ code: "auth-code-2", state: "logto-state-1", iss: undefined });
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-social-2",
+      claims: () => ({ sub: "google|social2", email: "nuevo@gmail.com", name: "Estudiante Nuevo" }),
+    });
+
+    await controller.socialCallback("google-code-1", "oauth-state-1", undefined, req, res);
+
+    expect(logtoExperience.setInteractionEvent).toHaveBeenCalledWith("_interaction=identified", "Register");
+    expect(logtoExperience.submitIdentification).toHaveBeenCalledTimes(2);
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/#access_token=at-social-2");
+  });
+
+  it("Dado que la identificación sigue fallando incluso como registro, Cuando se llama /auth/social/callback, Entonces redirige con auth_error=social_login_failed en vez de colgarse o tirar un 500", async () => {
+    const req = socialCookieReq();
+    const res = mockResponse();
+    logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
+    logtoExperience.submitIdentification.mockResolvedValue({
+      status: 422,
+      errorCode: "user.user_not_exist",
+      cookie: "_interaction=identified",
+    });
+    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=register-event");
+
+    await controller.socialCallback("gh-code-1", "oauth-state-1", undefined, req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=social_login_failed");
+    expect(logtoExperience.submitInteraction).not.toHaveBeenCalled();
+  });
+
+  it("Dado que la Experience API rechaza verifySocial (ej. código ya usado o vencido), Cuando se llama /auth/social/callback, Entonces redirige con auth_error=social_login_failed sin exponer el detalle interno de Logto", async () => {
+    const req = socialCookieReq();
+    const res = mockResponse();
+    logtoExperience.verifySocial.mockRejectedValue(
+      new ExperienceApiError(400, "connector.general", "detalle interno del proveedor social")
+    );
+
+    await controller.socialCallback("gh-code-vencido", "oauth-state-1", undefined, req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=social_login_failed");
   });
 
   it("Dado un usuario autenticado, Cuando pide /auth/me, Entonces retorna nombre/código/rol/cédula/celular, nunca el logtoSub ni otros campos internos", async () => {
