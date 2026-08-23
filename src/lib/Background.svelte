@@ -18,8 +18,15 @@
   <div class="risk-tint" class:on={!!override}></div>
   <svg class="grid" width="100%" height="100%" preserveAspectRatio="none">
     <defs>
-      <pattern id="iso-grid" width="64" height="37" patternUnits="userSpaceOnUse" patternTransform="translate(0,0)">
-        <path d="M0 18.5 L32 0 L64 18.5 L32 37 Z" fill="none" stroke="currentColor" stroke-width="1" />
+      <!-- Retícula de cruces de registro (las marcas de un plano técnico),
+           no la malla de rombos isométricos que había antes: los rombos
+           llenaban la pantalla de diagonales que chocaban con una interfaz
+           que es toda rectangular, y a tamaño completo se leían como una
+           textura rara en vez de como estructura de fondo. La cruz va
+           CENTRADA en la baldosa (22,22 de 44×44) — puesta en la esquina
+           quedaría partida en cuatro por el mosaico. -->
+      <pattern id="tech-grid" width="44" height="44" patternUnits="userSpaceOnUse" patternTransform="translate(0,0)">
+        <path d="M22 17.5 V26.5 M17.5 22 H26.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
       </pattern>
       <!-- r=75% (antes) significa que CUALQUIER punto a más de 75% de
            distancia del centro se pinta con el último color-stop SÓLIDO —
@@ -38,7 +45,7 @@
         <stop offset="100%" stop-color="black" stop-opacity="0.5" />
       </radialGradient>
     </defs>
-    <rect width="100%" height="100%" fill="url(#iso-grid)" class="grid-lines" />
+    <rect width="100%" height="100%" fill="url(#tech-grid)" class="grid-lines" />
     <rect width="100%" height="100%" fill="url(#vignette)" />
   </svg>
 </div>
@@ -112,16 +119,23 @@
     animation: drift 40s linear infinite;
   }
   .grid-lines {
-    /* Kept faint — un tono de fondo plano y sencillo, esto es solo una
-       insinuación de estructura, no una textura que compita con nada. */
-    opacity: 0.12;
+    /* Sigue siendo una insinuación de estructura, no una textura que
+       compita con nada — pero sube de 0.12 a 0.22 porque las cruces son
+       trazos SUELTOS, no la malla continua de rombos que había antes: a
+       la opacidad vieja se perdían del todo y el fondo se veía liso, como
+       si el patrón se hubiera roto. */
+    opacity: 0.22;
   }
+  /* El desplazamiento TIENE que ser exactamente el alto de la baldosa
+     (44px, ver el <pattern> arriba): así al terminar el ciclo la retícula
+     queda calcada sobre sí misma y el bucle es invisible. Con cualquier
+     otro valor el reinicio se ve como un salto. */
   @keyframes drift {
     from {
       transform: translateY(0);
     }
     to {
-      transform: translateY(-37px);
+      transform: translateY(-44px);
     }
   }
 </style>
