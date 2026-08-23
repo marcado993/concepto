@@ -24,7 +24,17 @@ export class LockerUnavailableError extends ConflictException {
 // texto cambia de un semestre a otro, un AuditLog viejo con
 // termsVersion:"2026-A-v1" sigue siendo prueba de qué versión ACEPTÓ en su
 // momento, no de la que esté vigente hoy.
-export const LOCKER_TERMS_VERSION = "2026-A-v1";
+//
+// Se DERIVA del periodo real, ya no es una constante escrita a mano:
+// hallazgo de auditoría — la constante decía "2026-A-v1" mientras el
+// periodo activo en producción ya era 2026-B, así que cada aceptación se
+// archivaba con la etiqueta del semestre equivocado (y el modal, que
+// también lo tenía a mano, le mostraba al estudiante ese mismo semestre
+// incorrecto). El texto que se firma y la etiqueta con que se archiva
+// salen ahora del mismo dato que decide a qué periodo va el alquiler.
+export function lockerTermsVersion(periodLabel: string): string {
+  return `${periodLabel}-v1`;
+}
 
 export interface RentLockerParams {
   userId: string;
@@ -90,11 +100,19 @@ export class LockerService {
   // propia sesión — ver comentario en rent()).
   async getPricePreview(userId: string) {
     const { discountPercent, tierName } = await this.subscriptionBenefits.getLockerDiscountInfo(userId);
+    // El periodo viaja con el precio a propósito: "$6.50" sin decir por
+    // cuánto tiempo es un precio que no se puede evaluar, y el texto de
+    // términos que el estudiante firma tiene que nombrar el MISMO
+    // semestre al que el backend va a asignar el alquiler (ver
+    // PeriodService.getCurrentPeriod — antes el modal lo tenía escrito a
+    // mano y nombraba un semestre que ya no era el vigente).
+    const period = await this.period.getCurrentPeriod();
     return {
       basePrice: DEFAULT_LOCKER_BASE_PRICE,
       discountPercent,
       tierName,
       price: { PAYPHONE: calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, discountPercent).amount },
+      period: { label: period.label, endsAt: period.endsAt.toISOString() },
     };
   }
 
@@ -110,7 +128,8 @@ export class LockerService {
     const locker = await this.prisma.locker.findUnique({ where: { code: params.lockerCode } });
     if (!locker) throw new NotFoundException(`Casillero ${params.lockerCode} no existe`);
 
-    const periodId = await this.period.getCurrentPeriodId();
+    const period = await this.period.getCurrentPeriod();
+    const periodId = period.id;
     // Cruce de dominio real, no una lectura directa a la tabla de
     // Subscription: le preguntamos al dominio de Aportaciones "¿cuánto
     // descuento tiene este estudiante?" y confiamos en su respuesta (0 si
@@ -148,7 +167,7 @@ export class LockerService {
           lockerCode: params.lockerCode,
           discountPercent,
           termsAccepted: true,
-          termsVersion: LOCKER_TERMS_VERSION,
+          termsVersion: lockerTermsVersion(period.label),
         }),
         // La restricción @@unique([lockerId, periodId]) en el esquema es la
         // que de verdad impide la doble-reserva bajo concurrencia real —
