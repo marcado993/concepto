@@ -113,6 +113,53 @@
     return null;
   }
 
+  // Recursos: un ícono por tag en vez del punto de color plano que había
+  // antes — un vistazo ya dice qué tipo de recurso es cada tarjeta, sin
+  // tener que leer la etiqueta de texto primero. Inline (no un sprite
+  // <use href>, que este proyecto no usa en ningún otro lado) para
+  // seguir el mismo patrón que ya usa IsoIcon.svelte con SVG a mano.
+  // currentColor a propósito: toma el acento de CADA categoría
+  // (category.theme), no un color fijo.
+  interface RepoIcon {
+    paths: string[];
+    dots: [number, number][];
+  }
+  const RESOURCE_ICONS: Record<string, RepoIcon> = {
+    Hardware: {
+      paths: ["M6 6h8v8H6z", "M8 6V3.3M12 6V3.3M8 16.7V14M12 16.7V14M6 8H3.3M6 12H3.3M14 8h2.7M14 12h2.7"],
+      dots: [],
+    },
+    Infraestructura: {
+      paths: ["M3.5 3.3h13v4h-13z", "M3.5 8h13v4h-13z", "M3.5 12.7h13v4h-13z"],
+      dots: [
+        [6.1, 5.3],
+        [6.1, 10],
+        [6.1, 14.7],
+      ],
+    },
+    Electrónica: {
+      paths: ["M7.5 7.5h5v5h-5z", "M10 7.5V4.6M10 15.4v-2.9M7.5 10H4.6M15.4 10h-2.9"],
+      dots: [
+        [10, 3.6],
+        [10, 16.4],
+        [3.6, 10],
+        [16.4, 10],
+      ],
+    },
+    Material: {
+      paths: [
+        "M10 6c-1.3-1.1-3.4-1.6-5.6-1.6-.6 0-1.1.5-1.1 1.1v8.8c0 .6.5 1 1.1 1 2.2 0 4.3.5 5.6 1.6m0-10.9c1.3-1.1 3.4-1.6 5.6-1.6.6 0 1.1.5 1.1 1.1v8.8c0 .6-.5 1-1.1 1-2.2 0-4.3.5-5.6 1.6m0-10.9v10.9",
+      ],
+      dots: [],
+    },
+  };
+  // Cualquier tag que no esté en el mapa (dato futuro sin ícono asignado
+  // todavía) cae al de Material — mismo criterio de "vencido" seguro que
+  // ya usa statusLabel para un LockerStatus inesperado, en vez de romper.
+  function resourceIcon(tag: string): RepoIcon {
+    return RESOURCE_ICONS[tag] ?? RESOURCE_ICONS.Material;
+  }
+
   let mapReady = $state(false);
 
   // El resize del mapa al abrirse el sheet ya lo cubre el ResizeObserver
@@ -350,9 +397,15 @@
                metido más abajo dentro del marcado. -->
           {@const total = r.stat1 + r.stat2}
           {@const pct = total > 0 ? Math.round((r.stat1 / total) * 100) : 0}
+          {@const icon = resourceIcon(r.tag)}
           <div class="repo-card list-in" style="--li: {i}">
             <div class="repo-head">
-              <span class="repo-dot"></span>
+              <span class="repo-icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+                  {#each icon.paths as d}<path {d} />{/each}
+                  {#each icon.dots as [cx, cy]}<circle {cx} {cy} r="0.7" fill="currentColor" stroke="none" />{/each}
+                </svg>
+              </span>
               <h3 class="repo-name">{r.name}</h3>
             </div>
             <p class="repo-desc">{r.description}</p>
@@ -1525,21 +1578,46 @@
     border-radius: 16px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
+    transition:
+      border-color 0.15s ease,
+      transform 0.15s ease,
+      background 0.15s ease;
+  }
+  /* Gateado a (hover: hover) — mismo hallazgo que .tier-card/.unit: sin
+     esto el primer tap en móvil se "gasta" simulando el estado hover. */
+  @media (hover: hover) and (pointer: fine) {
+    .repo-card:hover {
+      border-color: var(--sheet-accent);
+      background: rgba(255, 255, 255, 0.07);
+      transform: translateY(-1px);
+    }
   }
 
   .repo-head {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
 
-  .repo-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--sheet-accent);
-    box-shadow: 0 0 8px var(--sheet-glow);
+  /* Reemplaza al punto de color plano que había antes — un ícono por tag
+     (Hardware/Infraestructura/Electrónica/Material, ver resourceIcon en
+     el script) dice de un vistazo qué tipo de recurso es cada tarjeta. */
+  .repo-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
     flex-shrink: 0;
+    border-radius: 9px;
+    background: linear-gradient(155deg, var(--sheet-glow), transparent 70%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--sheet-accent);
+  }
+
+  .repo-icon svg {
+    width: 17px;
+    height: 17px;
   }
 
   .repo-name {
@@ -1759,6 +1837,9 @@
       var(--sheet-accent),
       color-mix(in srgb, var(--sheet-accent) 55%, white)
     );
+    /* Brillo sutil en la punta — la barra ya no se lee como un adorno
+       plano, se lee como algo con energía real detrás. */
+    box-shadow: 0 0 10px var(--sheet-glow);
     /* Crece desde cero al entrar — el movimiento comunica "esto es una
        cantidad", no un adorno fijo. */
     transform-origin: left;
