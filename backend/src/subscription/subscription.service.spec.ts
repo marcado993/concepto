@@ -1,27 +1,19 @@
 import { Test } from "@nestjs/testing";
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { AlreadySubscribedError, SubscriptionService } from "./subscription.service";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
-import { OcrService } from "../shared/ocr/ocr.service";
 import { PeriodService } from "../shared/period/period.service";
 
-function buildService(overrides: {
-  prisma?: any;
-  audit?: any;
-  payphone?: any;
-  ocr?: any;
-  period?: any;
-}) {
+function buildService(overrides: { prisma?: any; audit?: any; payphone?: any; period?: any }) {
   return Test.createTestingModule({
     providers: [
       SubscriptionService,
       { provide: PrismaService, useValue: overrides.prisma ?? {} },
       { provide: AuditService, useValue: overrides.audit ?? { record: jest.fn().mockResolvedValue({}) } },
       { provide: PayphoneClient, useValue: overrides.payphone ?? { confirm: jest.fn(), getPublicConfig: jest.fn() } },
-      { provide: OcrService, useValue: overrides.ocr ?? { extractText: jest.fn() } },
       {
         provide: PeriodService,
         useValue: overrides.period ?? { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") },
@@ -41,7 +33,6 @@ describe("SubscriptionService.subscribe", () => {
   const params = {
     userId: "user-1",
     tierName: "Platino" as const,
-    method: "TRANSFER" as const,
   };
 
   beforeEach(async () => {
@@ -65,11 +56,11 @@ describe("SubscriptionService.subscribe", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("Dado un tier vigente, Cuando se aporta por transferencia, Entonces usa EXACTAMENTE el monto configurado del tier, no un valor fijo en código", async () => {
+  it("Dado un tier vigente, Cuando se aporta, Entonces usa EXACTAMENTE el monto configurado del tier, no un valor fijo en código, y el pago queda como PAYPHONE (único método)", async () => {
     await service.subscribe(params);
 
     expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ amount: 19.99, status: "PENDING" }) })
+      expect.objectContaining({ data: expect.objectContaining({ amount: 19.99, method: "PAYPHONE", status: "PENDING" }) })
     );
   });
 
@@ -116,7 +107,11 @@ describe("SubscriptionService.listTiers / getMine", () => {
     await expect(service.getMine("user-1")).resolves.toBeNull();
   });
 
-  it("Dado un estudiante con aportación PENDING, Cuando consulta la suya, Entonces expone el estado del pago para que el frontend retome la confirmación", async () => {
+  // "TRANSFER" acá es lectura de un dato HISTÓRICO — esta aportación se
+  // hubiera creado antes de que se retirara transferencia como método; el
+  // enum de la base de datos sigue reconociendo ese valor a propósito, para
+  // no perder el historial real (ver rental-calculator.ts y schema.prisma).
+  it("Dado un estudiante con aportación PENDING creada cuando transferencia todavía existía, Cuando consulta la suya, Entonces expone el estado y método históricos tal cual quedaron guardados", async () => {
     const prisma = {
       subscription: {
         findUnique: jest.fn().mockResolvedValue({
@@ -130,83 +125,6 @@ describe("SubscriptionService.listTiers / getMine", () => {
 
     await expect(service.getMine("user-1")).resolves.toEqual(
       expect.objectContaining({ tierName: "Bronce", paymentStatus: "PENDING", method: "TRANSFER" })
-    );
-  });
-});
-
-describe("SubscriptionService.confirmReceipt", () => {
-  const pendingSub = {
-    id: "sub-1",
-    userId: "user-1",
-    paymentId: "payment-1",
-    payment: { id: "payment-1", method: "TRANSFER", status: "PENDING", amount: 7.99 },
-  };
-
-  function build(prismaOverrides: any = {}, ocrOverrides: any = {}) {
-    const tx = { payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
-    const prisma = {
-      subscription: { findUnique: jest.fn().mockResolvedValue(pendingSub) },
-      $transaction: jest.fn((cb: any) => cb(tx)),
-      __tx: tx,
-      ...prismaOverrides,
-    };
-    const ocr = { extractText: jest.fn().mockResolvedValue("Transferencia exitosa por $7.99"), ...ocrOverrides };
-    const audit = { record: jest.fn().mockResolvedValue({}) };
-    return buildService({ prisma, ocr, audit }).then((service) => ({ service, prisma, audit }));
-  }
-
-  it("Dado una aportación que no existe, Cuando se confirma el comprobante, Entonces lanza NotFoundException", async () => {
-    const { service, prisma } = await build();
-    prisma.subscription.findUnique.mockResolvedValue(null);
-
-    await expect(service.confirmReceipt("sub-x", "user-1", Buffer.from(""))).rejects.toBeInstanceOf(
-      NotFoundException
-    );
-  });
-
-  it("Dado una aportación de otro estudiante, Cuando se confirma, Entonces lanza ForbiddenException", async () => {
-    const { service } = await build();
-
-    await expect(service.confirmReceipt("sub-1", "user-otro", Buffer.from(""))).rejects.toBeInstanceOf(
-      ForbiddenException
-    );
-  });
-
-  it("Dado que el OCR no encuentra el monto esperado, Cuando se confirma, Entonces rechaza y audita sin tocar el pago", async () => {
-    const { service, prisma, audit } = await build({}, { extractText: jest.fn().mockResolvedValue("ilegible") });
-
-    await expect(service.confirmReceipt("sub-1", "user-1", Buffer.from("img"))).rejects.toBeInstanceOf(
-      BadRequestException
-    );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "subscription.receipt.rejected", entityId: "sub-1" })
-    );
-  });
-
-  it("Dado que el OCR encuentra el monto esperado, Cuando se confirma, Entonces el pago pasa a CONFIRMED", async () => {
-    const { service, prisma, audit } = await build();
-
-    await service.confirmReceipt("sub-1", "user-1", Buffer.from("img"));
-
-    expect(prisma.__tx.payment.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "payment-1", status: "PENDING" },
-        data: expect.objectContaining({ status: "CONFIRMED" }),
-      })
-    );
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "subscription.receipt.confirmed", entityId: "sub-1" }),
-      prisma.__tx
-    );
-  });
-
-  it("Dado que otra petición ya confirmó el mismo comprobante (condición de carrera), Cuando updateMany no encuentra fila PENDING, Entonces lanza ConflictException", async () => {
-    const { service, prisma } = await build();
-    prisma.__tx.payment.updateMany.mockResolvedValue({ count: 0 });
-
-    await expect(service.confirmReceipt("sub-1", "user-1", Buffer.from("img"))).rejects.toBeInstanceOf(
-      ConflictException
     );
   });
 });

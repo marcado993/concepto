@@ -23,7 +23,6 @@
     securityIndicatorsError?: boolean;
     venturesError?: boolean;
     lockersError?: boolean;
-    myPendingReceipt?: { rentalId: string; lockerCode: string } | null;
     myRentedLocker?: { lockerCode: string; zone: string } | null;
     onlockerrented?: () => void;
     subscriptionTiersError?: boolean;
@@ -43,7 +42,6 @@
     securityIndicatorsError = false,
     venturesError = false,
     lockersError = false,
-    myPendingReceipt = null,
     myRentedLocker = null,
     onlockerrented,
     subscriptionTiersError = false,
@@ -200,7 +198,6 @@
       {securityIndicatorsError}
       {venturesError}
       {lockersError}
-      {myPendingReceipt}
       {myRentedLocker}
       {onlockerrented}
       {subscriptionTiersError}

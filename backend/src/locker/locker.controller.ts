@@ -1,18 +1,4 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  FileTypeValidator,
-  Get,
-  MaxFileSizeValidator,
-  Param,
-  ParseFilePipe,
-  Post,
-  Req,
-  UploadedFile,
-  UseInterceptors,
-} from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
+import { Body, Controller, Get, Post, Req } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { Request } from "express";
 import { Public } from "../shared/auth/public.decorator";
@@ -62,17 +48,6 @@ export class LockerController {
     return this.lockerService.getPricePreview(req.user.id);
   }
 
-  // Le dice al frontend "¿tengo una reserva por transferencia esperando
-  // comprobante?" — para que la grilla deje tocar SU PROPIO casillero
-  // reservado (a resubir la foto) sin habilitar el de nadie más. userId
-  // sale del JWT ya verificado (@Roles + el guard de auth), nunca de un
-  // parámetro que el cliente pueda manipular.
-  @Get("mine/pending-receipt")
-  @Roles(Role.ESTUDIANTE)
-  myPendingReceipt(@Req() req: Request & { user: { id: string } }) {
-    return this.lockerService.getMyPendingReceipt(req.user.id);
-  }
-
   // "¿Ya tengo un casillero confirmado este periodo?" — pedido real: en
   // vez de que el estudiante busque el suyo entre hasta 108, la grilla lo
   // distingue y lo deja tocar para ver el estado directamente.
@@ -103,35 +78,11 @@ export class LockerController {
     return this.lockerService.rent({
       userId: req.user.id,
       lockerCode: dto.lockerCode,
-      method: dto.method,
       cedula: dto.cedula,
       phone: dto.phone,
       acceptedTerms: dto.acceptedTerms,
       ipAddress: req.ip,
     });
-  }
-
-  @Post("rentals/:rentalId/confirm-receipt")
-  @Roles(Role.ESTUDIANTE)
-  // Más laxo que "rent" (5 en vez de 3): una foto borrosa que hay que
-  // volver a tomar y subir es un caso legítimo esperado, no un abuso.
-  @Throttle({ short: { limit: 5, ttl: 60_000 } })
-  @UseInterceptors(FileInterceptor("receipt"))
-  confirmReceipt(
-    @Param("rentalId") rentalId: string,
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 8 * 1024 * 1024 }), // 8MB
-          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
-        ],
-      })
-    )
-    file: Express.Multer.File,
-    @Req() req: Request & { user: { id: string } }
-  ) {
-    if (!file?.buffer) throw new BadRequestException("Falta el archivo del comprobante");
-    return this.lockerService.confirmReceipt(rentalId, req.user.id, file.buffer, req.ip);
   }
 
   // clientTransactionId ES el id del LockerRental — nosotros lo elegimos

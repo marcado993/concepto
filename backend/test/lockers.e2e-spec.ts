@@ -6,7 +6,7 @@ import { AppModule } from "../src/app.module";
 import { JwtAuthGuard } from "../src/shared/auth/jwt-auth.guard";
 import { IS_PUBLIC_KEY } from "../src/shared/auth/public.decorator";
 import { PrismaService } from "../src/shared/prisma/prisma.service";
-import { OcrService } from "../src/shared/ocr/ocr.service";
+import { PayphoneClient } from "../src/shared/payment/payphone.client";
 
 // Guard de prueba — calca el comportamiento real de JwtAuthGuard
 // (respeta @Public(), lanza UnauthorizedException con 401 real en vez de
@@ -44,26 +44,21 @@ class TestAuthGuard implements CanActivate {
 //      lee un header de prueba y arma req.user — así se puede simular a
 //      DOS estudiantes distintos peleando por el mismo casillero, que es
 //      justo el escenario de concurrencia que se quiere probar.
-//   2. OcrService — tesseract.js reconociendo una imagen real tarda
-//      1-2s y no es determinístico contra una imagen sintética de prueba.
-//      Se sustituye por un OCR falso que siempre "encuentra" el monto,
-//      para que el test de concurrencia de confirmReceipt sea rápido y
-//      estable — lo que se está probando ahí es la transacción de Prisma
-//      bajo carrera, no la calidad del OCR (eso ya lo cubre
-//      ocr.service.spec.ts y receipt-validator.spec.ts).
+//   2. PayphoneClient — no hay forma de completar el widget real de
+//      PayPhone (client-side, requiere un navegador de verdad) ni de
+//      pegarle a su API real de Confirm desde un test. Se sustituye por
+//      un cliente falso que siempre aprueba con el monto/clientTransactionId
+//      exactos que se le pidan — lo que se está probando acá es la
+//      transacción de Prisma bajo carrera (updateMany + WHERE
+//      status:"PENDING"), no la integración real con PayPhone (esa se
+//      verifica a mano contra el tenant real, ver payphone.client.ts).
 function testAuthHeader(userId: string, role: "ESTUDIANTE" | "PRESIDENTE" | "DIRECTOR" = "ESTUDIANTE") {
   return `TestUser ${userId}:${role}`;
 }
 
-// PNG 1x1 real y mínimo (no un buffer de texto cualquiera) — NestJS
-// valida el tipo de archivo por contenido real (magic bytes, vía la
-// librería `file-type`), no confía en el Content-Type declarado en la
-// petición. Un buffer de texto pasado como "image/jpeg" falla esa
-// validación aunque el header multipart diga lo contrario.
-const FAKE_RECEIPT_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64"
-);
+// Precio esperado para un estudiante sin descuento de aportante: $6.50
+// (precio único, sin recargo — ver rental-calculator.ts).
+const EXPECTED_LOCKER_AMOUNT_CENTS = 650;
 
 describe("Lockers (e2e) — caja negra contra Postgres real", () => {
   let app: INestApplication;
@@ -83,8 +78,17 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(JwtAuthGuard)
       .useFactory({ factory: (reflector: Reflector) => new TestAuthGuard(reflector), inject: [Reflector] })
-      .overrideProvider(OcrService)
-      .useValue({ extractText: async () => "Transferencia exitosa por $6.50" })
+      .overrideProvider(PayphoneClient)
+      .useValue({
+        getPublicConfig: () => ({ configured: true, token: "e2e-fake-token", storeId: "e2e-fake-store" }),
+        confirm: async (transactionId: number, clientTransactionId: string) => ({
+          approved: true,
+          transactionId,
+          clientTransactionId,
+          amountCents: EXPECTED_LOCKER_AMOUNT_CENTS,
+          raw: {},
+        }),
+      })
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -141,18 +145,16 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
   });
 
   it("Dado un intento de alquiler sin header de autenticación, Cuando se llama POST /lockers/rent, Entonces responde 401 (JwtAuthGuard real de la app, no el mock, rechaza sin req.user)", async () => {
-    const res = await request(app.getHttpServer())
-      .post("/lockers/rent")
-      .send({ lockerCode: LOCKER_CODE, method: "TRANSFER" });
+    const res = await request(app.getHttpServer()).post("/lockers/rent").send({ lockerCode: LOCKER_CODE });
 
     expect(res.status).toBe(401);
   });
 
-  it("Dado un casillero disponible, Cuando un estudiante lo alquila por transferencia, Entonces responde 201, el casillero queda RESERVED en la base de datos real, y hay un AuditLog", async () => {
+  it("Dado un casillero disponible, Cuando un estudiante lo alquila, Entonces responde 201, el casillero queda RESERVED en la base de datos real, y hay un AuditLog", async () => {
     const res = await request(app.getHttpServer())
       .post("/lockers/rent")
       .set("Authorization", testAuthHeader(userAId!))
-      .send({ lockerCode: LOCKER_CODE, method: "TRANSFER" });
+      .send({ lockerCode: LOCKER_CODE });
 
     expect(res.status).toBe(201);
 
@@ -187,11 +189,11 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
       request(app.getHttpServer())
         .post("/lockers/rent")
         .set("Authorization", testAuthHeader(userAId!))
-        .send({ lockerCode: LOCKER_CODE, method: "TRANSFER" }),
+        .send({ lockerCode: LOCKER_CODE }),
       request(app.getHttpServer())
         .post("/lockers/rent")
         .set("Authorization", testAuthHeader(userBId!))
-        .send({ lockerCode: LOCKER_CODE, method: "TRANSFER" }),
+        .send({ lockerCode: LOCKER_CODE }),
     ]);
 
     const statuses = [resA.status, resB.status].sort();
@@ -209,30 +211,29 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
   });
 
   // ---------------------------------------------------------------
-  // CONCURRENCIA REAL #2 — confirmación de comprobante duplicada. Simula
-  // un doble click / reintento de red: la MISMA petición de confirmación
-  // llega dos veces a la vez para el mismo alquiler PENDING. Prueba el fix
-  // del bug real encontrado en locker.service.ts (el chequeo
-  // "status !== PENDING" no era atómico con la escritura) — con el
-  // updateMany + WHERE status:"PENDING" real de Postgres, como máximo una
-  // gana.
+  // CONCURRENCIA REAL #2 — confirmación de pago PayPhone duplicada. Simula
+  // el navegador recargando la página de respuesta de PayPhone (o un doble
+  // callback real): la MISMA petición de confirmación llega dos veces a la
+  // vez para el mismo alquiler PENDING. Prueba el mismo patrón atómico que
+  // el test de arriba (updateMany + WHERE status:"PENDING" real de
+  // Postgres, no un mock) — como máximo una gana.
   // ---------------------------------------------------------------
-  it("Dado un mismo comprobante confirmado dos veces a la vez (doble click / reintento de red), Cuando ambas peticiones llegan juntas, Entonces exactamente una confirma (200) y la otra recibe 409, y el casillero termina RENTED una sola vez", async () => {
+  it("Dado un mismo pago de PayPhone confirmado dos veces a la vez (recarga de página / doble callback), Cuando ambas peticiones llegan juntas, Entonces exactamente una confirma (201) y la otra recibe 409, y el casillero termina RENTED una sola vez", async () => {
     const rentRes = await request(app.getHttpServer())
       .post("/lockers/rent")
       .set("Authorization", testAuthHeader(userAId!))
-      .send({ lockerCode: LOCKER_CODE, method: "TRANSFER" });
+      .send({ lockerCode: LOCKER_CODE });
     const rentalId = rentRes.body.id;
 
     const [resA, resB] = await Promise.all([
       request(app.getHttpServer())
-        .post(`/lockers/rentals/${rentalId}/confirm-receipt`)
+        .post("/lockers/payphone/confirm")
         .set("Authorization", testAuthHeader(userAId!))
-        .attach("receipt", FAKE_RECEIPT_PNG, { filename: "comprobante.png", contentType: "image/png" }),
+        .send({ id: 555, clientTransactionId: rentalId }),
       request(app.getHttpServer())
-        .post(`/lockers/rentals/${rentalId}/confirm-receipt`)
+        .post("/lockers/payphone/confirm")
         .set("Authorization", testAuthHeader(userAId!))
-        .attach("receipt", FAKE_RECEIPT_PNG, { filename: "comprobante.png", contentType: "image/png" }),
+        .send({ id: 555, clientTransactionId: rentalId }),
     ]);
 
     const statuses = [resA.status, resB.status].sort();

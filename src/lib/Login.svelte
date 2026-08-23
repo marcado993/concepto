@@ -466,6 +466,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    /* GitHub y Google quedaban pegados entre sí sin nada de aire —
+       margin-top en vez de gap en el padre porque el padre no es un flex
+       container acá, solo hay dos botones sueltos seguidos en el markup. */
+    margin-top: 10px;
     gap: 10px;
     padding: 12px 16px;
     border-radius: 12px;

@@ -27,11 +27,6 @@
         no había NINGUNA señal: la grilla se veía vacía y no se distinguía
         "cargando" de "no hay nada" (H1, visibilidad del estado). */
     lockersLoading?: boolean;
-    /** La reserva propia (por transferencia) que sigue esperando comprobante,
-        si hay una — deja tocar ESE casillero puntual para resubir la foto
-        aunque su estado sea RESERVED. Verificado por el backend contra la
-        sesión real, nunca asumido acá. */
-    myPendingReceipt?: { rentalId: string; lockerCode: string } | null;
     /** El casillero que el estudiante ya tiene CONFIRMADO este periodo, si
         hay uno — deja distinguirlo en la grilla y tocarlo para ver su
         estado, en vez de que lo busque entre hasta 108. */
@@ -66,7 +61,6 @@
     venturesError = false,
     lockersError = false,
     lockersLoading = false,
-    myPendingReceipt = null,
     myRentedLocker = null,
     wide = false,
     compact = false,
@@ -96,11 +90,6 @@
   import type { SubscriptionBenefit } from "./data";
 
   let rentingLockerCode = $state<string | null>(null);
-  // Distinto de null solo cuando se toca el casillero de TU PROPIA reserva
-  // pendiente (myPendingReceipt) — le dice a RentLockerModal que salte
-  // directo al paso de subir el comprobante en vez de empezar un alquiler
-  // nuevo desde cero.
-  let resumeRentalId = $state<string | null>(null);
   // Casillero propio confirmado que se está viendo (solo lectura) — no es
   // lo mismo que rentingLockerCode/RentLockerModal: acá no hay nada que
   // alquilar ni confirmar, solo el estado de lo que ya es tuyo.
@@ -230,7 +219,7 @@
   // rara entre refrescos.
   function unitPriority(unit: { status: LockerStatus; number: string }): number {
     if (unit.status === "available") return 0;
-    if (myPendingReceipt?.lockerCode === unit.number || myRentedLocker?.lockerCode === unit.number) return 0;
+    if (myRentedLocker?.lockerCode === unit.number) return 0;
     return 1;
   }
   const sortedLockers = $derived(
@@ -492,7 +481,7 @@
              hardcodeado. -->
         {#if lockerPrice}
           <p class="locker-price-note">
-            Alquiler del periodo: <strong>${lockerPrice.price.TRANSFER.toFixed(2)}</strong>
+            Alquiler del periodo: <strong>${lockerPrice.price.PAYPHONE.toFixed(2)}</strong>
             {#if lockerPrice.discountPercent > 0}
               <span class="price-discount">
                 −{lockerPrice.discountPercent}% por tu aportación {lockerPrice.tierName}
@@ -506,7 +495,7 @@
         <ul class="locker-legend" aria-label="Qué significa cada estado">
           <li><span class="legend-dot legend-free" aria-hidden="true"></span>Libre — puedes alquilarlo</li>
           <li><span class="legend-dot legend-taken" aria-hidden="true"></span>Ocupado o reservado</li>
-          {#if myRentedLocker || myPendingReceipt}
+          {#if myRentedLocker}
             <li><span class="legend-dot legend-mine" aria-hidden="true"></span>Es tuyo</li>
           {/if}
         </ul>
@@ -531,13 +520,11 @@
 
         <div class="grid" class:grid-hidden={lockersLoading}>
           {#each visibleLockers as unit, i (unit.id)}
-            {@const isMine = myPendingReceipt?.lockerCode === unit.number}
             {@const isMineRented = myRentedLocker?.lockerCode === unit.number}
-            {@const clickable = unit.status === "available" || isMine || isMineRented}
+            {@const clickable = unit.status === "available" || isMineRented}
             <button
               class="unit"
-              class:dim={unit.status !== "available" && !isMine && !isMineRented}
-              class:mine-pending={isMine}
+              class:dim={unit.status !== "available" && !isMineRented}
               class:mine-rented={isMineRented}
               disabled={!clickable}
               onclick={() => {
@@ -545,39 +532,23 @@
                   viewingMyLocker = myRentedLocker;
                   return;
                 }
-                resumeRentalId = isMine ? (myPendingReceipt?.rentalId ?? null) : null;
                 rentingLockerCode = unit.number;
               }}
               aria-label={isMineRented
                 ? `Ver estado de tu casillero ${unit.number}`
-                : isMine
-                  ? `Resubir comprobante del casillero ${unit.number}`
-                  : `Alquilar casillero ${unit.number}`}
+                : `Alquilar casillero ${unit.number}`}
               style="--unit-hue: {unitHue(i)}; --unit-i: {Math.min(i, 16)}; animation-delay: {unitDelay(i)}ms"
             >
               {#if isMineRented}
                 <!-- Casillero propio ya confirmado — pedido real: en vez de
                      buscarlo entre hasta 108, se distingue con su propio
-                     ícono (check, no candado/upload) y se puede tocar para
-                     ver el estado directamente. -->
+                     ícono (check, no candado) y se puede tocar para ver el
+                     estado directamente. -->
                 <span class="unit-check" aria-hidden="true">
                   <svg viewBox="0 0 24 24">
                     <path
                       fill="currentColor"
                       d="m9.55 17.55-5.7-5.7 1.425-1.425L9.55 14.7l9.175-9.175L20.15 6.95Z"
-                    />
-                  </svg>
-                </span>
-              {:else if isMine}
-                <!-- Solo TU reserva pendiente se ve así — verificado por el
-                     backend contra tu sesión, nunca por algo que este
-                     cliente decida. El resto de los reservados/ocupados
-                     sigue con el candado normal, sin poder tocarse. -->
-                <span class="unit-upload" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path
-                      fill="currentColor"
-                      d="M11 16V7.85l-2.6 2.6L7 9l5-5 5 5-1.4 1.45-2.6-2.6V16Zm-5 4q-.825 0-1.413-.588T4 18v-3h2v3h12v-3h2v3q0 .825-.588 1.413T18 20Z"
                     />
                   </svg>
                 </span>
@@ -599,8 +570,8 @@
               {/if}
               <IsoIcon unit status={unit.status} size={64} />
               <span class="unit-number">{unit.number}</span>
-              <span class="unit-status status-{unit.status}" class:status-mine={isMine || isMineRented}>
-                {isMineRented ? "Es tuyo — toca para ver" : isMine ? "Sube tu comprobante" : statusLabel[unit.status]}
+              <span class="unit-status status-{unit.status}" class:status-mine={isMineRented}>
+                {isMineRented ? "Es tuyo — toca para ver" : statusLabel[unit.status]}
               </span>
             </button>
           {/each}
@@ -689,11 +660,7 @@
 {#if rentingLockerCode}
   <RentLockerModal
     lockerCode={rentingLockerCode}
-    {resumeRentalId}
-    onclose={() => {
-      rentingLockerCode = null;
-      resumeRentalId = null;
-    }}
+    onclose={() => (rentingLockerCode = null)}
     onrented={() => onlockerrented?.()}
   />
 {/if}
@@ -1042,7 +1009,7 @@
   /* Respiración lenta y muy sutil en los libres — el "latido" retrofuturista
      de un sistema encendido. 4s y una variación mínima de brillo: se
      percibe de reojo, nunca compite con la lectura. */
-  .content-wrap.compact .unit:not(.dim):not(.mine-pending) {
+  .content-wrap.compact .unit:not(.dim) {
     animation:
       unit-materialize 0.42s cubic-bezier(0.18, 0.9, 0.24, 1.08) forwards,
       unit-breathe 4s ease-in-out 1.2s infinite;
@@ -1168,7 +1135,7 @@
      y quieta. Nada de la información depende de la animación. */
   @media (prefers-reduced-motion: reduce) {
     .content-wrap.compact .unit,
-    .content-wrap.compact .unit:not(.dim):not(.mine-pending) {
+    .content-wrap.compact .unit:not(.dim) {
       opacity: 1;
       animation: none;
       transform: none;
@@ -1240,48 +1207,8 @@
     height: 11px;
   }
 
-  /* Tu reserva pendiente — la única celda RESERVED que sigue siendo
-     tocable. Pulso suave en el borde en vez del tratamiento .dim normal,
-     para que se note a distancia que hay algo pendiente de tu parte (a
-     diferencia de un "ocupado" cualquiera, que no pide ninguna acción). */
-  .unit.mine-pending {
-    border-color: var(--accent);
-    animation: unit-enter 0.45s ease-out forwards, mine-pulse 1.8s ease-in-out infinite 0.5s;
-  }
-
-  @keyframes mine-pulse {
-    0%,
-    100% {
-      box-shadow: 0 0 14px hsla(var(--unit-hue), 75%, 60%, 0.18);
-    }
-    50% {
-      box-shadow: 0 0 20px var(--accent-glow, rgba(33, 224, 160, 0.5));
-    }
-  }
-
-  .unit-upload {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 18px;
-    height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: var(--accent);
-    color: #0a1a12;
-    pointer-events: none;
-  }
-
-  .unit-upload svg {
-    width: 12px;
-    height: 12px;
-  }
-
-  /* Casillero propio ya confirmado — a diferencia de .mine-pending, no
-     pide ninguna acción urgente (no hay nada pendiente de subir), así que
-     el borde queda fijo en vez de pulsar; el check reemplaza al candado
+  /* Casillero propio ya confirmado — el borde fijo (sin pulso, no hay
+     ninguna acción urgente pendiente) y el check reemplazan al candado
      para que se note al toque que es "tuyo", no solo "ocupado". */
   .unit.mine-rented {
     border-color: var(--accent);

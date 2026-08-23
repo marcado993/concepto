@@ -1,21 +1,11 @@
 <script lang="ts">
-  // Modal de alquiler — 3 pasos como máximo, tal como se pidió:
-  //   1) identidad (solo lectura, de la sesión) + método de pago
-  //   2) PayPhone (widget) o subir comprobante de transferencia
-  //   3) confirmación
-  // Nunca se le pide al estudiante escribir su nombre/código a mano — ya
-  // está logueado, esos datos vienen de GET /auth/me (ver
+  // Modal de alquiler — 3 pasos: 1) identidad (solo lectura, de la sesión)
+  // 2) PayPhone (widget) 3) confirmación. PayPhone es el único método de
+  // pago (transferencia + comprobante por OCR se retiró). Nunca se le pide
+  // al estudiante escribir su nombre/código a mano — ya está logueado,
+  // esos datos vienen de GET /auth/me (ver
   // backend/src/shared/auth/auth.controller.ts).
-  import {
-    fetchMe,
-    rentLocker,
-    confirmLockerReceipt,
-    fetchPayphoneConfig,
-    fetchLockerPricePreview,
-    ApiError,
-    type MeResponse,
-    type LockerPricePreview,
-  } from "./api";
+  import { fetchMe, rentLocker, fetchPayphoneConfig, fetchLockerPricePreview, ApiError, type MeResponse, type LockerPricePreview } from "./api";
   import { loadPayphoneSdk } from "./payphoneSdk";
   import { isAuthenticated } from "./auth.svelte";
   import Login from "./Login.svelte";
@@ -25,18 +15,12 @@
     lockerCode: string;
     onclose: () => void;
     onrented?: () => void;
-    /** Si viene, este casillero ya es TUYO (reserva por transferencia
-        verificada por el backend contra la sesión, ver App.svelte
-        myPendingReceipt) — el modal salta directo a subir el comprobante
-        en vez de empezar un alquiler nuevo desde el paso de identidad. */
-    resumeRentalId?: string | null;
   }
 
-  let { lockerCode, onclose, onrented, resumeRentalId = null }: Props = $props();
+  let { lockerCode, onclose, onrented }: Props = $props();
 
-  type Step = "identity" | "payphone" | "receipt-upload" | "confirmed" | "rejected";
-  let step = $state<Step>(resumeRentalId ? "receipt-upload" : "identity");
-  let method = $state<"PAYPHONE" | "TRANSFER">("TRANSFER");
+  type Step = "identity" | "payphone" | "confirmed";
+  let step = $state<Step>("identity");
 
   let me = $state<MeResponse | null>(null);
   let meError = $state(false);
@@ -79,22 +63,14 @@
   let showLogin = $state(false);
   let busy = $state(false);
   let errorMessage = $state<string | null>(null);
-  let rentalId = $state<string | null>(resumeRentalId);
-  let receiptFile = $state<File | null>(null);
+  let rentalId = $state<string | null>(null);
 
-  const PRICE = $derived<Record<"PAYPHONE" | "TRANSFER", string>>({
-    PAYPHONE: pricePreview ? `$${pricePreview.price.PAYPHONE.toFixed(2)}` : "…",
-    TRANSFER: pricePreview ? `$${pricePreview.price.TRANSFER.toFixed(2)}` : "…",
-  });
-  const PRICE_CENTS = $derived<Record<"PAYPHONE" | "TRANSFER", number>>({
-    PAYPHONE: pricePreview ? Math.round(pricePreview.price.PAYPHONE * 100) : 0,
-    TRANSFER: pricePreview ? Math.round(pricePreview.price.TRANSFER * 100) : 0,
-  });
+  const PRICE = $derived(pricePreview ? `$${pricePreview.price.PAYPHONE.toFixed(2)}` : "…");
+  const PRICE_CENTS = $derived(pricePreview ? Math.round(pricePreview.price.PAYPHONE * 100) : 0);
 
-  // Ambos métodos crean el alquiler (PENDING/RESERVED) de una vez — con
-  // PAYPHONE el cobro real todavía no pasó, pasa en el widget del paso 2
-  // (ver backend/src/locker/locker.service.ts confirmPayphonePayment). El
-  // casillero queda RESERVED mientras tanto, igual que TRANSFER.
+  // El alquiler queda creado (PENDING/RESERVED) de una vez — el cobro real
+  // todavía no pasó, pasa en el widget del paso 2 (ver
+  // backend/src/locker/locker.service.ts confirmPayphonePayment).
   async function continueFromIdentity() {
     if (!identityValid) return;
     errorMessage = null;
@@ -102,13 +78,12 @@
     try {
       const rental = await rentLocker({
         lockerCode,
-        method,
         cedula: cedula.trim(),
         phone: phone.trim(),
         acceptedTerms,
       });
       rentalId = rental.id;
-      step = method === "PAYPHONE" ? "payphone" : "receipt-upload";
+      step = "payphone";
     } catch (err) {
       errorMessage = err instanceof ApiError ? err.message : "No se pudo iniciar el alquiler";
     } finally {
@@ -148,7 +123,7 @@
     const containerId = payphoneContainer.id;
     loadPayphoneSdk()
       .then(() => {
-        const amountCents = PRICE_CENTS.PAYPHONE;
+        const amountCents = PRICE_CENTS;
         new window.PPaymentButtonBox!({
           token: payphoneConfig!.token,
           storeId: payphoneConfig!.storeId,
@@ -161,53 +136,10 @@
         }).render(containerId);
       })
       .catch(() => {
-        errorMessage = "No se pudo cargar el widget de PayPhone — intenta con transferencia.";
+        errorMessage = "No se pudo cargar el widget de PayPhone — intenta de nuevo en un momento.";
         payphoneWidgetStarted = false;
       });
   });
-
-  function onFileChange(e: Event) {
-    const input = e.currentTarget as HTMLInputElement;
-    receiptFile = input.files?.[0] ?? null;
-  }
-
-  // El OCR real (tesseract.js, backend/src/shared/ocr/ocr.service.ts)
-  // reintenta hasta 2 veces si falla — un comprobante genuino puede tardar
-  // unos segundos en confirmarse si el primer intento se cae. Sin feedback
-  // visual, ese lapso se siente como que la app no reaccionó al tap
-  // (mismo hallazgo que ya se resolvió para el modal en sí). Los mensajes
-  // rotan para que se note que sigue vivo, no solo un spinner fijo.
-  const OCR_MESSAGES = ["Leyendo el comprobante…", "Verificando el monto…", "Un momento más…"];
-  let ocrMessage = $state(OCR_MESSAGES[0]);
-
-  async function submitReceipt() {
-    if (!rentalId || !receiptFile) return;
-    errorMessage = null;
-    busy = true;
-    ocrMessage = OCR_MESSAGES[0];
-    let msgIndex = 0;
-    const rotate = setInterval(() => {
-      msgIndex = (msgIndex + 1) % OCR_MESSAGES.length;
-      ocrMessage = OCR_MESSAGES[msgIndex];
-    }, 1400);
-    try {
-      await confirmLockerReceipt(rentalId, receiptFile);
-      step = "confirmed";
-      onrented?.();
-    } catch (err) {
-      errorMessage = err instanceof ApiError ? err.message : "No se pudo validar el comprobante";
-      step = "rejected";
-    } finally {
-      clearInterval(rotate);
-      busy = false;
-    }
-  }
-
-  function retryReceipt() {
-    errorMessage = null;
-    receiptFile = null;
-    step = "receipt-upload";
-  }
 
   function onScrimKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") onclose();
@@ -243,7 +175,7 @@
         <Login onclose={() => (showLogin = false)} />
       {/if}
     {:else if step === "identity"}
-      <div class="step-badge">Paso 1 de 3 · Identidad y método</div>
+      <div class="step-badge">Paso 1 de 3 · Identidad</div>
 
       {#if meError}
         <p class="modal-copy error">No se pudo cargar tu perfil — intenta de nuevo.</p>
@@ -293,23 +225,9 @@
           bind:value={phone}
         />
 
-        <div class="method-choice">
-          <button
-            class="method-option"
-            class:selected={method === "TRANSFER"}
-            onclick={() => (method = "TRANSFER")}
-          >
-            <span class="method-label">Comprobante de transferencia</span>
-            <span class="method-price">{PRICE.TRANSFER}</span>
-          </button>
-          <button
-            class="method-option"
-            class:selected={method === "PAYPHONE"}
-            onclick={() => (method = "PAYPHONE")}
-          >
-            <span class="method-label">PayPhone</span>
-            <span class="method-price">{PRICE.PAYPHONE}</span>
-          </button>
+        <div class="price-row">
+          <span class="price-label">Pago con PayPhone</span>
+          <span class="price-amount">{PRICE}</span>
         </div>
         {#if pricePreviewError}
           <p class="modal-copy error">No se pudo calcular tu precio — intenta de nuevo.</p>
@@ -339,67 +257,20 @@
         <p class="modal-copy loading-row"><span class="loading-spinner">◎</span> Cargando PayPhone…</p>
       {:else if !payphoneConfig.configured}
         <p class="modal-copy error">
-          PayPhone todavía no está conectado (faltan credenciales de comercio) — usa comprobante de
-          transferencia por ahora.
+          PayPhone todavía no está conectado (faltan credenciales de comercio) — vuelve a intentar en
+          un momento.
         </p>
       {:else}
         <p class="modal-copy">
-          Vas a pagar {PRICE.PAYPHONE} con PayPhone por el casillero {lockerCode}. Se abrirá el formulario
+          Vas a pagar {PRICE} con PayPhone por el casillero {lockerCode}. Se abrirá el formulario
           seguro de PayPhone — al terminar, vuelves aquí y confirmamos el pago automáticamente.
         </p>
         {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
         <div id="pp-button-{lockerCode}" bind:this={payphoneContainer} class="payphone-widget"></div>
       {/if}
-    {:else if step === "receipt-upload"}
-      <div class="step-badge">{resumeRentalId ? "Tu reserva · Comprobante" : "Paso 2 de 3 · Comprobante"}</div>
-      <p class="modal-copy">
-        Casillero reservado — sube una foto legible del comprobante de transferencia de {PRICE.TRANSFER}. La
-        validamos automáticamente.
-      </p>
-      {#if busy}
-        <!-- El OCR real puede reintentar y tardar unos segundos — sin esto
-             la app se veía "trabada" justo en el momento más ansioso del
-             flujo (¿me cobraron o no?). -->
-        <div class="ocr-processing">
-          <div class="ocr-doc">
-            <svg class="ocr-doc-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.4"
-                stroke-linejoin="round"
-                d="M6 2.5h8.5L19 7v14a0.5 0.5 0 0 1-0.5 0.5h-12a0.5 0.5 0 0 1-0.5-0.5V3a0.5 0.5 0 0 1 0.5-0.5Z"
-              />
-              <path fill="none" stroke="currentColor" stroke-width="1.2" d="M14.5 2.5V7H19" opacity="0.6" />
-              <line x1="8" y1="11" x2="16" y2="11" stroke="currentColor" stroke-width="1.1" />
-              <line x1="8" y1="14" x2="16" y2="14" stroke="currentColor" stroke-width="1.1" />
-              <line x1="8" y1="17" x2="12.5" y2="17" stroke="currentColor" stroke-width="1.1" />
-            </svg>
-            <span class="ocr-scan-line"></span>
-          </div>
-          <p class="ocr-status">{ocrMessage}</p>
-        </div>
-      {:else}
-        <label class="file-drop">
-          <input type="file" accept="image/jpeg,image/png,image/webp" onchange={onFileChange} />
-          {receiptFile ? receiptFile.name : "Elegir imagen del comprobante"}
-        </label>
-      {/if}
-      {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
-      <button class="cta" disabled={busy || !receiptFile} onclick={submitReceipt}>
-        {busy ? ocrMessage : "Subir y confirmar"}
-      </button>
-    {:else if step === "rejected"}
-      <div class="step-badge">Paso 3 de 3 · No se pudo confirmar</div>
-      <p class="modal-copy error">{errorMessage}</p>
-      <button class="cta" onclick={retryReceipt}>Intentar con otra foto</button>
     {:else if step === "confirmed"}
       <div class="step-badge">Paso 3 de 3 · Listo</div>
-      <p class="modal-copy success">
-        {method === "PAYPHONE"
-          ? `¡Casillero ${lockerCode} confirmado!`
-          : `¡Comprobante validado! Casillero ${lockerCode} es tuyo.`}
-      </p>
+      <p class="modal-copy success">¡Casillero {lockerCode} confirmado!</p>
       <button class="cta" onclick={onclose}>Cerrar</button>
     {/if}
   </div>
@@ -433,7 +304,11 @@
 
   .modal {
     position: relative;
-    width: min(380px, 100%);
+    /* Más ancho que el resto de pasos a propósito — el formulario real de
+       PayPhone (tarjeta, fecha, CVV, "De Una") se ve apretado y obliga a
+       más scroll a 380px; con 440px sus propios campos entran cómodos y
+       la vista previa (identidad, precio) sigue leyéndose igual de bien. */
+    width: min(440px, 100%);
     max-height: 86vh;
     overflow-y: auto;
     background: linear-gradient(180deg, rgba(20, 26, 40, 0.96), rgba(6, 9, 16, 0.98));
@@ -488,67 +363,6 @@
     to {
       transform: rotate(360deg);
     }
-  }
-
-  /* Mismo tamaño/borde que .identity-card/.loading-box — un documento con
-     un barrido de luz cruzándolo, mismo lenguaje visual que .scan-sweep en
-     IsoIcon.svelte (las fotos de categoría "se escanean" al aparecer), acá
-     aplicado a algo que literalmente se está leyendo de verdad. */
-  .ocr-processing {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    min-height: 120px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 14px;
-    padding: 20px 14px;
-    margin-bottom: 14px;
-  }
-
-  .ocr-doc {
-    position: relative;
-    width: 52px;
-    height: 52px;
-    color: var(--accent, #21e0a0);
-    overflow: hidden;
-    border-radius: 6px;
-  }
-
-  .ocr-doc-icon {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-
-  .ocr-scan-line {
-    position: absolute;
-    left: -10%;
-    right: -10%;
-    height: 34%;
-    background: linear-gradient(180deg, transparent 0%, var(--accent, #21e0a0) 50%, transparent 100%);
-    opacity: 0.85;
-    mix-blend-mode: screen;
-    animation: ocr-scan 1.7s ease-in-out infinite;
-  }
-
-  @keyframes ocr-scan {
-    0% {
-      top: -34%;
-    }
-    100% {
-      top: 100%;
-    }
-  }
-
-  .ocr-status {
-    margin: 0;
-    font-size: 12.5px;
-    color: var(--ink-1, #9db0d1);
-    text-align: center;
-    min-height: 16px;
   }
 
   /* Grande a propósito (44px, min de objetivo táctil WCAG 2.5.5) —
@@ -678,14 +492,7 @@
     text-align: right;
   }
 
-  .method-choice {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 16px;
-  }
-
-  .method-option {
+  .price-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -694,36 +501,12 @@
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: #eef4fb;
-    cursor: pointer;
     font-size: 13px;
-    transition:
-      border-color 0.15s ease,
-      background 0.15s ease;
+    margin-bottom: 16px;
   }
-  .method-option.selected {
-    border-color: var(--accent, #21e0a0);
-    background: rgba(33, 224, 160, 0.1);
-  }
-  .method-price {
+  .price-amount {
     font-weight: 700;
     color: var(--accent, #21e0a0);
-  }
-
-  .file-drop {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 20px 14px;
-    border-radius: 14px;
-    border: 1.5px dashed rgba(255, 255, 255, 0.18);
-    color: rgba(238, 244, 251, 0.75);
-    font-size: 12.5px;
-    cursor: pointer;
-    margin-bottom: 14px;
-  }
-  .file-drop input {
-    display: none;
   }
 
   .cta {
@@ -755,7 +538,17 @@
     cursor: not-allowed;
   }
 
+  /* Marco propio alrededor del widget — PayPhone renderiza su formulario
+     en BLANCO por dentro (no se puede re-estilar: vive aislado por
+     cumplimiento PCI) y quedaba flotando directo contra el fondo oscuro
+     del modal, con bordes duros. Este marco con esquinas redondeadas y un
+     borde suave hace que la transición se sienta integrada en vez de un
+     recorte pegado encima. */
   .payphone-widget {
     min-height: 52px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #f4f6fb;
+    border: 1px solid rgba(255, 255, 255, 0.12);
   }
 </style>

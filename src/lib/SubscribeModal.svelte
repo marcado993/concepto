@@ -1,17 +1,8 @@
 <script lang="ts">
-  // Modal de aportación — mismo patrón de 3 pasos que RentLockerModal.svelte
-  // (identidad+método → PayPhone/comprobante → confirmación), adaptado a
-  // Aportaciones: el precio es el mismo sin importar el método (a
-  // diferencia de casilleros, subscription.service.ts no le suma recargo
-  // de PayPhone al monto del tier).
-  import {
-    fetchMe,
-    subscribeToTier,
-    confirmSubscriptionReceipt,
-    fetchSubscriptionPayphoneConfig,
-    ApiError,
-    type MeResponse,
-  } from "./api";
+  // Modal de aportación — 3 pasos: identidad → PayPhone → confirmación.
+  // PayPhone es el único método de pago (transferencia + comprobante por
+  // OCR se retiró).
+  import { fetchMe, subscribeToTier, fetchSubscriptionPayphoneConfig, ApiError, type MeResponse } from "./api";
   import { loadPayphoneSdk } from "./payphoneSdk";
   import { isAuthenticated } from "./auth.svelte";
   import Login from "./Login.svelte";
@@ -25,9 +16,8 @@
 
   let { tierName, tierAmount, onclose, onsubscribed }: Props = $props();
 
-  type Step = "identity" | "payphone" | "receipt-upload" | "confirmed" | "rejected";
+  type Step = "identity" | "payphone" | "confirmed";
   let step = $state<Step>("identity");
-  let method = $state<"PAYPHONE" | "TRANSFER">("TRANSFER");
 
   const priceLabel = $derived(`$${tierAmount}`);
   const amountCents = $derived(Math.round(parseFloat(tierAmount) * 100));
@@ -45,19 +35,17 @@
   let busy = $state(false);
   let errorMessage = $state<string | null>(null);
   let subscriptionId = $state<string | null>(null);
-  let receiptFile = $state<File | null>(null);
 
-  // Igual que casilleros: se crea la aportación (PENDING) de una vez —
-  // con PAYPHONE el cobro real todavía no pasó, pasa en el widget del
-  // paso 2 (ver backend/src/subscription/subscription.service.ts
-  // confirmPayphonePayment).
+  // Igual que casilleros: se crea la aportación (PENDING) de una vez — el
+  // cobro real todavía no pasó, pasa en el widget del paso 2 (ver
+  // backend/src/subscription/subscription.service.ts confirmPayphonePayment).
   async function continueFromIdentity() {
     errorMessage = null;
     busy = true;
     try {
-      const subscription = await subscribeToTier({ tierName, method });
+      const subscription = await subscribeToTier({ tierName });
       subscriptionId = subscription.id;
-      step = method === "PAYPHONE" ? "payphone" : "receipt-upload";
+      step = "payphone";
     } catch (err) {
       errorMessage = err instanceof ApiError ? err.message : "No se pudo iniciar la aportación";
     } finally {
@@ -103,37 +91,10 @@
         }).render(containerId);
       })
       .catch(() => {
-        errorMessage = "No se pudo cargar el widget de PayPhone — intenta con transferencia.";
+        errorMessage = "No se pudo cargar el widget de PayPhone — intenta de nuevo en un momento.";
         payphoneWidgetStarted = false;
       });
   });
-
-  function onFileChange(e: Event) {
-    const input = e.currentTarget as HTMLInputElement;
-    receiptFile = input.files?.[0] ?? null;
-  }
-
-  async function submitReceipt() {
-    if (!subscriptionId || !receiptFile) return;
-    errorMessage = null;
-    busy = true;
-    try {
-      await confirmSubscriptionReceipt(subscriptionId, receiptFile);
-      step = "confirmed";
-      onsubscribed?.();
-    } catch (err) {
-      errorMessage = err instanceof ApiError ? err.message : "No se pudo validar el comprobante";
-      step = "rejected";
-    } finally {
-      busy = false;
-    }
-  }
-
-  function retryReceipt() {
-    errorMessage = null;
-    receiptFile = null;
-    step = "receipt-upload";
-  }
 
   function onScrimKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") onclose();
@@ -160,7 +121,7 @@
         <Login onclose={() => (showLogin = false)} />
       {/if}
     {:else if step === "identity"}
-      <div class="step-badge">Paso 1 de 3 · Identidad y método</div>
+      <div class="step-badge">Paso 1 de 3 · Identidad</div>
 
       {#if meError}
         <p class="modal-copy error">No se pudo cargar tu perfil — intenta de nuevo.</p>
@@ -173,23 +134,9 @@
           <div class="identity-row"><span>Tier</span><strong>{tierName} — {priceLabel}</strong></div>
         </div>
 
-        <div class="method-choice">
-          <button
-            class="method-option"
-            class:selected={method === "TRANSFER"}
-            onclick={() => (method = "TRANSFER")}
-          >
-            <span class="method-label">Comprobante de transferencia</span>
-            <span class="method-price">{priceLabel}</span>
-          </button>
-          <button
-            class="method-option"
-            class:selected={method === "PAYPHONE"}
-            onclick={() => (method = "PAYPHONE")}
-          >
-            <span class="method-label">PayPhone</span>
-            <span class="method-price">{priceLabel}</span>
-          </button>
+        <div class="price-row">
+          <span class="price-label">Pago con PayPhone</span>
+          <span class="price-amount">{priceLabel}</span>
         </div>
 
         {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
@@ -208,8 +155,8 @@
         <p class="modal-copy">Cargando PayPhone…</p>
       {:else if !payphoneConfig.configured}
         <p class="modal-copy error">
-          PayPhone todavía no está conectado (faltan credenciales de comercio) — usa comprobante de
-          transferencia por ahora.
+          PayPhone todavía no está conectado (faltan credenciales de comercio) — vuelve a intentar en
+          un momento.
         </p>
       {:else}
         <p class="modal-copy">
@@ -219,31 +166,9 @@
         {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
         <div id="pp-sub-button-{tierName}" bind:this={payphoneContainer} class="payphone-widget"></div>
       {/if}
-    {:else if step === "receipt-upload"}
-      <div class="step-badge">Paso 2 de 3 · Comprobante</div>
-      <p class="modal-copy">
-        Aportación reservada — sube una foto legible del comprobante de transferencia de {priceLabel}. La
-        validamos automáticamente.
-      </p>
-      <label class="file-drop">
-        <input type="file" accept="image/jpeg,image/png,image/webp" onchange={onFileChange} />
-        {receiptFile ? receiptFile.name : "Elegir imagen del comprobante"}
-      </label>
-      {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
-      <button class="cta" disabled={busy || !receiptFile} onclick={submitReceipt}>
-        {busy ? "Validando…" : "Subir y confirmar"}
-      </button>
-    {:else if step === "rejected"}
-      <div class="step-badge">Paso 3 de 3 · No se pudo confirmar</div>
-      <p class="modal-copy error">{errorMessage}</p>
-      <button class="cta" onclick={retryReceipt}>Intentar con otra foto</button>
     {:else if step === "confirmed"}
       <div class="step-badge">Paso 3 de 3 · Listo</div>
-      <p class="modal-copy success">
-        {method === "PAYPHONE"
-          ? `¡Aportación ${tierName} confirmada!`
-          : `¡Comprobante validado! Tu aportación ${tierName} ya quedó activa.`}
-      </p>
+      <p class="modal-copy success">¡Aportación {tierName} confirmada!</p>
       <button class="cta" onclick={onclose}>Cerrar</button>
     {/if}
   </div>
@@ -274,7 +199,10 @@
 
   .modal {
     position: relative;
-    width: min(380px, 100%);
+    /* Más ancho que el resto de pasos a propósito — el formulario real de
+       PayPhone (tarjeta, fecha, CVV, "De Una") se ve apretado y obliga a
+       más scroll a 380px; con 440px sus propios campos entran cómodos. */
+    width: min(440px, 100%);
     max-height: 86vh;
     overflow-y: auto;
     background: linear-gradient(180deg, rgba(20, 26, 40, 0.96), rgba(6, 9, 16, 0.98));
@@ -353,14 +281,7 @@
     text-align: right;
   }
 
-  .method-choice {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 16px;
-  }
-
-  .method-option {
+  .price-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -369,36 +290,12 @@
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: #eef4fb;
-    cursor: pointer;
     font-size: 13px;
-    transition:
-      border-color 0.15s ease,
-      background 0.15s ease;
+    margin-bottom: 16px;
   }
-  .method-option.selected {
-    border-color: var(--accent, #21e0a0);
-    background: rgba(33, 224, 160, 0.1);
-  }
-  .method-price {
+  .price-amount {
     font-weight: 700;
     color: var(--accent, #21e0a0);
-  }
-
-  .file-drop {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 20px 14px;
-    border-radius: 14px;
-    border: 1.5px dashed rgba(255, 255, 255, 0.18);
-    color: rgba(238, 244, 251, 0.75);
-    font-size: 12.5px;
-    cursor: pointer;
-    margin-bottom: 14px;
-  }
-  .file-drop input {
-    display: none;
   }
 
   .cta {
@@ -430,7 +327,16 @@
     cursor: not-allowed;
   }
 
+  /* Marco propio alrededor del widget — PayPhone renderiza su formulario
+     en BLANCO por dentro (no se puede re-estilar: vive aislado por
+     cumplimiento PCI) y quedaba flotando directo contra el fondo oscuro
+     del modal, con bordes duros. Este marco redondeado y con borde suave
+     hace que la transición se sienta integrada, no un recorte pegado. */
   .payphone-widget {
     min-height: 52px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #f4f6fb;
+    border: 1px solid rgba(255, 255, 255, 0.12);
   }
 </style>

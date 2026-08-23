@@ -21,8 +21,8 @@ sequenceDiagram
     participant API as LockerService.rent()
     participant DB as Postgres (@@unique[lockerId, periodId])
 
-    EA->>API: POST /lockers/rent {A07, TRANSFER}
-    EB->>API: POST /lockers/rent {A07, TRANSFER}
+    EA->>API: POST /lockers/rent {A07}
+    EB->>API: POST /lockers/rent {A07}
     Note over EA,EB: Llegan casi a la vez — ambos ven<br/>locker.status="AVAILABLE" al leer
     API->>DB: INSERT LockerRental (A, A07)
     API->>DB: INSERT LockerRental (B, A07)
@@ -40,40 +40,47 @@ la segunda fila sin importar qué vio la aplicación. `onConflict` en
 `money-mutation.helper.ts` traduce ese error de Postgres (`P2002`) a
 `LockerUnavailableError` (409), no a un 500 genérico.
 
-### Caso 2 — el mismo comprobante confirmado dos veces (bug real, ya corregido)
+### Caso 2 — el mismo pago de PayPhone confirmado dos veces (bug real, ya corregido)
 
-Este NO era obvio y se encontró auditando el código, no por un reporte de bug: un doble
-click en "Subir y confirmar", o el navegador reintentando una petición que en realidad ya
-llegó, dispara dos peticiones para el **mismo** `rentalId` casi a la vez.
+Este NO era obvio y se encontró auditando el código, no por un reporte de bug: el
+navegador recargando la página de respuesta de PayPhone, o un doble callback real de la
+pasarela, dispara dos peticiones a `confirmPayphonePayment()` para el **mismo**
+`rentalId`/`subscriptionId` casi a la vez.
+
+> Nota histórica: este mismo bug y el mismo fix se encontraron primero en
+> `confirmReceipt()` (confirmación de comprobante de transferencia + OCR), cuando ese
+> todavía era un método de pago disponible. Transferencia se retiró más adelante (PayPhone
+> es el único método desde entonces — ver `rental-calculator.ts`), pero el patrón atómico
+> de abajo sigue siendo exactamente el mismo, ahora aplicado a `confirmPayphonePayment()`.
 
 ```mermaid
 sequenceDiagram
-    participant Nav as Navegador (doble click)
-    participant API as LockerService.confirmReceipt()
+    participant Nav as Navegador (recarga / doble callback)
+    participant API as LockerService.confirmPayphonePayment()
     participant DB as Postgres
 
-    Nav->>API: POST confirm-receipt (petición 1)
-    Nav->>API: POST confirm-receipt (petición 2)
+    Nav->>API: POST payphone/confirm (petición 1)
+    Nav->>API: POST payphone/confirm (petición 2)
     Note over API: ANTES DEL FIX — ambas leen<br/>payment.status="PENDING" antes de escribir
     API->>DB: UPDATE payment SET status=CONFIRMED (petición 1)
     API->>DB: UPDATE payment SET status=CONFIRMED (petición 2)
     Note over DB: Sin WHERE status="PENDING" — Postgres<br/>ejecuta las DOS escrituras sin quejarse
     DB-->>API: OK (petición 1)
     DB-->>API: OK (petición 2)
-    Note over API: Ambas devuelven 201 — OCR corrido dos<br/>veces, auditoría duplicada
+    Note over API: Ambas devuelven 201 — verificación<br/>contra PayPhone corrida dos veces, auditoría duplicada
 ```
 
-**El fix** (`locker.service.ts`, `confirmReceipt()`) cambia el `UPDATE` simple por un
-`updateMany` con `WHERE id=paymentId AND status="PENDING"`, y revisa `count`:
+**El fix** (`locker.service.ts`, `confirmPayphonePayment()`) cambia el `UPDATE` simple por
+un `updateMany` con `WHERE id=paymentId AND status="PENDING"`, y revisa `count`:
 
 ```mermaid
 sequenceDiagram
-    participant Nav as Navegador (doble click)
-    participant API as LockerService.confirmReceipt()
+    participant Nav as Navegador (recarga / doble callback)
+    participant API as LockerService.confirmPayphonePayment()
     participant DB as Postgres
 
-    Nav->>API: POST confirm-receipt (petición 1)
-    Nav->>API: POST confirm-receipt (petición 2)
+    Nav->>API: POST payphone/confirm (petición 1)
+    Nav->>API: POST payphone/confirm (petición 2)
     API->>DB: UPDATE...WHERE status="PENDING" (petición 1)
     API->>DB: UPDATE...WHERE status="PENDING" (petición 2)
     Note over DB: Solo la primera fila SIGUE en PENDING<br/>cuando cada UPDATE se ejecuta
@@ -103,7 +110,7 @@ razonamiento ya aplicado ahí).
 ```mermaid
 graph TB
     E2E["E2E — caja negra<br/>test/lockers.e2e-spec.ts<br/>Postgres real, HTTP real, guards reales"]
-    UNIT["Unitarios — caja blanca<br/>locker.service.spec.ts, ocr.service.spec.ts,<br/>receipt-validator.spec.ts<br/>Prisma mockeado"]
+    UNIT["Unitarios — caja blanca<br/>locker.service.spec.ts<br/>Prisma mockeado"]
     UNIT --> E2E
 ```
 
@@ -129,19 +136,25 @@ Dos cosas se reemplazan a propósito, ninguna toca lo que realmente se está pro
 | Se sustituye | Por qué | Lo que SÍ sigue siendo real |
 |---|---|---|
 | `JwtAuthGuard` | No hay forma de firmar un JWT real de Logto sin credenciales de un tenant (`10-despliegue-vps-vercel.md`) | `RolesGuard`, `@Public()`, y el propio guard de prueba respeta la misma jerarquía de roles que el real |
-| `OcrService` | `tesseract.js` contra una imagen sintética tarda 1-2s y no es determinístico — ralentizaría el test de concurrencia sin aportar nada a lo que se prueba ahí | La transacción de Prisma, el `updateMany` con `WHERE`, la restricción `@@unique` — todo eso es 100% real |
+| `PayphoneClient` | No hay forma de completar el widget real de PayPhone (client-side, requiere un navegador de verdad) ni de pegarle a su API real de Confirm desde un test | La transacción de Prisma, el `updateMany` con `WHERE`, la restricción `@@unique` — todo eso es 100% real |
 
-La calidad del reconocimiento de OCR en sí ya está cubierta aparte, con datos reales, en
-`ocr.service.spec.ts` y `receipt-validator.spec.ts` — no hacía falta repetirlo en el E2E.
+La integración real con PayPhone (token/storeId, formato exacto de su API de Confirm) se
+verifica a mano contra el tenant real, no acá — repetirlo en el E2E solo agregaría una
+dependencia de red externa a una suite que debe poder correr sin conexión a un tercero.
 
 ## 3. Cobertura por módulo nuevo
 
 | Módulo | Caja blanca (unit) | Caja negra (e2e) |
 |---|---|---|
-| `locker.service.ts` (`rent`, `confirmReceipt`, resolución de periodo) | ✅ `locker.service.spec.ts` — 12 casos, incluida la simulación de la carrera con mocks | ✅ `lockers.e2e-spec.ts` — 5 casos, incluidas las DOS carreras reales contra Postgres |
-| `receipt-validator.ts` (heurística de monto en el texto OCR) | ✅ `receipt-validator.spec.ts` — 5 casos (punto/coma decimal, sin cero final, monto distinto, texto vacío) | Cubierto indirectamente por el E2E (el `OcrService` sustituido siempre devuelve texto válido, así que el E2E no vuelve a probar el parseo — sería redundante) |
-| `ocr.service.ts` (wrapper de tesseract.js) | ✅ `ocr.service.spec.ts` — 4 casos, incluido que el worker se libera aunque falle el reconocimiento | Sustituido en el E2E (ver tabla de arriba) |
+| `locker.service.ts` (`rent`, `confirmPayphonePayment`, resolución de periodo) | ✅ `locker.service.spec.ts` — 23 casos, incluida la simulación de la carrera con mocks | ✅ `lockers.e2e-spec.ts` — 5 casos, incluidas las DOS carreras reales contra Postgres |
 | `auth.controller.ts` → `GET /auth/me` | ✅ `auth.controller.spec.ts` — 2 casos nuevos | Cubierto indirectamente (el guard de prueba simula la identidad que este endpoint expone) |
+
+Transferencia + comprobante por OCR (`confirmReceipt`, `OcrService`, `receipt-validator.ts`)
+se retiró como método de pago — PayPhone es el único desde entonces. Esos archivos y sus
+specs se borraron del repo; el único resto que queda es
+`LockerService.releaseExpiredTransferReservations()`, un job que drena datos legacy de
+ANTES del retiro (ver comentario en `locker.service.ts`), con su propia cobertura en
+`locker.service.spec.ts`.
 
 ## 4. Cómo correr cada nivel
 
@@ -154,12 +167,14 @@ cd backend && npm test
 cd backend && npm run test:e2e
 ```
 
-**Detalle no obvio del `test:e2e`:** corre con `cross-env NODE_OPTIONS=--experimental-vm-modules`
-— sin ese flag, el validador nativo de tipo de archivo de NestJS (`FileTypeValidator`, usa
-el paquete `file-type` vía import ESM dinámico para detectar el tipo real por
-magic-bytes, no por el `Content-Type` declarado) falla en silencio bajo Jest y rechaza
-**cualquier** archivo subido, incluida una imagen real y válida. Es una limitación conocida
-de la librería (documentada en su propio código fuente), no un bug de este proyecto.
+**Detalle histórico del `test:e2e`:** corre con `cross-env NODE_OPTIONS=--experimental-vm-modules`
+— se agregó porque `FileTypeValidator` (usa el paquete `file-type` vía import ESM dinámico
+para detectar el tipo real de una imagen subida por magic-bytes) fallaba en silencio bajo
+Jest sin ese flag. Con el retiro de transferencia + comprobante por OCR ya no queda ningún
+endpoint que suba archivos (`FileTypeValidator` no se usa en ningún lugar del backend a día
+de hoy), así que este flag ya no tiene nada que justificar su existencia — se deja anotado
+acá en vez de quitarlo a ciegas, para que quien lo revise después decida con este contexto
+si vale la pena confirmarlo y limpiarlo.
 
 ## 5. Cambio de código que esto forzó — `JwtAuthGuard`/`RolesGuard` ahora son providers propios
 

@@ -4,11 +4,10 @@ import { SubscriptionService } from "./subscription.service";
 import { SubscriptionBenefitsService } from "./subscription-benefits.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
 import { AuditModule } from "../shared/audit/audit.module";
-import { OcrModule } from "../shared/ocr/ocr.module";
 import { PeriodModule } from "../shared/period/period.module";
 
 @Module({
-  imports: [AuditModule, OcrModule, PeriodModule],
+  imports: [AuditModule, PeriodModule],
   controllers: [SubscriptionController],
   providers: [SubscriptionService, PayphoneClient, SubscriptionBenefitsService],
   // SOLO SubscriptionBenefitsService sale del módulo — ni SubscriptionService

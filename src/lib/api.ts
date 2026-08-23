@@ -25,16 +25,16 @@ export class ApiError extends Error {
 // la petición nunca llegó a tener respuesta HTTP — red caída, DNS, CORS
 // bloqueado, o (el caso real más común reportado, con captura de pantalla:
 // un celular mostrando 19.2 KB/s) una conexión móvil tan lenta/inestable
-// que el navegador corta la subida a medio camino. Justo en el flujo de
-// subir un comprobante — la acción más crítica y con más ansiedad de toda
-// la app ("¿se subió o no, me cobraron o no?") — un solo intento fallido
-// no debería obligar al estudiante a volver a elegir la foto a mano.
+// que el navegador corta la petición a medio camino. Justo en el flujo de
+// pago — la acción más crítica y con más ansiedad de toda la app ("¿se
+// confirmó o no, me cobraron o no?") — un solo intento fallido no debería
+// obligar al estudiante a empezar de cero.
 //
 // Reintentar automáticamente ACÁ es seguro (a diferencia de reintentar una
-// respuesta HTTP ya recibida, que si podría duplicar una acción): un
+// respuesta HTTP ya recibida, que sí podría duplicar una acción): un
 // fetch() que nunca llegó a responder significa que el backend puede no
 // haber visto la petición en absoluto, y si SÍ la vio, cada acción crítica
-// (alquilar, confirmar comprobante) ya está protegida con
+// (alquilar, confirmar el pago) ya está protegida con
 // `updateMany WHERE status:"PENDING"` — un reintento que en realidad SÍ
 // se procesó la primera vez simplemente encuentra 0 filas PENDING y
 // responde con "ya fue procesado" en vez de duplicar nada.
@@ -89,30 +89,10 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// Sin JSON.stringify ni Content-Type manual: dejar que el propio browser
-// arme el multipart/form-data con su boundary — ponerlo a mano es la forma
-// más común de romper un upload de archivo silenciosamente.
-async function postFormData<T>(path: string, form: FormData): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetchWithRetry(`${API_BASE_URL}${path}`, {
-      method: "POST",
-      headers: { ...authHeader() },
-      body: form,
-    });
-  } catch {
-    throw new ApiError(networkErrorMessage());
-  }
-  if (!res.ok) {
-    throw new ApiError(await friendlyErrorMessage(res, path), res.status);
-  }
-  return res.json() as Promise<T>;
-}
-
 // El backend (NestJS) manda {message, error, statusCode} en sus errores —
 // mostrar ese `message` es mucho más útil para el estudiante que "Backend
 // respondió 400", sobre todo en el flujo de alquiler (ej. "El casillero ya
-// no está disponible", "No pudimos confirmar el monto en el comprobante").
+// no está disponible", "PayPhone no aprobó esta transacción").
 async function friendlyErrorMessage(res: Response, path: string): Promise<string> {
   try {
     const body = await res.clone().json();
@@ -193,12 +173,12 @@ export function fetchLockers(): Promise<LockerFromApi[]> {
   return getJSON<LockerFromApi[]>("/lockers");
 }
 
-// Alquiler de casilleros — flujo de 3 pasos (identidad → método de pago →
-// confirmación). Con TRANSFER el alquiler queda pendiente hasta que
-// confirmReceipt() valide el comprobante por OCR.
+// Alquiler de casilleros — flujo de 3 pasos (identidad → PayPhone →
+// confirmación). PayPhone es el único método de pago (transferencia +
+// comprobante por OCR se retiró) — el alquiler queda PENDING hasta que
+// confirmLockerPayphonePayment() verifica el pago contra la API real.
 export interface RentLockerInput {
   lockerCode: string;
-  method: "TRANSFER" | "PAYPHONE";
   cedula: string;
   phone: string;
   acceptedTerms: boolean;
@@ -226,35 +206,16 @@ export interface LockerPricePreview {
   basePrice: number;
   discountPercent: number;
   tierName: string | null;
-  price: { TRANSFER: number; PAYPHONE: number };
+  price: { PAYPHONE: number };
 }
 
 export function fetchLockerPricePreview(): Promise<LockerPricePreview> {
   return getJSON<LockerPricePreview>("/lockers/my-price", { auth: true });
 }
 
-export function confirmLockerReceipt(rentalId: string, receipt: File) {
-  const form = new FormData();
-  form.append("receipt", receipt);
-  return postFormData(`/lockers/rentals/${encodeURIComponent(rentalId)}/confirm-receipt`, form);
-}
-
-// "¿Tengo una reserva por transferencia esperando comprobante?" — para que
-// la grilla deje tocar SOLO ese casillero (a resubir la foto) mientras
-// sigue RESERVED, sin habilitar el de nadie más. El backend filtra por el
-// userId del JWT, nunca por algo que este cliente pueda manipular.
-export interface MyPendingReceipt {
-  rentalId: string;
-  lockerCode: string;
-}
-
-export function fetchMyPendingReceipt(): Promise<MyPendingReceipt | null> {
-  return getJSON<MyPendingReceipt | null>("/lockers/mine/pending-receipt", { auth: true });
-}
-
-// "¿Ya tengo un casillero confirmado este periodo?" — mismo criterio que
-// MyPendingReceipt: para que la grilla lo distinga y lo deje tocar para
-// ver el estado, en vez de que el estudiante lo busque entre hasta 108.
+// "¿Ya tengo un casillero confirmado este periodo?" — pedido real: en vez
+// de que el estudiante busque el suyo entre hasta 108, la grilla lo
+// distingue y lo deja tocar para ver el estado directamente.
 export interface MyRentedLocker {
   lockerCode: string;
   zone: string;
@@ -304,6 +265,11 @@ export function fetchSubscriptionTiers(): Promise<SubscriptionTierPublic[]> {
   return getJSON<SubscriptionTierPublic[]>("/subscriptions/tiers");
 }
 
+// method conserva "TRANSFER" en el tipo a propósito — es una lectura de
+// datos HISTÓRICOS (una aportación creada antes de que se retirara
+// transferencia como método sigue existiendo con ese valor guardado, ver
+// docs/dominio/12-concurrencia-y-testing.md); PayPhone es el único método
+// con el que se puede crear una aportación NUEVA hoy (ver SubscribeInput).
 export interface MySubscription {
   id: string;
   tierName: string;
@@ -318,7 +284,6 @@ export function fetchMySubscription(): Promise<MySubscription | null> {
 
 export interface SubscribeInput {
   tierName: string;
-  method: "TRANSFER" | "PAYPHONE";
 }
 
 export interface SubscriptionFromApi {
@@ -332,12 +297,6 @@ export interface SubscriptionFromApi {
 
 export function subscribeToTier(input: SubscribeInput): Promise<SubscriptionFromApi> {
   return postJSON<SubscriptionFromApi>("/subscriptions", input);
-}
-
-export function confirmSubscriptionReceipt(subscriptionId: string, receipt: File) {
-  const form = new FormData();
-  form.append("receipt", receipt);
-  return postFormData(`/subscriptions/${encodeURIComponent(subscriptionId)}/confirm-receipt`, form);
 }
 
 export function fetchSubscriptionPayphoneConfig(): Promise<PayphonePublicConfig> {

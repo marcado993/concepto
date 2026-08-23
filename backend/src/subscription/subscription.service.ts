@@ -3,11 +3,8 @@ import { Subscription } from "@prisma/client";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
-import { OcrService } from "../shared/ocr/ocr.service";
 import { PeriodService } from "../shared/period/period.service";
 import { executeMoneyMutation } from "../shared/payment/money-mutation.helper";
-import { receiptMentionsAmount } from "../shared/payment/receipt-validator";
-import { PaymentMethod } from "../locker/rental-calculator";
 import { SubscriptionTierName } from "./dto/subscribe.dto";
 
 export class AlreadySubscribedError extends ConflictException {
@@ -19,7 +16,6 @@ export class AlreadySubscribedError extends ConflictException {
 export interface SubscribeParams {
   userId: string;
   tierName: SubscriptionTierName;
-  method: PaymentMethod;
   ipAddress?: string;
 }
 
@@ -29,7 +25,6 @@ export class SubscriptionService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly payphone: PayphoneClient,
-    private readonly ocr: OcrService,
     private readonly period: PeriodService
   ) {}
 
@@ -89,7 +84,7 @@ export class SubscriptionService {
       {
         userId: params.userId,
         amount,
-        method: params.method,
+        method: "PAYPHONE",
         ipAddress: params.ipAddress,
         auditAction: "subscription.created",
         auditEntityType: "Subscription",
@@ -107,68 +102,6 @@ export class SubscriptionService {
         },
       }
     );
-  }
-
-  // Confirmación de comprobante de transferencia — mismo patrón que
-  // LockerService.confirmReceipt(): OCR como filtro de primera línea (no
-  // aprobación bancaria real), updateMany+WHERE status:"PENDING" para que
-  // un doble click/reintento no pueda confirmar el mismo pago dos veces.
-  async confirmReceipt(subscriptionId: string, userId: string, receiptImage: Buffer, ipAddress?: string) {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { id: subscriptionId },
-      include: { payment: true },
-    });
-    if (!subscription) throw new NotFoundException("Aportación no encontrada");
-    if (subscription.userId !== userId) throw new ForbiddenException("Esta aportación no te pertenece");
-    if (subscription.payment.method !== "TRANSFER") {
-      throw new BadRequestException("Esta aportación no requiere confirmación de comprobante");
-    }
-    if (subscription.payment.status !== "PENDING") {
-      throw new BadRequestException("Este comprobante ya fue procesado");
-    }
-
-    const ocrText = await this.ocr.extractText(receiptImage);
-    const amount = Number(subscription.payment.amount);
-    const valid = receiptMentionsAmount(ocrText, amount);
-
-    if (!valid) {
-      // ocrTextPreview: mismo hallazgo que locker.service.ts — sin esto,
-      // un rechazo por OCR caído bajo presión de recursos y uno por un
-      // comprobante genuinamente equivocado se ven idénticos en el log.
-      await this.audit.record({
-        actorId: userId,
-        action: "subscription.receipt.rejected",
-        entityType: "Subscription",
-        entityId: subscription.id,
-        ipAddress,
-        metadata: { reason: "monto_no_coincide", expectedAmount: amount, ocrTextPreview: ocrText.slice(0, 500) },
-      });
-      throw new BadRequestException(
-        "No pudimos confirmar el monto en el comprobante — verifica que la foto sea legible e intenta de nuevo"
-      );
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.payment.updateMany({
-        where: { id: subscription.paymentId, status: "PENDING" },
-        data: { status: "CONFIRMED", confirmedAt: new Date(), providerRef: `receipt-${subscription.id}` },
-      });
-      if (count === 0) {
-        throw new ConflictException("Este comprobante ya fue procesado por otra petición");
-      }
-      await this.audit.record(
-        {
-          actorId: userId,
-          action: "subscription.receipt.confirmed",
-          entityType: "Subscription",
-          entityId: subscription.id,
-          ipAddress,
-          metadata: { amount },
-        },
-        tx
-      );
-      return { subscription };
-    });
   }
 
   // Confirmación de pago con PayPhone — mismo patrón que
