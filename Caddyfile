@@ -22,9 +22,7 @@ api.aeis-app.online {
 #   auth.  → :3001 — lo que ve el estudiante (páginas de login/registro) y
 #            lo que el backend usa como LOGTO_ISSUER.
 #   admin. → :3002 — consola de administración, donde se configura la app,
-#            el API resource y el conector de GitHub. Restringir el acceso
-#            a esta más adelante (ver docs/dominio/09-auditoria-pentest.md)
-#            es responsabilidad de quien administre el tenant, no de Caddy.
+#            el API resource y los conectores sociales.
 # Mismo requisito de DNS que api.aeis-app.online: registros A para "auth" y
 # "admin" apuntando a la IP pública de la instancia, antes de levantar esto.
 auth.aeis-app.online {
@@ -33,6 +31,25 @@ auth.aeis-app.online {
 }
 
 admin.aeis-app.online {
+	# Hallazgo de pentesting (docs/dominio/09-auditoria-pentest.md): la
+	# consola de administración de Logto (conectores, API resources,
+	# secretos de identidad) estaba abierta a internet — un blanco de alto
+	# valor. Se restringe a la red Tailscale (100.64.0.0/10, el rango CGNAT
+	# de tailnet): desde el internet público responde 404, así que un
+	# atacante ni ve que existe. Para administrarla, accede vía Tailscale —
+	# un hosts entry "100.74.53.122 admin.aeis-app.online" (o MagicDNS) hace
+	# que el navegador llegue por la interfaz tailnet; el certificado
+	# público ya emitido se sirve igual por ahí. La ruta de reto ACME queda
+	# exceptuada para que Let's Encrypt (que llega con IP pública) pueda
+	# seguir renovando el certificado.
+	#
+	# auth. y api. NO se tocan a propósito: el login de estudiantes y la API
+	# siguen 100% públicos, solo la consola de admin se cierra.
+	@bloqueado {
+		not remote_ip 100.64.0.0/10
+		not path /.well-known/acme-challenge/*
+	}
+	respond @bloqueado "Not found" 404
 	reverse_proxy logto:3002
 	encode gzip
 }
