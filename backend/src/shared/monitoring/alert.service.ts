@@ -18,14 +18,36 @@ export class AlertService {
 
   constructor(private readonly config: ConfigService) {}
 
+  // Un webhook válido es http(s) y NO trae los signos < > del placeholder
+  // del .env.example (https://ntfy.sh/<tu-topic-secreto>). Hallazgo de
+  // pentesting: si el .env se despliega con el placeholder tal cual, este
+  // servicio posteaba las alertas de CPU/memoria a esa URL literal — ntfy
+  // crea un topic público llamado "<tu-topic-secreto>", así que las alertas
+  // (que insinúan carga/ataques) quedaban en un topic adivinable Y nunca le
+  // llegaban a nadie real. Ahora una URL con placeholder se descarta con un
+  // aviso claro en el log, en vez de filtrar en silencio.
+  private isRealWebhook(url: string): boolean {
+    if (!/^https?:\/\//i.test(url)) return false;
+    if (/[<>]/.test(url)) return false; // placeholder sin reemplazar
+    return true;
+  }
+
   async send(message: string, severity: "warning" | "critical" = "warning") {
-    const urls = (this.config.get<string>("ALERT_WEBHOOK_URLS") ?? "")
+    const configured = (this.config.get<string>("ALERT_WEBHOOK_URLS") ?? "")
       .split(",")
       .map((u) => u.trim())
       .filter(Boolean);
 
+    const invalid = configured.filter((u) => !this.isRealWebhook(u));
+    if (invalid.length > 0) {
+      this.logger.warn(
+        `ALERT_WEBHOOK_URLS trae ${invalid.length} URL(s) inválida(s) o sin reemplazar (¿placeholder del .env?) — se ignoran, revisa la config`
+      );
+    }
+    const urls = configured.filter((u) => this.isRealWebhook(u));
+
     if (urls.length === 0) {
-      this.logger.warn(`[sin ALERT_WEBHOOK_URLS configurado] ${severity.toUpperCase()}: ${message}`);
+      this.logger.warn(`[sin ALERT_WEBHOOK_URLS válido configurado] ${severity.toUpperCase()}: ${message}`);
       return;
     }
 
