@@ -1,8 +1,27 @@
 <script lang="ts">
+  // CategoryContent es ahora un thin wrapper — dispatcher hacia los organisms.
+  // Toda la lógica de cada sección vive en src/lib/organisms/:
+  //   EventsSection       → events/recursos
+  //   BenefitsSection     → recursos de la AEIS
+  //   SubscriptionsSection → tiers de aportación
+  //   CommunitySection    → directorio de emprendimientos
+  //   LockersSection      → grilla de casilleros (108 unidades)
+  //   SecuritySection     → mapa 3D + indicadores de seguridad
+  //
+  // El <style> al final de este archivo sigue aquí porque los organisms NO
+  // tienen estilos propios: las clases CSS (`.sec-panel`, `.grid`, `.unit`,
+  // etc.) son parte del sistema de diseño de esta app y se aplican al DOM
+  // independientemente del componente que las emite. Svelte no hace scoping
+  // a menos que se use <style module>, así que no hay pérdida de estilos.
+
   import IsoIcon from "./IsoIcon.svelte";
-  import type { Category, LockerStatus } from "./data";
-  import { fetchLockerPricePreview, type LockerPricePreview } from "./api";
-  import { isAuthenticated } from "./auth.svelte";
+  import type { Category } from "./data";
+  import EventsSection from "./organisms/EventsSection.svelte";
+  import BenefitsSection from "./organisms/BenefitsSection.svelte";
+  import SubscriptionsSection from "./organisms/SubscriptionsSection.svelte";
+  import CommunitySection from "./organisms/CommunitySection.svelte";
+  import LockersSection from "./organisms/LockersSection.svelte";
+  import SecuritySection from "./organisms/SecuritySection.svelte";
 
   interface Props {
     category: Category;
@@ -84,243 +103,50 @@
   // módulo (no dentro de una función), así solo se pide una vez aunque
   // SecurityMapComp se monte/desmonte varias veces navegando.
   const securityMapModule = import("./SecurityMap.svelte");
-  import RentLockerModal from "./RentLockerModal.svelte";
-  import MyLockerStatusModal from "./MyLockerStatusModal.svelte";
-  import SubscribeModal from "./SubscribeModal.svelte";
-  import type { SubscriptionBenefit } from "./data";
-
-  let rentingLockerCode = $state<string | null>(null);
-  // Casillero propio confirmado que se está viendo (solo lectura) — no es
-  // lo mismo que rentingLockerCode/RentLockerModal: acá no hay nada que
-  // alquilar ni confirmar, solo el estado de lo que ya es tuyo.
-  let viewingMyLocker = $state<{ lockerCode: string; zone: string } | null>(null);
-  let subscribingTier = $state<{ name: string; amount: string } | null>(null);
-
-  // "descuento_casillero" con percent:0 no se muestra como "0% de
-  // descuento" — un beneficio sin efecto real es ruido, no información.
-  // `included` (ej. acceso_ps4) se muestra como línea aparte, sin número.
-  const BENEFIT_LABELS: Record<string, string> = {
-    descuento_casillero: "de descuento en casilleros",
-    descuento_billar: "de descuento en billar",
-    acceso_ps4: "Acceso a la sala de PS4",
-  };
-  function formatBenefit(b: SubscriptionBenefit): string | null {
-    if (typeof b.percent === "number") {
-      if (b.percent <= 0) return null;
-      return `${b.percent}% ${BENEFIT_LABELS[b.type] ?? b.type}`;
-    }
-    if (b.included) return BENEFIT_LABELS[b.type] ?? b.type;
-    return null;
+  // Props — igual que antes, sin cambio de contrato: el frontend no
+  // necesita ajustarse.
+  interface Props {
+    category: Category;
+    securityCategory?: Category | null;
+    lockersCategory?: Category | null;
+    securityRisk?: number;
+    securityIndicatorsError?: boolean;
+    venturesError?: boolean;
+    lockersError?: boolean;
+    lockersLoading?: boolean;
+    myRentedLocker?: { lockerCode: string; zone: string } | null;
+    wide?: boolean;
+    compact?: boolean;
+    onheaderpointerdown?: (e: PointerEvent) => void;
+    onheaderpointermove?: (e: PointerEvent) => void;
+    onheaderpointerup?: (e: PointerEvent) => void;
+    onlockerrented?: () => void;
+    subscriptionTiersError?: boolean;
+    onsubscribed?: () => void;
   }
 
-  // Recursos: un ícono por tag en vez del punto de color plano que había
-  // antes — un vistazo ya dice qué tipo de recurso es cada tarjeta, sin
-  // tener que leer la etiqueta de texto primero. Inline (no un sprite
-  // <use href>, que este proyecto no usa en ningún otro lado) para
-  // seguir el mismo patrón que ya usa IsoIcon.svelte con SVG a mano.
-  // currentColor a propósito: toma el acento de CADA categoría
-  // (category.theme), no un color fijo.
-  interface RepoIcon {
-    paths: string[];
-    dots: [number, number][];
-  }
-  const RESOURCE_ICONS: Record<string, RepoIcon> = {
-    Hardware: {
-      paths: ["M6 6h8v8H6z", "M8 6V3.3M12 6V3.3M8 16.7V14M12 16.7V14M6 8H3.3M6 12H3.3M14 8h2.7M14 12h2.7"],
-      dots: [],
-    },
-    Infraestructura: {
-      paths: ["M3.5 3.3h13v4h-13z", "M3.5 8h13v4h-13z", "M3.5 12.7h13v4h-13z"],
-      dots: [
-        [6.1, 5.3],
-        [6.1, 10],
-        [6.1, 14.7],
-      ],
-    },
-    Electrónica: {
-      paths: ["M7.5 7.5h5v5h-5z", "M10 7.5V4.6M10 15.4v-2.9M7.5 10H4.6M15.4 10h-2.9"],
-      dots: [
-        [10, 3.6],
-        [10, 16.4],
-        [3.6, 10],
-        [16.4, 10],
-      ],
-    },
-    Material: {
-      paths: [
-        "M10 6c-1.3-1.1-3.4-1.6-5.6-1.6-.6 0-1.1.5-1.1 1.1v8.8c0 .6.5 1 1.1 1 2.2 0 4.3.5 5.6 1.6m0-10.9c1.3-1.1 3.4-1.6 5.6-1.6.6 0 1.1.5 1.1 1.1v8.8c0 .6-.5 1-1.1 1-2.2 0-4.3.5-5.6 1.6m0-10.9v10.9",
-      ],
-      dots: [],
-    },
-  };
-  // Cualquier tag que no esté en el mapa (dato futuro sin ícono asignado
-  // todavía) cae al de Material — mismo criterio de "vencido" seguro que
-  // ya usa statusLabel para un LockerStatus inesperado, en vez de romper.
-  function resourceIcon(tag: string): RepoIcon {
-    return RESOURCE_ICONS[tag] ?? RESOURCE_ICONS.Material;
-  }
-
-  let mapReady = $state(false);
-
-  // El resize del mapa al abrirse el sheet ya lo cubre el ResizeObserver
-  // propio de SecurityMap.svelte (observa el contenedor real). Antes acá
-  // se despachaba además un `window.dispatchEvent(new Event("resize"))`
-  // global 420ms después — no solo era redundante (hasta 3 llamadas a
-  // `map.resize()`, cada una recrea framebuffers), sino que ese evento
-  // global también re-disparaba cualquier OTRO listener de resize de la
-  // app, no solo el del mapa (hallazgo de auditoría de rendimiento móvil).
+  let {
+    category,
+    securityCategory = null,
+    lockersCategory = null,
+    securityRisk = 0.5,
+    securityIndicatorsError = false,
+    venturesError = false,
+    lockersError = false,
+    lockersLoading = false,
+    myRentedLocker = null,
+    wide = false,
+    compact = false,
+    onheaderpointerdown,
+    onheaderpointermove,
+    onheaderpointerup,
+    onlockerrented,
+    subscriptionTiersError = false,
+    onsubscribed,
+  }: Props = $props();
 
   const isSecurityActive = $derived(category.id === "security");
   const isLockersActive = $derived(category.id === "lockers");
-
-  // Una sola vez true, nunca vuelve a false — a propósito no es
-  // `isSecurityActive` directo. `{#if isSecurityActive}` desmontaba
-  // <SecurityMapComp> cada vez que se navegaba fuera de Seguridad (pese a
-  // que el comentario del panel decía lo contrario), lo que disparaba un
-  // fetch nuevo a /security/map-data y un setData() completo del heatmap
-  // (~500 puntos re-tesselados en GPU) en cada visita, no solo la primera
-  // (hallazgo de auditoría de rendimiento móvil). Con este flag, el mapa
-  // sigue sin montarse para quien nunca abre Seguridad, pero una vez
-  // montado queda montado — igual que ya pasa con Casilleros.
-  let hasOpenedSecurity = $state(false);
-  $effect(() => {
-    if (!isSecurityActive || hasOpenedSecurity) return;
-    // Montar el mapa en el MISMO frame en que se entra a Seguridad traba
-    // la pantalla de golpe: crear el contexto WebGL, pedir estilo/sprites/
-    // glyphs/tiles a un tercero y teselar el mapa de calor (~500 puntos)
-    // es de lejos el trabajo más pesado de la app, y caía justo encima de
-    // la animación de entrada — "hay mucho lag de golpe" (reporte real).
-    //
-    // Se deja primero pintar la sección (indicadores incluidos, que es
-    // información útil de inmediato) y el mapa se monta después, con su
-    // overlay "cargando mapa 3d…" ya visible. requestIdleCallback cuando
-    // existe; si no, un respiro corto de dos frames.
-    const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number })
-      .requestIdleCallback;
-    if (idle) {
-      const id = idle(() => (hasOpenedSecurity = true), { timeout: 900 });
-      return () => (window as Window & { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(id);
-    }
-    const t = setTimeout(() => (hasOpenedSecurity = true), 320);
-    return () => clearTimeout(t);
-  });
-
-  const riskLabel: Record<"low" | "moderate" | "high", string> = {
-    low: "Bajo",
-    moderate: "Moderado",
-    high: "Alto",
-  };
-
-  const statusLabel: Record<LockerStatus, string> = {
-    available: "Libre",
-    occupied: "Ocupado",
-    reserved: "Reservado",
-  };
-
-  function initials(name: string) {
-    return name
-      .split(" ")
-      .map((w) => w[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase();
-  }
-
-  // Un tono por categoría, no una paleta fija a mano — el estudiante que
-  // sube un emprendimiento puede escribir cualquier texto en "categoría",
-  // así que un mapa hardcodeado ("Alimentos" → naranja) se rompería con la
-  // primera categoría nueva. Un hash determinístico da el mismo color
-  // siempre para la misma palabra, sin mantenimiento, y sigue cumpliendo
-  // el objetivo real: que el ojo agrupe tarjetas de la misma categoría por
-  // color al escanear la grilla (categorización rápida, efecto Von
-  // Restorff — una grilla monocroma se vuelve ruido visual).
-  function categoryHue(category: string): number {
-    let hash = 0;
-    for (let i = 0; i < category.length; i++) {
-      hash = (hash * 31 + category.charCodeAt(i)) % 360;
-    }
-    return hash;
-  }
-
-  // Degradado a lo largo de la grilla de casilleros — un tono por
-  // posición en vez de un color plano fijo. Recorre un arco de tono cada
-  // ~30 casilleros (108 ÷ 30 ≈ 3.6 tramos), anclado cerca del teal de
-  // acento de la app (~160°) para que nunca desentone con el resto de la UI.
-  function unitHue(index: number): number {
-    const withinBand = (index % 30) / 30; // 0..1 dentro del tramo de 30
-    const band = Math.floor(index / 30); // qué tramo de 30 le toca
-    return (160 + band * 55 + withinBand * 40) % 360;
-  }
-
-  // Entrada escalonada — cada casillero aparece un poco después que el
-  // anterior, con techo para que el número 108 no tarde una eternidad.
-  function unitDelay(index: number): number {
-    return Math.min(index * 12, 500);
-  }
-
-  // Pedido real: que los reservados/ocupados se hundan al final y solo los
-  // libres (y los tuyos — pendiente o ya alquilado, que sí puedes tocar)
-  // queden arriba, en vez de mezclados entre hasta 108. Se ordena por
-  // "prioridad" (0 = arriba) y a igualdad de prioridad se respeta el orden
-  // original (número de casillero), así el resultado no salta de forma
-  // rara entre refrescos.
-  function unitPriority(unit: { status: LockerStatus; number: string }): number {
-    if (unit.status === "available") return 0;
-    if (myRentedLocker?.lockerCode === unit.number) return 0;
-    return 1;
-  }
-  const sortedLockers = $derived(
-    [...(lockersCategory?.lockers ?? [])].sort((a, b) => unitPriority(a) - unitPriority(b))
-  );
-
-  // Filtro por zona — el hallazgo de usabilidad más grande de esta
-  // sección: son 12 zonas (A–L) de 9 casilleros = 108, y la zona es una
-  // UBICACIÓN FÍSICA real en el edificio. Un estudiante no quiere "un
-  // casillero cualquiera", quiere uno cerca de donde tiene clases, y
-  // antes tenía que recorrer las 108 tarjetas a mano para encontrarlo
-  // (correspondencia con el mundo real + reconocer en vez de recordar).
-  let zoneFilter = $state<string | null>(null);
-  const zones = $derived(
-    [...new Set((lockersCategory?.lockers ?? []).map((u) => u.zone))].sort()
-  );
-
-  // Buscador por número — con 108 casilleros, alguien que ya sabe que
-  // quiere "B05" no debería tener que escanear la grilla entero a ojo
-  // (hallazgo real de auditoría de usabilidad: solo existía el filtro por
-  // zona, sin forma de ir directo a un número). Coincidencia parcial
-  // ("05" encuentra "B05") — no exige el prefijo de zona de memoria.
-  let numberQuery = $state("");
-  const visibleLockers = $derived(
-    (zoneFilter ? sortedLockers.filter((u) => u.zone === zoneFilter) : sortedLockers).filter(
-      (u) => !numberQuery.trim() || u.number.toLowerCase().includes(numberQuery.trim().toLowerCase())
-    )
-  );
-  // Visibilidad del estado del sistema: sin esto no había forma de saber
-  // "¿queda algo libre?" sin escanear la grilla entera a ojo.
-  const availableCount = $derived(visibleLockers.filter((u) => u.status === "available").length);
-
-  // Dónde termina el grupo "disponible / tuyo" (prioridad 0) y empieza el
-  // de "ocupado / reservado" (prioridad 1) dentro de la lista YA ordenada
-  // — hallazgo real de auditoría de usabilidad: el orden salta los
-  // números tomados (A01 → A05 → A08...) sin explicar por qué, y eso se
-  // lee como un error de numeración, no como una regla a propósito. Con
-  // el índice del corte, el markup inserta un rótulo justo ahí (ver más
-  // abajo) — mismo principio que la leyenda: nombrar la regla en vez de
-  // dejar que se adivine. -1 si no hay ningún casillero tomado en la vista
-  // actual (no hace falta rótulo si todo es del mismo grupo).
-  const firstTakenIndex = $derived(visibleLockers.findIndex((u) => unitPriority(u) === 1));
-
-  // Precio del casillero para mostrarlo ANTES de entrar al flujo (H10):
-  // el backend ya resuelve el descuento de aportante, acá no se calcula
-  // nada. Silencioso si falla — es información de apoyo, no debe romper
-  // la grilla si el endpoint no responde.
-  let lockerPrice = $state<LockerPricePreview | null>(null);
-  $effect(() => {
-    if (!isAuthenticated()) return;
-    fetchLockerPricePreview()
-      .then((p) => (lockerPrice = p))
-      .catch(() => {});
-  });
 
   const theme = $derived(category.theme);
   const wrapStyle = $derived(
@@ -337,11 +163,6 @@
     onpointercancel={onheaderpointerup}
   >
     {#if compact}
-      <!-- El gráfico SIGUE estando (es la identidad visual de la app y se
-           pidió expresamente recuperarlo) — pero en línea con el texto y a
-           56px, no como bloque centrado de 128px. Así conserva el carácter
-           sin empujar el contenido real fuera de la primera pantalla, que
-           era el problema de fondo, no el gráfico en sí. -->
       <div class="compact-head">
         <span class="compact-icon" aria-hidden="true">
           <IsoIcon kind={category.icon} size={56} priority />
@@ -361,446 +182,43 @@
   </header>
 
   <div class="sheet-body">
-    {#if category.id === "events" && category.events}
-      <div class="timeline">
-        {#each category.events as ev, i (ev.id)}
-          <!-- El PRIMERO es el más próximo (la lista viene ordenada por
-               fecha). Marcarlo responde a la pregunta que el estudiante
-               trae al entrar — "¿qué es lo siguiente?" — sin obligarle a
-               comparar fechas a ojo. -->
-          <div class="event-row list-in" class:event-next={i === 0} style="--li: {i}">
-            <div class="event-date">
-              <span class="event-day">{ev.day}</span>
-              <span class="event-month">{ev.month}</span>
-            </div>
-            <div class="event-line"></div>
-            <div class="event-body">
-              <span class="event-tags">
-                <span class="event-tag">{ev.tag}</span>
-                {#if i === 0}
-                  <span class="event-next-badge">
-                    <span class="next-dot" aria-hidden="true"></span>
-                    Próximo
-                  </span>
-                {/if}
-              </span>
-              <h3 class="event-title">{ev.title}</h3>
-              <p class="event-time">{ev.time}</p>
-            </div>
-          </div>
-        {/each}
-      </div>
-    {:else if category.id === "resources" && category.resources}
-      <div class="repo-list">
-        {#each category.resources as r, i (r.id)}
-          <!-- {@const} tiene que ser hijo INMEDIATO del {#each}, no ir
-               metido más abajo dentro del marcado. -->
-          {@const total = r.stat1 + r.stat2}
-          {@const pct = total > 0 ? Math.round((r.stat1 / total) * 100) : 0}
-          {@const icon = resourceIcon(r.tag)}
-          <div class="repo-card list-in" style="--li: {i}">
-            <div class="repo-head">
-              <span class="repo-icon" aria-hidden="true">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-                  {#each icon.paths as d}<path {d} />{/each}
-                  {#each icon.dots as [cx, cy]}<circle {cx} {cy} r="0.7" fill="currentColor" stroke="none" />{/each}
-                </svg>
-              </span>
-              <h3 class="repo-name">{r.name}</h3>
-            </div>
-            <p class="repo-desc">{r.description}</p>
-            <!-- Barra de ocupación: los dos números sueltos ("4 Disponibles /
-                 2 En uso") obligaban a hacer la cuenta mental de cuánto
-                 queda. La proporción se lee de un vistazo. -->
-            <div
-              class="repo-gauge"
-              role="img"
-              aria-label="{r.stat1} de {total} {r.stat1Label.toLowerCase()}"
-            >
-              <span class="repo-gauge-fill" style="--pct: {pct}%"></span>
-            </div>
-            <div class="repo-foot">
-              <span class="repo-tag">{r.tag}</span>
-              <span class="repo-stat repo-stat-strong">{r.stat1} {r.stat1Label.toLowerCase()}</span>
-              <span class="repo-stat">{r.stat2} {r.stat2Label.toLowerCase()}</span>
-              <span class="repo-updated">{r.updated}</span>
-            </div>
-          </div>
-        {/each}
-      </div>
-    {:else if category.id === "subscriptions" && category.tiers}
-      {#if subscriptionTiersError}
-        <p class="fetch-error">No se pudo cargar la disponibilidad real de aportaciones — intenta más tarde.</p>
-      {/if}
-      <div class="tier-list">
-        {#each category.tiers as tier, i (tier.id)}
-          {@const labels = tier.benefits.map(formatBenefit).filter(Boolean)}
-          <button class="tier-card list-in" style="--li: {i}" onclick={() => (subscribingTier = { name: tier.name, amount: tier.amount })}>
-            <div class="tier-head">
-              <h3 class="tier-name">{tier.name}</h3>
-              <span class="tier-price">${tier.amount}</span>
-            </div>
-            <ul class="tier-benefits">
-              {#each labels as label}
-                <li>{label}</li>
-              {/each}
-              {#if labels.length === 0}
-                <!-- Sin esto, un tier cuyos beneficios son todos de 0%
-                     (ej. Bronce) se veía COMPLETAMENTE vacío: parecía que
-                     no daba nada y no había forma de saber para qué sirve.
-                     Aportar de por sí ya es el beneficio. -->
-                <li class="tier-benefit-base">Apoyas a AEIS y sus actividades</li>
-              {/if}
-            </ul>
-            <span class="tier-cta">Aportar ${tier.amount} →</span>
-          </button>
-        {/each}
-      </div>
+    <!-- Eventos y recursos: secciones sin estado de carga — los datos
+         vienen de data.ts (estáticos). -->
+    {#if category.id === "events"}
+      <EventsSection {category} />
+    {:else if category.id === "resources"}
+      <BenefitsSection {category} />
+    {:else if category.id === "subscriptions"}
+      <SubscriptionsSection
+        {category}
+        {subscriptionTiersError}
+        {onsubscribed}
+      />
     {:else if category.id === "community"}
-      <!-- "Comunidad" reemplazado por Emprendimientos — vitrina +
-           contacto WhatsApp, sin chat propio (docs/dominio/
-           01-analisis-negocio-mision.md §4). El id interno se queda como
-           "community" a propósito: renombrarlo tocaría IconKind/ArcMenu/
-           IsoIcon sin necesidad real, cuando lo único que cambió es el
-           contenido, no la mecánica de navegación. -->
-      <div class="news-list venture-grid">
-        {#if category.ventures}
-          {#each category.ventures as v, i (v.id)}
-            <article class="venture-card list-in" style="--v-hue: {categoryHue(v.category)}; --li: {i}">
-              <div class="venture-media">
-                {#if v.photoUrl}
-                  <img src={v.photoUrl} alt={v.name} loading="lazy" />
-                {:else}
-                  <div class="venture-media-fallback">{initials(v.name)}</div>
-                {/if}
-                <span class="venture-badge">{v.category}</span>
-              </div>
-              <div class="venture-body">
-                <h3 class="venture-name">{v.name}</h3>
-                <p class="venture-desc">{v.description}</p>
-                <a class="venture-cta" href={v.whatsappLink} target="_blank" rel="noreferrer">
-                  <svg class="wa-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      fill="currentColor"
-                      d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.06-1.36A10 10 0 1 0 12 2Zm0 18.2a8.15 8.15 0 0 1-4.16-1.14l-.3-.18-3 .8.8-2.93-.2-.31A8.2 8.2 0 1 1 12 20.2Zm4.5-6.13c-.24-.12-1.44-.71-1.66-.8-.22-.08-.38-.12-.55.12-.16.24-.63.8-.77.96-.14.16-.28.18-.52.06-.24-.12-1.01-.37-1.92-1.18-.71-.63-1.19-1.42-1.33-1.66-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.7 2.6 4.12 3.64.58.25 1.03.4 1.38.51.58.18 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28Z"
-                    />
-                  </svg>
-                  Escribir por WhatsApp
-                </a>
-              </div>
-            </article>
-          {/each}
-          {#if category.ventures.length === 0}
-            <p class="sec-note">Todavía no hay emprendimientos aprobados en el directorio.</p>
-          {/if}
-        {:else if venturesError}
-          <p class="sec-note">No se pudo cargar el directorio de emprendimientos.</p>
-        {:else}
-          <p class="sec-note">Cargando emprendimientos…</p>
-        {/if}
-      </div>
+      <CommunitySection {category} {venturesError} />
     {/if}
 
-    <!-- Casilleros tampoco está en la cadena {#if/:else if} de arriba, por
-         la misma razón que Seguridad (ver comentario debajo): es la
-         sección más pesada (hasta 108 unidades, cada una con su propio
-         IsoIcon SVG animado) y antes se destruía/reconstruía por completo
-         — con las 108 animaciones de entrada volviendo a dispararse — cada
-         vez que el usuario navegaba a otra categoría y regresaba. Ahora se
-         monta una sola vez y solo se oculta con `display: none`. -->
-    {#if lockersCategory}
-      <div class="lockers-panel" style:display={isLockersActive ? "block" : "none"}>
-        {#if lockersError}
-          <!-- H9: antes esto era un callejón sin salida ("intenta más
-               tarde" y nada que tocar). Recargar es la única acción que de
-               verdad reintenta la carga inicial de datos. -->
-          <p class="fetch-error">
-            No se pudo cargar la disponibilidad de casilleros.
-            <button class="retry-btn" onclick={() => location.reload()}>Reintentar</button>
-          </p>
-        {/if}
+    <!-- Casilleros: display:none en vez de {#if} para no destruir los 108
+         nodos animados al navegar a otra sección y volver (ver LockersSection). -->
+    <LockersSection
+      {lockersCategory}
+      {myRentedLocker}
+      {lockersError}
+      {lockersLoading}
+      isActive={isLockersActive}
+      {onlockerrented}
+    />
 
-        <!-- Buscador por número — con 108 casilleros, quien ya sabe que
-             quiere "B05" no debería tener que escanearlos todos a ojo.
-             role="search" + label visualmente oculto: el placeholder ya
-             comunica el propósito a la vista, pero un lector de pantalla
-             necesita su propio nombre accesible. -->
-        <div class="locker-search" role="search">
-          <label for="locker-search-input" class="sr-only">Buscar casillero por número</label>
-          <svg class="locker-search-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
-          <input
-            id="locker-search-input"
-            class="locker-search-input"
-            type="search"
-            inputmode="text"
-            placeholder="Buscar por número (ej. B05)"
-            bind:value={numberQuery}
-          />
-        </div>
-
-        {#if zones.length > 1}
-          <div class="zone-bar">
-            <div class="zone-chips" role="group" aria-label="Filtrar por zona">
-              <button class="zone-chip" class:active={zoneFilter === null} onclick={() => (zoneFilter = null)}>
-                Todas
-              </button>
-              {#each zones as z (z)}
-                <button class="zone-chip" class:active={zoneFilter === z} onclick={() => (zoneFilter = z)}>
-                  {z}
-                </button>
-              {/each}
-            </div>
-            <!-- aria-live: al cambiar de zona el conteo se actualiza sin
-                 recargar nada; sin esto un lector de pantalla no anuncia
-                 que el resultado del filtro cambió. -->
-            <p class="zone-count" aria-live="polite">
-              {#if availableCount === 0}
-                Sin casilleros libres {zoneFilter ? `en la zona ${zoneFilter}` : "por ahora"}
-              {:else}
-                <strong>{availableCount}</strong>
-                {availableCount === 1 ? "libre" : "libres"}
-                {zoneFilter ? `en la zona ${zoneFilter}` : `de ${visibleLockers.length}`}
-              {/if}
-            </p>
-          </div>
-        {/if}
-
-        <!-- H10 (ayuda) + H1 (estado): el precio solo aparecía DENTRO del
-             modal, o sea que había que empezar el trámite para saber
-             cuánto costaba. Acá se ve antes de tocar nada. El monto sale
-             del backend (ya con el descuento de aportante aplicado), no
-             hardcodeado. -->
-        {#if lockerPrice}
-          <p class="locker-price-note">
-            <!-- "Alquiler del periodo" no decía de cuánto tiempo se habla —
-                 un monto sin unidad no se puede evaluar. El semestre sale
-                 del backend (mismo dato con el que se asigna el alquiler),
-                 nunca escrito a mano acá. -->
-            {lockerPrice.period ? `Alquiler del semestre ${lockerPrice.period.label}` : "Alquiler del semestre"}:
-            <strong>${lockerPrice.price.PAYPHONE.toFixed(2)}</strong>
-            {#if lockerPrice.discountPercent > 0}
-              <span class="price-discount">
-                −{lockerPrice.discountPercent}% por tu aportación {lockerPrice.tierName}
-              </span>
-            {/if}
-          </p>
-        {/if}
-
-        <!-- H6 (reconocer en vez de recordar): antes había que deducir qué
-             significaba cada color e ícono de la grilla. Ahora está dicho. -->
-        <!-- Ocupado y Reservado ya se ven distintos en la grilla misma
-             (pastilla sólida vs. borde punteado) — hallazgo real de
-             auditoría: la leyenda los mezclaba en una sola línea aunque el
-             propio diseño ya los diferenciaba, así que nadie sabía que
-             "reservado" es un estado aparte (pago iniciado, esperando
-             confirmación) hasta toparse con uno. -->
-        <ul class="locker-legend" aria-label="Qué significa cada estado">
-          <li><span class="legend-dot legend-free" aria-hidden="true"></span>Libre — puedes alquilarlo</li>
-          <li><span class="legend-dot legend-taken" aria-hidden="true"></span>Ocupado</li>
-          <li><span class="legend-dot legend-reserved" aria-hidden="true"></span>Reservado — pago en trámite</li>
-          {#if myRentedLocker}
-            <li><span class="legend-dot legend-mine" aria-hidden="true"></span>Es tuyo</li>
-          {/if}
-        </ul>
-
-        {#if lockersLoading}
-          <!-- Esqueleto de carga: 12 celdas fantasma con un barrido de luz
-               que las recorre en cascada, como un sistema inicializando.
-               Ocupan el mismo espacio que los casilleros reales, así que
-               cuando llegan los datos nada salta de sitio. Con
-               prefers-reduced-motion el barrido se apaga y quedan estáticas
-               (ver el bloque al final de este archivo). -->
-          <div class="grid grid-skeleton" aria-hidden="true">
-            {#each Array(12) as _, i}
-              <div class="unit-skeleton" style="--skel-delay: {i * 90}ms"></div>
-            {/each}
-          </div>
-          <p class="loading-line" role="status">
-            <span class="loading-dot"></span>
-            Leyendo disponibilidad de casilleros…
-          </p>
-        {/if}
-
-        <div class="grid" class:grid-hidden={lockersLoading}>
-          {#each visibleLockers as unit, i (unit.id)}
-            {@const isMineRented = myRentedLocker?.lockerCode === unit.number}
-            {@const clickable = unit.status === "available" || isMineRented}
-            {#if i === firstTakenIndex && firstTakenIndex > 0}
-              <!-- Explica el salto de numeración en vez de dejar que se
-                   lea como un bug — hallazgo real de auditoría: sin este
-                   rótulo, pasar de "A01" a "A05" sin más parecía un error,
-                   no una regla a propósito (libres primero). -->
-              <p class="grid-divider" role="separator">Ocupados y reservados</p>
-            {/if}
-            <button
-              class="unit"
-              class:dim={unit.status !== "available" && !isMineRented}
-              class:mine-rented={isMineRented}
-              disabled={!clickable}
-              onclick={() => {
-                if (isMineRented) {
-                  viewingMyLocker = myRentedLocker;
-                  return;
-                }
-                rentingLockerCode = unit.number;
-              }}
-              aria-label={isMineRented
-                ? `Ver estado de tu casillero ${unit.number}`
-                : `Alquilar casillero ${unit.number}`}
-              style="--unit-hue: {unitHue(i)}; --unit-i: {Math.min(i, 16)}; animation-delay: {unitDelay(i)}ms"
-            >
-              {#if isMineRented}
-                <!-- Casillero propio ya confirmado — pedido real: en vez de
-                     buscarlo entre hasta 108, se distingue con su propio
-                     ícono (check, no candado) y se puede tocar para ver el
-                     estado directamente. -->
-                <span class="unit-check" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path
-                      fill="currentColor"
-                      d="m9.55 17.55-5.7-5.7 1.425-1.425L9.55 14.7l9.175-9.175L20.15 6.95Z"
-                    />
-                  </svg>
-                </span>
-              {:else if unit.status !== "available"}
-                <!-- El texto "Ocupado"/"Reservado" ya distingue el estado
-                     exacto, pero a 10px y entre hasta 108 unidades es fácil
-                     de pasar por alto en un vistazo rápido — un candado en
-                     la esquina se reconoce sin tener que leer nada,
-                     apoyándose en el mismo principio que ya usa .dim
-                     (reconocimiento en vez de recuerdo). -->
-                <span class="unit-lock" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path
-                      fill="currentColor"
-                      d="M6 22q-.825 0-1.413-.588T4 20V10q0-.825.588-1.413T6 8h1V6q0-2.075 1.463-3.538T12 1t3.538 1.463T17 6v2h1q.825 0 1.413.588T20 10v10q0 .825-.588 1.413T18 22zm6-5q.825 0 1.413-.588T14 15t-.588-1.413T12 13t-1.413.588T10 15t.588 1.413T12 17M9 8h6V6q0-1.25-.875-2.125T12 3t-2.125.875T9 6z"
-                    />
-                  </svg>
-                </span>
-              {/if}
-              <IsoIcon unit status={unit.status} size={64} />
-              <span class="unit-number">{unit.number}</span>
-              <span class="unit-status status-{unit.status}" class:status-mine={isMineRented}>
-                {#if isMineRented}
-                  Es tuyo — toca para ver
-                {:else if unit.status === "available"}
-                  Toca para alquilar
-                {:else}
-                  {statusLabel[unit.status]}
-                {/if}
-              </span>
-            </button>
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- Seguridad is NOT in the {#if/:else if} chain above on purpose. It's
-         keyed off `securityCategory` — a reference that stays the same
-         object whether or not Seguridad is the active section — and only
-         hidden with CSS `display: none` while another category shows.
-         Branching it like the others (`{:else if category.id === ...}`)
-         would tear the whole block down, including the mounted
-         <SecurityMapComp>, every single time you navigated away — which
-         meant every return trip paid for a brand-new WebGL context plus a
-         fresh style/sprite/glyph/tile fetch from a third-party host. On
-         localhost that round trip is near-zero; on a real deploy it reads
-         as the module hanging for a second on every visit. -->
-    {#if securityCategory}
-      <!--
-        SecurityMap monta/desmonta cuando el usuario navega a/desde Seguridad.
-        Con el Map Singleton (mapWarm.ts), el costo es solo un movimiento de DOM
-        — no new Map(), no workers. El mapa ya estaba cálido desde el splash.
-
-        `security` (los 6 indicadores) ahora se pide al backend de forma
-        asíncrona (App.svelte, fetchSecurityIndicators) — a propósito NO se
-        usa como condición de este panel: si se gatilla en `.security`, el
-        mapa entero desaparece mientras carga o si el backend no responde.
-        El mapa se mantiene siempre montado; solo la grilla de indicadores
-        de abajo tiene su propio estado de carga/error.
-      -->
-      <div class="sec-panel" style:display={isSecurityActive ? "flex" : "none"}>
-        <div class="sec-map-frame">
-          <!-- Overlay fade-out cuando mapReady=true -->
-          <div class="sec-map-overlay" class:sec-map-overlay--hidden={mapReady}>
-            <span class="sec-map-icon spin">◎</span>
-            cargando mapa 3d…
-          </div>
-          {#if hasOpenedSecurity}
-            {#await securityMapModule then { default: SecurityMapComp }}
-              <SecurityMapComp
-                risk={securityRisk}
-                accent={securityCategory.theme.accent}
-                onready={() => (mapReady = true)}
-              />
-            {/await}
-          {/if}
-        </div>
-
-        <div class="sec-grid">
-          {#if securityCategory.security}
-            {#each securityCategory.security as ind (ind.id)}
-              <div class="sec-card">
-                <span class="sec-label">{ind.label}</span>
-                <span class="sec-value-row">
-                  <span class="sec-value">{ind.value}</span>
-                  {#if ind.trend && ind.trend !== "flat"}
-                    <span class="sec-trend trend-{ind.trend}">{ind.trend === "up" ? "▲" : "▼"}</span>
-                  {/if}
-                </span>
-                <span class="sec-unit">{ind.unit}</span>
-                {#if ind.note}<span class="sec-note">{ind.note}</span>{/if}
-                <span class="sec-risk risk-{ind.risk}">{riskLabel[ind.risk]}</span>
-              </div>
-            {/each}
-          {:else if securityIndicatorsError}
-            <p class="sec-note">No se pudieron cargar los indicadores del backend.</p>
-          {:else}
-            <p class="sec-note">Cargando indicadores…</p>
-          {/if}
-        </div>
-
-        <p class="sec-src-note">
-          Distrito Metropolitano de Quito · cierre 2025. Fuente: Observatorio Metropolitano de Seguridad
-          Ciudadana (Policía Nacional y Fiscalía).
-        </p>
-        <a class="sec-source" href="https://observatorioseguridad.quito.gob.ec" target="_blank" rel="noreferrer">
-          Cifras oficiales actualizadas → observatorioseguridad.quito.gob.ec
-        </a>
-      </div>
-    {/if}
-
+    <!-- Seguridad: display:none en vez de {#if} para no destruir el
+         contexto WebGL del mapa (ver SecuritySection). -->
+    <SecuritySection
+      {securityCategory}
+      {securityRisk}
+      {securityIndicatorsError}
+      isActive={isSecurityActive}
+    />
   </div>
 </div>
-
-{#if rentingLockerCode}
-  <RentLockerModal
-    lockerCode={rentingLockerCode}
-    onclose={() => (rentingLockerCode = null)}
-    onrented={() => onlockerrented?.()}
-    ontaken={() => onlockerrented?.()}
-  />
-{/if}
-
-{#if viewingMyLocker}
-  <MyLockerStatusModal
-    lockerCode={viewingMyLocker.lockerCode}
-    zone={viewingMyLocker.zone}
-    onclose={() => (viewingMyLocker = null)}
-  />
-{/if}
-
-{#if subscribingTier}
-  <SubscribeModal
-    tierName={subscribingTier.name}
-    tierAmount={subscribingTier.amount}
-    onclose={() => (subscribingTier = null)}
-    onsubscribed={() => onsubscribed?.()}
-  />
-{/if}
 
 <style>
   .content-wrap {
