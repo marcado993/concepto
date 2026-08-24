@@ -36,7 +36,16 @@
   // → backend → aquí), el access_token viene en location.hash — se
   // consume una sola vez, al montar, antes de cualquier otra cosa.
   consumeAuthCallback();
-  let authed = $state(isAuthenticated());
+  // $derived, NO $state: antes esto capturaba isAuthenticated() UNA sola vez
+  // al montar, así que cuando el login por correo guardaba el token sin
+  // recargar la página (verifyEmailLogin en auth.svelte.ts), esta puerta se
+  // quedaba en false y el estudiante veía la pantalla de login "colgada"
+  // hasta refrescar a mano. GitHub/Google no lo mostraban porque hacen una
+  // navegación completa (la app se re-monta y lee el token al iniciar). Como
+  // `token` es $state a nivel de módulo, $derived acá reacciona en cuanto el
+  // flujo de correo lo cambia — la app aparece sola, sin refrescar (bug real
+  // reportado en producción).
+  const authed = $derived(isAuthenticated());
 
   // auth.controller.ts redirige aquí con ?auth_error=... cuando Logto
   // rechaza el intento (ej. credenciales placeholder en desarrollo, ver
