@@ -400,20 +400,43 @@ export class AuthController {
     const { codeVerifier, codeChallenge, state } = this.logto.generatePkce();
     const authUrl = this.logto.authorizationUrl({ codeChallenge, state });
 
+    // Elegir el evento ANTES de mandar el código — esto es lo que arregla
+    // el bug de los dos correos. Contrato real de Logto, comprobado contra
+    // el tenant (agosto 2026):
+    //   SignIn   → usuario existente: 204 · usuario nuevo: 404 user_not_exist
+    //   Register → usuario nuevo: 201 · existente: 422 email_already_in_use
+    // y cambiar el evento a mitad de la interacción DESTRUYE la
+    // verificación ya aprobada (session.verification_session_not_found), o
+    // sea que al fallar la corazonada hay que mandar un SEGUNDO código.
+    // Como Logto no tiene un evento combinado, la única forma de acertar al
+    // primer intento es saber de antemano si el correo ya existe: eso lo
+    // responde nuestra propia tabla de usuarios (User.email, que se rellena
+    // en cada login — ver provisionUser).
+    //
+    // Si el correo no está en nuestra base, se asume Register: el caso
+    // masivo de aquí en adelante son estudiantes entrando por primera vez.
+    // Un usuario que exista en Logto pero todavía no en nuestra base (o que
+    // entró antes de que existiera esta columna) cae al fallback de
+    // emailVerify y recibe dos correos ESA VEZ; a partir de la siguiente ya
+    // queda registrado acá y le llega uno solo.
+    const normalizedEmail = email.toLowerCase();
+    const conocido = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
+    const interactionEvent: "SignIn" | "Register" = conocido ? "SignIn" : "Register";
+
     try {
       let cookie = await this.logtoExperience.startInteraction(authUrl);
-      cookie = await this.logtoExperience.setInteractionEvent(cookie, "SignIn");
+      cookie = await this.logtoExperience.setInteractionEvent(cookie, interactionEvent);
       const { cookie: cookieWithCode, verificationId } = await this.logtoExperience.requestEmailCode(
         cookie,
         email,
-        "SignIn"
+        interactionEvent
       );
 
       const pending: EmailPending = {
         email,
         codeVerifier,
         state,
-        interactionEvent: "SignIn",
+        interactionEvent,
         interactionCookie: cookieWithCode,
         verificationId,
       };
@@ -484,78 +507,82 @@ export class AuthController {
 
     const identification = await this.logtoExperience.submitIdentification(cookie, pending.verificationId);
 
-    // La cookie con la que se continúa el flujo — cambia si hubo que
-    // reintentar como registro (ver abajo).
+    // La cookie con la que se continúa — cambia si hubo que reintentar con
+    // el otro evento (ver abajo).
     let identifiedCookie = identification.cookie;
 
-    if (identification.status !== 204) {
-      if (identification.errorCode === "user.user_not_exist" && pending.interactionEvent === "SignIn") {
-        // PRIMER INTENTO: reusar la MISMA verificación que el estudiante
-        // acaba de aprobar, solo cambiando el evento a Register.
-        //
-        // Bug real reportado: quien entraba por primera vez recibía DOS
-        // correos con dos códigos distintos ("te mandamos un código nuevo
-        // para crear tu cuenta"), porque este camino descartaba la
-        // verificación recién hecha y pedía otro código. Logto no tiene un
-        // evento combinado tipo "SignInOrRegister" (confirmado contra el
-        // tenant real: el enum solo acepta SignIn | Register |
-        // ForgotPassword), así que hay que descubrir cuál es DESPUÉS de
-        // verificar el correo — pero la verificación en sí ya es válida y
-        // vive server-side por verificationId, independiente del evento.
-        // Reusarla evita el segundo correo por completo.
-        const registerCookie = await this.logtoExperience.setInteractionEvent(identification.cookie, "Register");
-        const reintento = await this.logtoExperience.submitIdentification(registerCookie, pending.verificationId);
+    // 204 = entró (usuario existente) · 201 = cuenta recién creada.
+    const identificado = identification.status === 204 || identification.status === 201;
 
-        if (reintento.status === 204) {
-          // Funcionó: cuenta creada con el MISMO código. Un solo correo.
-          identifiedCookie = reintento.cookie;
-        } else {
-          // FALLBACK: este tenant sí invalida la verificación al cambiar de
-          // evento — se vuelve al comportamiento anterior (pedir un código
-          // nuevo). Se conserva a propósito para no romper el registro si
-          // Logto cambia de criterio en una versión futura; si estos logs
-          // nunca aparecen, este bloque se puede borrar.
-          this.logger.warn(
-            `emailVerify(${pending.email}) — no se pudo reusar la verificación al pasar a Register (${reintento.errorCode ?? reintento.status}); se pide un código nuevo`
-          );
-          if (!this.emailDestinationLimiter.tryConsume(pending.email)) {
-            throw new BadRequestException("Ya se mandaron varios códigos a este correo — espera unos minutos e intenta de nuevo");
-          }
-          let cookieWithCode: string;
-          let verificationId: string;
-          try {
-            ({ cookie: cookieWithCode, verificationId } = await this.logtoExperience.requestEmailCode(
-              reintento.cookie,
-              pending.email,
-              "Register"
-            ));
-          } catch (err) {
-            if (err instanceof ExperienceApiError) {
-              throw this.sanitizedEmailError(
-                err,
-                `emailVerify.register-retry(${pending.email})`,
-                "No se pudo enviar el código a tu correo — intenta de nuevo en unos minutos."
-              );
-            }
-            throw err;
-          }
-          const nextPending: EmailPending = {
-            ...pending,
-            interactionEvent: "Register",
-            interactionCookie: cookieWithCode,
-            verificationId,
-          };
-          // El código anterior ya no sirve (nueva interacción de registro) —
-          // Login.svelte debe reemplazar el pendingToken guardado por este.
-          return res.status(202).json({
-            needsNewCode: true,
-            pendingToken: this.pendingTokens.sign(nextPending),
-            message: "Es tu primera vez con este correo — te mandamos un código nuevo para crear tu cuenta",
-          });
-        }
-      } else {
+    if (!identificado) {
+      // La corazonada de emailStart falló: creímos que el correo existía y
+      // no existe (user_not_exist), o al revés (email_already_in_use). Pasa
+      // solo cuando nuestra tabla está desincronizada con Logto — sobre
+      // todo con cuentas creadas antes de que existiera User.email.
+      //
+      // Acá NO se puede reusar la verificación: cambiar el evento la
+      // destruye (session.verification_session_not_found, comprobado contra
+      // el tenant real). La única salida es reiniciar con el evento
+      // correcto, lo que implica un segundo código. Por eso el arreglo de
+      // verdad vive en emailStart (acertar a la primera) y esto es solo la
+      // red de seguridad.
+      const eventoCorrecto: "SignIn" | "Register" | null =
+        identification.errorCode === "user.user_not_exist" && pending.interactionEvent === "SignIn"
+          ? "Register"
+          : identification.errorCode === "user.email_already_in_use" && pending.interactionEvent === "Register"
+            ? "SignIn"
+            : null;
+
+      if (!eventoCorrecto) {
+        this.logger.error(
+          `emailVerify(${pending.email}) — identificación falló sin camino de recuperación: ${identification.errorCode ?? identification.status}`
+        );
         throw new BadRequestException("No se pudo verificar el código — intenta de nuevo");
       }
+
+      this.logger.warn(
+        `emailVerify(${pending.email}) — el evento ${pending.interactionEvent} no aplicaba (${identification.errorCode}); se reinicia como ${eventoCorrecto} y se manda un código nuevo`
+      );
+
+      if (!this.emailDestinationLimiter.tryConsume(pending.email)) {
+        throw new BadRequestException("Ya se mandaron varios códigos a este correo — espera unos minutos e intenta de nuevo");
+      }
+
+      const nuevaCookie = await this.logtoExperience.setInteractionEvent(identification.cookie, eventoCorrecto);
+      let cookieWithCode: string;
+      let verificationId: string;
+      try {
+        ({ cookie: cookieWithCode, verificationId } = await this.logtoExperience.requestEmailCode(
+          nuevaCookie,
+          pending.email,
+          eventoCorrecto
+        ));
+      } catch (err) {
+        if (err instanceof ExperienceApiError) {
+          throw this.sanitizedEmailError(
+            err,
+            `emailVerify.retry-${eventoCorrecto}(${pending.email})`,
+            "No se pudo enviar el código a tu correo — intenta de nuevo en unos minutos."
+          );
+        }
+        throw err;
+      }
+      const nextPending: EmailPending = {
+        ...pending,
+        interactionEvent: eventoCorrecto,
+        interactionCookie: cookieWithCode,
+        verificationId,
+      };
+      // El código anterior ya no sirve — Login.svelte debe reemplazar el
+      // pendingToken guardado por este.
+      return res.status(202).json({
+        needsNewCode: true,
+        pendingToken: this.pendingTokens.sign(nextPending),
+        message:
+          eventoCorrecto === "Register"
+            ? "Es tu primera vez con este correo — te mandamos un código nuevo para crear tu cuenta"
+            : "Este correo ya tiene cuenta — te mandamos un código nuevo para entrar",
+      });
     }
 
     const submitted = await this.logtoExperience.submitInteraction(identifiedCookie);

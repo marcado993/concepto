@@ -45,13 +45,19 @@ describe("AuthService.finishTokenExchange", () => {
     expect(prisma.user.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { logtoSub: "github|1" },
-        update: {},
-        create: expect.objectContaining({ logtoSub: "github|1", fullName: "Estudiante EPN" }),
+        // update rellena el correo (lo necesita /auth/email/start para
+        // acertar el evento de Logto a la primera — ver schema.prisma).
+        update: { email: "estudiante@epn.edu.ec" },
+        create: expect.objectContaining({
+          logtoSub: "github|1",
+          fullName: "Estudiante EPN",
+          email: "estudiante@epn.edu.ec",
+        }),
       })
     );
   });
 
-  it("Dado un usuario que ya existe (mismo logtoSub), Cuando se reintercambia, Entonces NO sobreescribe su rol/código único (update: {})", async () => {
+  it("Dado un usuario que ya existe (mismo logtoSub), Cuando se reintercambia, Entonces NO sobreescribe su rol/código único — solo pone al día el correo", async () => {
     const { service, logto, prisma } = makeService();
     logto.exchangeCode.mockResolvedValue({
       access_token: "at-2",
@@ -60,7 +66,10 @@ describe("AuthService.finishTokenExchange", () => {
 
     await service.finishTokenExchange({ code: "c", state: "s", expectedState: "s", codeVerifier: "v" });
 
-    expect(prisma.user.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: {} }));
+    const args = prisma.user.upsert.mock.calls[0][0];
+    expect(args.update).toEqual({ email: "estudiante@epn.edu.ec" });
+    expect(args.update).not.toHaveProperty("role");
+    expect(args.update).not.toHaveProperty("uniqueCode");
   });
 
   it("Dado un token sin claim de correo (GitHub sin correo público/verificado), Cuando se completa, Entonces rechaza SIN tocar la base de datos — nunca un User a medias", async () => {

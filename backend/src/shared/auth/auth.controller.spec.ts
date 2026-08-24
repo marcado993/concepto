@@ -249,9 +249,14 @@ describe("AuthController", () => {
 
     await controller.callback("code-2", "state-1", "https://tenant.logto.app/oidc", req, res);
 
-    expect(prisma.user.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: {} })
-    );
+    // `update` ya no es {}: rellena el correo en cada login (lo necesita
+    // /auth/email/start para acertar el evento de Logto a la primera y no
+    // mandar un segundo código). Lo que importa sigue siendo que NO pise
+    // rol ni código único.
+    const upsertArgs = prisma.user.upsert.mock.calls[0][0];
+    expect(upsertArgs.update).toEqual({ email: "estudiante@epn.edu.ec" });
+    expect(upsertArgs.update).not.toHaveProperty("role");
+    expect(upsertArgs.update).not.toHaveProperty("uniqueCode");
   });
 
   it("Dado un correo personal (no @epn.edu.ec), Cuando se llama /auth/callback, Entonces provisiona el usuario igual — decisión real de DGIP: ya no se exige dominio institucional (evita que graduarse/dar de baja la cuenta EPN deje al estudiante sin poder loguearse)", async () => {
@@ -675,12 +680,35 @@ describe("AuthController", () => {
   });
 
   // Bug real reportado con captura: quien entraba por PRIMERA VEZ recibía
-  // DOS correos con códigos distintos. Logto no tiene un evento combinado
-  // (confirmado contra el tenant real: el enum solo acepta SignIn |
-  // Register | ForgotPassword), así que recién DESPUÉS de verificar el
-  // correo se sabe si toca registrar — pero la verificación ya hecha sigue
-  // siendo válida, así que se reusa en vez de pedir otro código.
-  it("Dado un correo nuevo (primera vez), Cuando /auth/email/verify recibe user.user_not_exist, Entonces reusa la MISMA verificación como registro y entra de una — un solo correo, sin pedir código nuevo", async () => {
+  // DOS correos con códigos distintos. Contrato real de Logto, comprobado
+  // contra el tenant (agosto 2026):
+  //   SignIn   → existente 204 · nuevo 404 user_not_exist
+  //   Register → nuevo 201    · existente 422 email_already_in_use
+  // y cambiar el evento a mitad DESTRUYE la verificación aprobada. Así que
+  // hay que acertar el evento ANTES de mandar el código: lo decide
+  // User.email de nuestra propia base.
+  it("Dado un correo que NO está en nuestra base, Cuando se pide el código, Entonces la interacción arranca como Register — para que el registro salga con UN solo correo", async () => {
+    prisma.user.findUnique.mockResolvedValue(null); // desconocido
+    logtoExperience.requestEmailCode.mockResolvedValue({ cookie: "_interaction=with-code", verificationId: "verif-1" });
+
+    await controller.emailStart("nuevo@epn.edu.ec", mockResponse());
+
+    expect(logtoExperience.setInteractionEvent).toHaveBeenCalledWith(expect.any(String), "Register");
+    expect(logtoExperience.requestEmailCode).toHaveBeenCalledWith(expect.any(String), "nuevo@epn.edu.ec", "Register");
+  });
+
+  it("Dado un correo que YA está en nuestra base, Cuando se pide el código, Entonces arranca como SignIn", async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: "u1", email: "viejo@epn.edu.ec" });
+    logtoExperience.requestEmailCode.mockResolvedValue({ cookie: "_interaction=with-code", verificationId: "verif-1" });
+
+    await controller.emailStart("viejo@epn.edu.ec", mockResponse());
+
+    expect(logtoExperience.setInteractionEvent).toHaveBeenCalledWith(expect.any(String), "SignIn");
+    expect(logtoExperience.requestEmailCode).toHaveBeenCalledWith(expect.any(String), "viejo@epn.edu.ec", "SignIn");
+  });
+
+  it("Dado un registro nuevo, Cuando Logto responde 201 (cuenta creada), Entonces se trata como éxito y el estudiante entra de una — un solo correo, sin segundo paso", async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
     const startRes = mockResponse();
     logtoExperience.requestEmailCode.mockResolvedValue({ cookie: "_interaction=with-code", verificationId: "verif-1" });
     await controller.emailStart("nuevo@epn.edu.ec", startRes);
@@ -688,12 +716,9 @@ describe("AuthController", () => {
     logtoExperience.requestEmailCode.mockClear();
 
     logtoExperience.verifyEmailCode.mockResolvedValue("_interaction=verified");
-    logtoExperience.submitIdentification
-      // 1º como SignIn: el usuario no existe todavía
-      .mockResolvedValueOnce({ status: 422, errorCode: "user.user_not_exist", cookie: "_interaction=identified" })
-      // 2º como Register, con la MISMA verificación: funciona
-      .mockResolvedValueOnce({ status: 204, cookie: "_interaction=registered" });
-    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=register-event");
+    // 201 = Created. Antes solo se aceptaba 204, así que un registro
+    // EXITOSO se leía como error y terminaba pidiendo otro código.
+    logtoExperience.submitIdentification.mockResolvedValue({ status: 201, cookie: "_interaction=registered" });
     logtoExperience.submitInteraction.mockResolvedValue({
       cookie: "_interaction=submitted",
       redirectTo: "https://tenant.logto.app/callback",
@@ -707,16 +732,18 @@ describe("AuthController", () => {
     const verifyRes = mockResponse();
     await controller.emailVerify("123456", pendingToken, verifyRes);
 
-    // Lo esencial: NO se pidió un segundo código.
-    expect(logtoExperience.requestEmailCode).not.toHaveBeenCalled();
-    // Y se reusó la verificación original, no una nueva.
-    expect(logtoExperience.submitIdentification).toHaveBeenLastCalledWith("_interaction=register-event", "verif-1");
-    // El estudiante queda dentro de una, sin segundo paso.
+    expect(logtoExperience.requestEmailCode).not.toHaveBeenCalled(); // ni un segundo correo
     expect(verifyRes.json).toHaveBeenCalledWith({ accessToken: "at-nuevo" });
     expect(verifyRes.status).not.toHaveBeenCalledWith(202);
   });
 
-  it("Dado que el tenant SÍ invalida la verificación al pasar a Register, Cuando falla el reintento, Entonces cae al camino anterior (código nuevo + 202) — sin romper el registro", async () => {
+  // Red de seguridad: nuestra tabla dice que el correo existe (arranca como
+  // SignIn) pero en Logto no está — pasa con cuentas creadas antes de que
+  // existiera User.email. Como cambiar el evento destruye la verificación,
+  // no queda otra que reiniciar y mandar un código nuevo. Es el ÚNICO caso
+  // que sigue gastando dos correos, y se corrige solo: tras entrar, el
+  // correo queda guardado y la próxima vez acierta a la primera.
+  it("Dado que nuestra base está desincronizada con Logto, Cuando la identificación falla, Entonces reinicia con el evento correcto y avisa (202) — sin romper el login", async () => {
     const startRes = mockResponse();
     logtoExperience.requestEmailCode.mockResolvedValue({
       cookie: "_interaction=with-code",
