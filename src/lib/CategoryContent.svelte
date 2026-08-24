@@ -8,11 +8,11 @@
   //   LockersSection      → grilla de casilleros (108 unidades)
   //   SecuritySection     → mapa 3D + indicadores de seguridad
   //
-  // El <style> al final de este archivo sigue aquí porque los organisms NO
-  // tienen estilos propios: las clases CSS (`.sec-panel`, `.grid`, `.unit`,
+  // El bloque de estilos al final de este archivo sigue aquí porque los organisms NO
+  // tienen estilos propios: las clases CSS (.sec-panel, .grid, .unit,
   // etc.) son parte del sistema de diseño de esta app y se aplican al DOM
   // independientemente del componente que las emite. Svelte no hace scoping
-  // a menos que se use <style module>, así que no hay pérdida de estilos.
+  // a menos que se use style module, así que no hay pérdida de estilos.
 
   import IsoIcon from "./IsoIcon.svelte";
   import type { Category } from "./data";
@@ -90,61 +90,6 @@
     subscriptionTiersError = false,
     onsubscribed,
   }: Props = $props();
-
-  // import() dinámico, no un `import SecurityMapComp from "./SecurityMap.svelte"`
-  // estático — SecurityMap.svelte importa mapWarm.ts, que a su vez importa
-  // maplibre-gl (~1MB sin comprimir, hallazgo real de rendimiento: antes de
-  // este cambio dist/assets/index-*.js pesaba ~1MB porque esta cadena
-  // completa terminaba dentro del bundle de arranque, aunque el usuario
-  // nunca abriera Seguridad). El import() se dispara igual apenas se monta
-  // este componente (mismo momento que antes, durante el splash) — la
-  // diferencia es que Vite lo separa en su propio chunk, así que ya no
-  // bloquea el parseo del bundle principal. Es una promesa a nivel de
-  // módulo (no dentro de una función), así solo se pide una vez aunque
-  // SecurityMapComp se monte/desmonte varias veces navegando.
-  const securityMapModule = import("./SecurityMap.svelte");
-  // Props — igual que antes, sin cambio de contrato: el frontend no
-  // necesita ajustarse.
-  interface Props {
-    category: Category;
-    securityCategory?: Category | null;
-    lockersCategory?: Category | null;
-    securityRisk?: number;
-    securityIndicatorsError?: boolean;
-    venturesError?: boolean;
-    lockersError?: boolean;
-    lockersLoading?: boolean;
-    myRentedLocker?: { lockerCode: string; zone: string } | null;
-    wide?: boolean;
-    compact?: boolean;
-    onheaderpointerdown?: (e: PointerEvent) => void;
-    onheaderpointermove?: (e: PointerEvent) => void;
-    onheaderpointerup?: (e: PointerEvent) => void;
-    onlockerrented?: () => void;
-    subscriptionTiersError?: boolean;
-    onsubscribed?: () => void;
-  }
-
-  let {
-    category,
-    securityCategory = null,
-    lockersCategory = null,
-    securityRisk = 0.5,
-    securityIndicatorsError = false,
-    venturesError = false,
-    lockersError = false,
-    lockersLoading = false,
-    myRentedLocker = null,
-    wide = false,
-    compact = false,
-    onheaderpointerdown,
-    onheaderpointermove,
-    onheaderpointerup,
-    onlockerrented,
-    subscriptionTiersError = false,
-    onsubscribed,
-  }: Props = $props();
-
   const isSecurityActive = $derived(category.id === "security");
   const isLockersActive = $derived(category.id === "lockers");
 
