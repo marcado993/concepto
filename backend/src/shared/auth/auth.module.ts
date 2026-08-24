@@ -10,11 +10,19 @@ import { LogtoOidcClient } from "./logto-oidc.client";
 import { LogtoExperienceClient } from "./logto-experience.client";
 import { EmailDestinationLimiter } from "../rate-limit/email-destination-limiter.service";
 import { EmailPendingTokenService } from "./email-pending-token.service";
+import { OidcRedirectStrategy } from "./strategies/oidc-redirect.strategy";
+import { SocialEmbeddedStrategy } from "./strategies/social-embedded.strategy";
+import { EmailOtpStrategy } from "./strategies/email-otp.strategy";
 
 @Module({
   imports: [PassportModule],
   controllers: [AuthController],
   providers: [
+    // Estrategias de login — cada una encapsula un flujo completo.
+    OidcRedirectStrategy,
+    SocialEmbeddedStrategy,
+    EmailOtpStrategy,
+    // Infraestructura compartida entre estrategias.
     AuthService,
     JwtStrategy,
     LogtoOidcClient,
