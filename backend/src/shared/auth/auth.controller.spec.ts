@@ -674,7 +674,49 @@ describe("AuthController", () => {
     expect(logtoExperience.verifyEmailCode).not.toHaveBeenCalled();
   });
 
-  it("Dado un correo nuevo (primera vez), Cuando /auth/email/verify recibe user.user_not_exist, Entonces reinicia como registro y devuelve un pendingToken NUEVO — el viejo ya no debe servir", async () => {
+  // Bug real reportado con captura: quien entraba por PRIMERA VEZ recibía
+  // DOS correos con códigos distintos. Logto no tiene un evento combinado
+  // (confirmado contra el tenant real: el enum solo acepta SignIn |
+  // Register | ForgotPassword), así que recién DESPUÉS de verificar el
+  // correo se sabe si toca registrar — pero la verificación ya hecha sigue
+  // siendo válida, así que se reusa en vez de pedir otro código.
+  it("Dado un correo nuevo (primera vez), Cuando /auth/email/verify recibe user.user_not_exist, Entonces reusa la MISMA verificación como registro y entra de una — un solo correo, sin pedir código nuevo", async () => {
+    const startRes = mockResponse();
+    logtoExperience.requestEmailCode.mockResolvedValue({ cookie: "_interaction=with-code", verificationId: "verif-1" });
+    await controller.emailStart("nuevo@epn.edu.ec", startRes);
+    const { pendingToken } = startRes.json.mock.calls[0][0];
+    logtoExperience.requestEmailCode.mockClear();
+
+    logtoExperience.verifyEmailCode.mockResolvedValue("_interaction=verified");
+    logtoExperience.submitIdentification
+      // 1º como SignIn: el usuario no existe todavía
+      .mockResolvedValueOnce({ status: 422, errorCode: "user.user_not_exist", cookie: "_interaction=identified" })
+      // 2º como Register, con la MISMA verificación: funciona
+      .mockResolvedValueOnce({ status: 204, cookie: "_interaction=registered" });
+    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=register-event");
+    logtoExperience.submitInteraction.mockResolvedValue({
+      cookie: "_interaction=submitted",
+      redirectTo: "https://tenant.logto.app/callback",
+    });
+    logtoExperience.completeAuthorization.mockResolvedValue({ code: "auth-1", state: "state-1", iss: undefined });
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-nuevo",
+      claims: () => ({ sub: "email|nuevo", email: "nuevo@epn.edu.ec" }),
+    });
+
+    const verifyRes = mockResponse();
+    await controller.emailVerify("123456", pendingToken, verifyRes);
+
+    // Lo esencial: NO se pidió un segundo código.
+    expect(logtoExperience.requestEmailCode).not.toHaveBeenCalled();
+    // Y se reusó la verificación original, no una nueva.
+    expect(logtoExperience.submitIdentification).toHaveBeenLastCalledWith("_interaction=register-event", "verif-1");
+    // El estudiante queda dentro de una, sin segundo paso.
+    expect(verifyRes.json).toHaveBeenCalledWith({ accessToken: "at-nuevo" });
+    expect(verifyRes.status).not.toHaveBeenCalledWith(202);
+  });
+
+  it("Dado que el tenant SÍ invalida la verificación al pasar a Register, Cuando falla el reintento, Entonces cae al camino anterior (código nuevo + 202) — sin romper el registro", async () => {
     const startRes = mockResponse();
     logtoExperience.requestEmailCode.mockResolvedValue({
       cookie: "_interaction=with-code",
