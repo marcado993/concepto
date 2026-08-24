@@ -52,7 +52,11 @@ describe("LockerService.rent", () => {
     prisma = {
       locker: { findUnique: jest.fn().mockResolvedValue(locker) },
       period: { findFirst: jest.fn().mockResolvedValue({ id: "period-1" }) },
-      lockerRental: { findUnique: jest.fn() },
+      // findFirst → null por defecto = el estudiante NO tiene ninguna
+      // reserva activa (el caso normal). El guard "un casillero por
+      // estudiante" lo usa; un test específico más abajo lo hace devolver
+      // una reserva activa para probar el rechazo.
+      lockerRental: { findUnique: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
       user: { update: jest.fn().mockResolvedValue({}) },
       $transaction: jest.fn((cb: any) => cb(tx)),
       __tx: tx,
@@ -105,6 +109,33 @@ describe("LockerService.rent", () => {
     prisma.__tx.lockerRental.create.mockRejectedValue(dbError);
 
     await expect(service.rent(params)).rejects.toBeInstanceOf(LockerUnavailableError);
+  });
+
+  // Hallazgo de pentesting (lógica de negocio, invisible a los escáneres):
+  // sin este guard un mismo estudiante podía reservar casillero tras
+  // casillero (el @@unique es por [lockerId, periodId], no por usuario) y,
+  // como una reserva PayPhone sin pagar no la liberaba ningún cron, acaparar
+  // los 108 y negárselos a los ~1700 restantes sin pagar nada.
+  it("Dado un estudiante que YA tiene una reserva activa este semestre, Cuando intenta alquilar OTRO casillero, Entonces se rechaza con ConflictException — nunca crea un segundo alquiler", async () => {
+    prisma.lockerRental.findFirst.mockResolvedValue({
+      id: "rental-previo",
+      locker: { code: "A03" },
+      payment: { status: "PENDING" },
+    });
+
+    await expect(service.rent(params)).rejects.toBeInstanceOf(ConflictException);
+    // Ni siquiera llega a tocar la mutación de dinero.
+    expect(prisma.__tx.payment.create).not.toHaveBeenCalled();
+    expect(prisma.__tx.lockerRental.create).not.toHaveBeenCalled();
+  });
+
+  it("Dado un estudiante cuya reserva anterior venció (pago REJECTED, no cuenta como activa), Cuando alquila de nuevo, Entonces sí puede — el guard solo bloquea reservas PENDING/CONFIRMED", async () => {
+    // findFirst filtra por status IN (PENDING, CONFIRMED); una REJECTED no
+    // la devuelve, así que el mock default (null) representa este caso.
+    prisma.lockerRental.findFirst.mockResolvedValue(null);
+
+    await expect(service.rent(params)).resolves.toBeDefined();
+    expect(prisma.__tx.lockerRental.create).toHaveBeenCalled();
   });
 
   it("Dado un alquiler exitoso, Cuando se completa, Entonces queda un registro de auditoría con actor, acción y monto — dentro de la MISMA transacción", async () => {
@@ -506,6 +537,84 @@ describe("LockerService.releaseExpiredTransferReservations (limpieza de datos le
     prisma.__tx.payment.updateMany.mockResolvedValue({ count: 0 });
 
     const released = await service.releaseExpiredTransferReservations();
+
+    expect(prisma.__tx.lockerRental.delete).not.toHaveBeenCalled();
+    expect(prisma.__tx.locker.update).not.toHaveBeenCalled();
+    expect(released).toBe(0);
+  });
+});
+
+// Hallazgo de pentesting: el cron legacy solo liberaba reservas TRANSFER,
+// pero desde el retiro de la transferencia TODAS las reservas nuevas son
+// PAYPHONE — y ninguna tarea las liberaba, así que una reserva sin pagar
+// quedaba retenida para siempre. Este cron nuevo cierra ese hueco: es la
+// otra mitad del guard "un casillero por estudiante" en rent().
+describe("LockerService.releaseExpiredPayphoneReservations", () => {
+  let service: LockerService;
+  let prisma: any;
+  let audit: { record: jest.Mock };
+
+  const expiredRental = {
+    id: "rental-pp",
+    userId: "user-9",
+    lockerId: "locker-9",
+    paymentId: "payment-9",
+    locker: { id: "locker-9", code: "C05" },
+  };
+
+  beforeEach(async () => {
+    const tx = {
+      payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      lockerRental: { delete: jest.fn().mockResolvedValue({}) },
+      locker: { update: jest.fn().mockResolvedValue({ id: "locker-9", status: "AVAILABLE" }) },
+    };
+    prisma = {
+      lockerRental: { findMany: jest.fn().mockResolvedValue([expiredRental]) },
+      $transaction: jest.fn((cb: any) => cb(tx)),
+      __tx: tx,
+    };
+    audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        LockerService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditService, useValue: audit },
+        { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
+        { provide: PeriodService, useValue: makePeriodMock() },
+        { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) } },
+      ],
+    }).compile();
+    service = moduleRef.get(LockerService);
+  });
+
+  it("Dado un RESERVED de PayPhone que quedó PENDING más allá de la ventana de gracia, Cuando corre el job, Entonces lo libera (pago REJECTED, alquiler borrado, casillero AVAILABLE) y audita con reason pago_no_completado", async () => {
+    const released = await service.releaseExpiredPayphoneReservations();
+
+    expect(prisma.lockerRental.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ payment: { method: "PAYPHONE", status: "PENDING" } }),
+      })
+    );
+    expect(prisma.__tx.payment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "payment-9", status: "PENDING" }, data: { status: "REJECTED" } })
+    );
+    expect(prisma.__tx.lockerRental.delete).toHaveBeenCalledWith({ where: { id: "rental-pp" } });
+    expect(prisma.__tx.locker.update).toHaveBeenCalledWith({ where: { id: "locker-9" }, data: { status: "AVAILABLE" } });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "locker.rental.expired",
+        metadata: expect.objectContaining({ lockerCode: "C05", reason: "pago_no_completado" }),
+      }),
+      prisma.__tx
+    );
+    expect(released).toBe(1);
+  });
+
+  it("Dado que el estudiante confirma el pago justo antes de que el job lo libere (carrera), Cuando updateMany no encuentra fila PENDING, Entonces NO borra el alquiler ni toca el casillero", async () => {
+    prisma.__tx.payment.updateMany.mockResolvedValue({ count: 0 });
+
+    const released = await service.releaseExpiredPayphoneReservations();
 
     expect(prisma.__tx.lockerRental.delete).not.toHaveBeenCalled();
     expect(prisma.__tx.locker.update).not.toHaveBeenCalled();

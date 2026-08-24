@@ -130,6 +130,32 @@ export class LockerService {
 
     const period = await this.period.getCurrentPeriod();
     const periodId = period.id;
+
+    // Un casillero por estudiante por semestre. Hallazgo de pentesting
+    // (auditoría de seguridad, lógica de negocio — ningún escáner lo ve):
+    // sin esto, un mismo estudiante autenticado podía crear RESERVED sobre
+    // casillero tras casillero (el @@unique es [lockerId, periodId], no por
+    // usuario), y como una reserva PayPhone sin pagar no la liberaba ningún
+    // cron, cada una quedaba retenida indefinidamente. Un solo alumno podía
+    // así reservar los 108 casilleros en ~1 min y negárselos a los ~1700
+    // restantes, sin pagar un centavo. Se cuentan solo las reservas ACTIVAS
+    // (pago PENDING = esperando pago, o CONFIRMED = ya pagado); una vencida/
+    // liberada queda REJECTED y no bloquea un intento nuevo. El frontend ya
+    // asumía "un casillero por estudiante" (myRentedLocker es singular) —
+    // esto solo hace cumplir del lado servidor lo que la UI daba por hecho.
+    const activeRental = await this.prisma.lockerRental.findFirst({
+      where: { userId: params.userId, periodId, payment: { status: { in: ["PENDING", "CONFIRMED"] } } },
+      include: { locker: true, payment: true },
+    });
+    if (activeRental) {
+      const yaPagado = activeRental.payment.status === "CONFIRMED";
+      throw new ConflictException(
+        yaPagado
+          ? `Ya tienes el casillero ${activeRental.locker.code} este semestre.`
+          : `Ya tienes una reserva pendiente del casillero ${activeRental.locker.code} — termina o cancela ese pago antes de reservar otro.`
+      );
+    }
+
     // Cruce de dominio real, no una lectura directa a la tabla de
     // Subscription: le preguntamos al dominio de Aportaciones "¿cuánto
     // descuento tiene este estudiante?" y confiamos en su respuesta (0 si
@@ -303,53 +329,75 @@ export class LockerService {
     });
   }
 
+  // Reserva PayPhone sin completar el pago: el widget de la Cajita de Pagos
+  // se resuelve en minutos (tarjeta → aprobación → callback), no en horas.
+  // Pasada esta ventana, una reserva todavía PENDING es una abandonada, no
+  // un pago en curso — liberarla rápido es justo lo que evita que un
+  // estudiante (o un script) retenga casilleros sin pagar y se los niegue
+  // al resto (ver el guard "un casillero por estudiante" en rent(); esto es
+  // la otra mitad de esa misma defensa: aunque solo pueda tener UNA reserva
+  // activa, sin este cron esa reserva sin pagar duraría para siempre).
+  private static readonly PAYPHONE_RESERVATION_GRACE_MS = 30 * 60 * 1000; // 30 min
+
   // Corre cada hora, mismo patrón que ResourceMonitorService (@Cron en el
   // mismo proceso que sirve la API — ver ese archivo para por qué no un
   // job/daemon aparte). Libera casilleros RESERVED por transferencia cuyo
-  // ganador nunca subió el comprobante dentro de las 24h de gracia — sin
-  // esto, un estudiante que se arrepiente o simplemente no vuelve deja el
-  // casillero bloqueado para todos el resto del semestre (@@unique
-  // [lockerId, periodId] impide que otro lo intente mientras el
-  // LockerRental "fantasma" siga ahí).
+  // ganador nunca subió el comprobante dentro de las 24h de gracia. Es
+  // LEGACY: transferencia + OCR se retiró, este cron se queda solo para
+  // drenar la reserva TRANSFER pendiente que aún exista en producción.
   @Cron(CronExpression.EVERY_HOUR)
   async releaseExpiredTransferReservations(): Promise<number> {
-    const cutoff = new Date(Date.now() - TRANSFER_RECEIPT_GRACE_MS);
+    return this.releaseStaleReservations("TRANSFER", TRANSFER_RECEIPT_GRACE_MS, "sin_comprobante_24h");
+  }
+
+  // Corre cada 10 min (no cada hora): la ventana de gracia de PayPhone es
+  // corta (30 min), así que revisar solo una vez por hora dejaría un
+  // casillero abandonado bloqueado hasta ~90 min en el peor caso. Diez
+  // minutos acota eso a ~40 min sin cargar la base (es un SELECT indexado).
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async releaseExpiredPayphoneReservations(): Promise<number> {
+    return this.releaseStaleReservations("PAYPHONE", LockerService.PAYPHONE_RESERVATION_GRACE_MS, "pago_no_completado");
+  }
+
+  // Núcleo compartido entre los dos cron de arriba — misma mecánica segura
+  // que confirmPayphonePayment: updateMany con WHERE status:"PENDING" para
+  // no pisar un pago que se confirmó por debajo justo en este instante, y
+  // borrado del LockerRental (la fila que bloquea @@unique[lockerId,
+  // periodId]) para liberar el cupo de verdad.
+  private async releaseStaleReservations(
+    method: "PAYPHONE" | "TRANSFER",
+    graceMs: number,
+    reason: string
+  ): Promise<number> {
+    const cutoff = new Date(Date.now() - graceMs);
     const expired = await this.prisma.lockerRental.findMany({
-      where: { payment: { method: "TRANSFER", status: "PENDING" }, createdAt: { lte: cutoff } },
+      where: { payment: { method, status: "PENDING" }, createdAt: { lte: cutoff } },
       include: { locker: true },
     });
 
     let released = 0;
     for (const rental of expired) {
       const freed = await this.prisma.$transaction(async (tx) => {
-        // updateMany + WHERE status:"PENDING", no update() simple — mismo
-        // motivo que confirmPayphonePayment(): si esta reserva legacy se
-        // confirmara por otra vía justo en este instante, esto evita
-        // liberar un casillero que ya se confirmó por debajo.
         const { count } = await tx.payment.updateMany({
           where: { id: rental.paymentId, status: "PENDING" },
           data: { status: "REJECTED" },
         });
         if (count === 0) return false;
 
-        // Se borra el LockerRental (no el Payment, que queda como historial
-        // marcado REJECTED) — es la fila que bloquea @@unique[lockerId,
-        // periodId], así que borrarla es lo que de verdad libera el cupo
-        // para que otro estudiante pueda alquilar el mismo casillero.
         await tx.lockerRental.delete({ where: { id: rental.id } });
         await tx.locker.update({ where: { id: rental.lockerId }, data: { status: "AVAILABLE" } });
         await this.audit.record(
           {
-            // No hay un usuario "actuando" acá (esto lo dispara el reloj,
-            // no un click) — se usa el dueño de la reserva vencida como
-            // actor porque AuditLog.actorId es NOT NULL a propósito (ver
+            // No hay un usuario "actuando" acá (lo dispara el reloj, no un
+            // click) — se usa el dueño de la reserva vencida como actor
+            // porque AuditLog.actorId es NOT NULL a propósito (ver
             // audit.service.ts); metadata.reason deja claro que fue
             // automático, no algo que el estudiante pidió.
             actorId: rental.userId,
             action: "locker.rental.expired",
             entityType: "LockerRental",
             entityId: rental.id,
-            metadata: { lockerCode: rental.locker.code, reason: "sin_comprobante_24h" },
+            metadata: { lockerCode: rental.locker.code, reason },
           },
           tx
         );
@@ -359,7 +407,7 @@ export class LockerService {
     }
 
     if (released > 0) {
-      this.logger.log(`Liberados ${released} casillero(s) reservados por transferencia sin comprobante en 24h`);
+      this.logger.log(`Liberados ${released} casillero(s) con reserva ${method} vencida (${reason})`);
     }
     return released;
   }
