@@ -49,6 +49,21 @@
   let localError = $state<string | null>(null);
   let infoMessage = $state<string | null>(null);
 
+  // Microinteracción de "código enviado": un avión de papel que despega,
+  // en vez de solo cambiar de pantalla en seco. Da retroalimentación
+  // inmediata y clara de que el correo SALIÓ (pedido del cliente). Se
+  // dispara al mandar el código (continueWithEmail / resendCode) y se
+  // apaga sola. Respeta prefers-reduced-motion vía CSS (ahí no se mueve).
+  let sentAnim = $state(false);
+  let sentAnimTimer: ReturnType<typeof setTimeout> | undefined;
+  function playSentAnimation() {
+    clearTimeout(sentAnimTimer);
+    sentAnim = true;
+    // La animación dura ~1.3s; se deja el nodo un pelo más para que termine
+    // el fundido de salida antes de desmontarlo.
+    sentAnimTimer = setTimeout(() => (sentAnim = false), 1500);
+  }
+
   // Botón "Reenviar código" con espera de 3 minutos — antes la ÚNICA
   // forma de pedir un código nuevo era "‹ Usar otro correo" (que además
   // no reenviaba nada por sí sola, solo volvía al paso 1). Bug real
@@ -109,6 +124,7 @@
     localError = null;
     try {
       await startEmailLogin(email.trim());
+      playSentAnimation();
       step = "code";
       resendAvailableAt = Date.now() + RESEND_COOLDOWN_MS;
     } catch (err) {
@@ -151,6 +167,7 @@
     infoMessage = null;
     try {
       await startEmailLogin(email.trim());
+      playSentAnimation();
       otpCode = "";
       resendAvailableAt = Date.now() + RESEND_COOLDOWN_MS;
       infoMessage = "Te mandamos un código nuevo";
@@ -294,6 +311,32 @@
           {canResend ? "Reenviar código" : `Reenviar código en ${formatCountdown(resendSecondsLeft)}`}
         </button>
         <button class="link-btn" onclick={backToEmail} disabled={sending}>‹ Usar otro correo</button>
+      </div>
+    {/if}
+
+    <!-- Microinteracción "código enviado": overlay sobre el panel con un
+         avión de papel que despega dejando estela, y el check "Enviado".
+         Se monta solo mientras sentAnim es true (se apaga solo). aria-hidden
+         porque es puramente decorativo — el cambio real de estado (pasar al
+         paso de código, o el mensaje "Te mandamos un código nuevo") ya lo
+         comunica el texto, que sí leen los lectores de pantalla. -->
+    {#if sentAnim}
+      <div class="send-anim" aria-hidden="true">
+        <div class="send-stage">
+          <svg class="send-trail" viewBox="0 0 120 80" fill="none">
+            <path d="M6 74 C 40 70, 70 50, 112 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="4 7" />
+          </svg>
+          <svg class="send-plane" viewBox="0 0 24 24" fill="none">
+            <path d="M22 2 11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M22 2 15 22l-4-9-9-4 20-7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" fill-opacity="0.12" />
+          </svg>
+        </div>
+        <p class="send-label">
+          <svg class="send-check" viewBox="0 0 24 24" fill="none">
+            <path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Código enviado
+        </p>
       </div>
     {/if}
     </div>
@@ -583,5 +626,158 @@
     line-height: 1.5;
     text-align: center;
     color: rgba(238, 244, 251, 0.45);
+  }
+
+  /* ---------- Microinteracción: código enviado (avión de papel) ---------- */
+  /* Overlay opaco sobre el panel — el <Background> del panel no se ve
+     debajo, así que la animación queda limpia sobre el fondo del panel. */
+  .send-anim {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(20, 26, 40, 0.98), rgba(6, 9, 16, 0.99));
+    color: var(--accent, #21e0a0);
+    /* El overlay entero entra y sale con un fundido suave. */
+    animation: send-overlay 1.5s ease forwards;
+  }
+
+  /* Escenario del vuelo: contiene el avión y su estela, con tamaño fijo
+     para que el trazo de la estela case con la trayectoria del avión. */
+  .send-stage {
+    position: relative;
+    width: 120px;
+    height: 80px;
+  }
+
+  .send-trail {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.5;
+    /* La estela se "dibuja" siguiendo al avión: stroke-dashoffset animado
+       (técnica clásica de línea que se traza sola). */
+    stroke-dashoffset: 140;
+    animation: send-trail-draw 0.85s ease-out 0.05s forwards;
+  }
+
+  .send-plane {
+    position: absolute;
+    left: 4px;
+    bottom: 2px;
+    width: 30px;
+    height: 30px;
+    transform-origin: center;
+    /* Despega en diagonal hacia arriba-derecha, se encoge y se desvanece
+       al "salir" — combina translate + scale + rotate + opacity. */
+    animation: send-plane-fly 0.9s cubic-bezier(0.5, 0, 0.5, 1) 0.05s forwards;
+    filter: drop-shadow(0 0 6px var(--accent-glow, rgba(33, 224, 160, 0.55)));
+  }
+
+  .send-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    font-family: var(--font-heading, sans-serif);
+    font-size: 14px;
+    font-weight: 600;
+    color: #eafff5;
+    opacity: 0;
+    /* El check aparece cuando el avión ya "salió". */
+    animation: send-label-in 0.4s ease 0.75s forwards;
+  }
+
+  .send-check {
+    width: 18px;
+    height: 18px;
+    color: var(--accent, #21e0a0);
+    stroke-dasharray: 26;
+    stroke-dashoffset: 26;
+    animation: send-check-draw 0.35s ease 0.85s forwards;
+  }
+
+  @keyframes send-overlay {
+    0% {
+      opacity: 0;
+    }
+    12%,
+    82% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      visibility: hidden;
+    }
+  }
+
+  @keyframes send-plane-fly {
+    0% {
+      transform: translate(0, 0) rotate(0deg) scale(1);
+      opacity: 0;
+    }
+    15% {
+      opacity: 1;
+    }
+    100% {
+      /* Sube y va a la derecha, saliendo del escenario. */
+      transform: translate(92px, -70px) rotate(12deg) scale(0.5);
+      opacity: 0;
+    }
+  }
+
+  @keyframes send-trail-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes send-label-in {
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes send-check-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  /* Accesibilidad: si el sistema pide menos movimiento, no hay vuelo — solo
+     el mensaje "Código enviado" con su check, estático. La animación nunca
+     es requisito para entender que el correo salió. */
+  @media (prefers-reduced-motion: reduce) {
+    .send-anim {
+      animation: send-overlay-static 1.5s ease forwards;
+    }
+    .send-plane,
+    .send-trail {
+      display: none;
+    }
+    .send-label {
+      opacity: 1;
+      animation: none;
+    }
+    .send-check {
+      stroke-dashoffset: 0;
+      animation: none;
+    }
+    @keyframes send-overlay-static {
+      0%,
+      85% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+        visibility: hidden;
+      }
+    }
   }
 </style>
