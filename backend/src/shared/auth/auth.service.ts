@@ -72,9 +72,17 @@ export class AuthService {
   private async provisionUser(logtoSub: string, email?: string, name?: string) {
     return this.prisma.user.upsert({
       where: { logtoSub },
-      update: {},
+      // `update` deja de estar vacío SOLO para el correo: sigue sin pisar
+      // rol ni código único (eso era el punto original), pero el correo sí
+      // se rellena/actualiza en cada login. Es lo que permite que
+      // /auth/email/start acierte el evento de Logto al primer intento y no
+      // mande un segundo código (ver el comentario del campo en schema.prisma).
+      // Así, además, los usuarios que ya existían antes de esta columna
+      // quedan al día solos la próxima vez que entren.
+      update: email ? { email: email.toLowerCase() } : {},
       create: {
         logtoSub,
+        email: email?.toLowerCase(),
         // randomUUID(), no un slice de logtoSub — un slice truncado puede
         // colisionar entre dos `sub` distintos y romper la restricción
         // @unique de uniqueCode con un 500 no controlado (hallazgo de la

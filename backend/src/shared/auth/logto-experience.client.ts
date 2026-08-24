@@ -138,7 +138,12 @@ export class LogtoExperienceClient {
   // "seguir" con la misma verificación — hay que volver a mandar código).
   async submitIdentification(cookie: string, verificationId: string): Promise<{ cookie: string; status: number; errorCode?: string }> {
     const r = await this.call(cookie, "/api/experience/identification", "POST", { verificationId });
-    if (r.status === 204) return { cookie: r.cookie, status: r.status };
+    // 204 = se identificó a un usuario que YA existía (evento SignIn).
+    // 201 = se CREÓ la cuenta (evento Register) — Logto responde "Created".
+    // Antes solo se aceptaba 204, así que un registro exitoso se leía como
+    // error y el flujo terminaba pidiendo otro código (comprobado contra el
+    // tenant real, agosto 2026).
+    if (r.status === 204 || r.status === 201) return { cookie: r.cookie, status: r.status };
     const body = r.json as { code?: string } | undefined;
     return { cookie: r.cookie, status: r.status, errorCode: body?.code };
   }

@@ -50,6 +50,16 @@ model User {
   id         String   @id @default(uuid())
   logtoSub   String   @unique // subject claim del JWT de Logto — nunca la cédula como PK (ver aeis-app/docs §6)
   uniqueCode String   @unique // código único de estudiante EPN
+  // Correo con el que entró. Se guarda por una razón concreta del flujo de
+  // login, no por gusto: Logto exige elegir ANTES de mandar el código si la
+  // interacción es "iniciar sesión" o "crear cuenta" (su enum solo acepta
+  // SignIn | Register), y cambiar de una a otra a mitad DESTRUYE la
+  // verificación (comprobado contra el tenant real:
+  // session.verification_session_not_found). Sin saber de antemano si el
+  // correo ya existe, había que adivinar y, al fallar, pedir un segundo
+  // código — de ahí los DOS correos que recibía quien se registraba por
+  // primera vez. Esta columna es la que permite acertar al primer intento.
+  email      String?  @unique
   fullName   String
   role       Role     @default(ESTUDIANTE)
   // Cédula/celular — se piden UNA vez (al primer alquiler de casillero,
