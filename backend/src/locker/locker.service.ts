@@ -69,10 +69,21 @@ export class LockerService {
     private readonly mail: MailService
   ) {}
 
-  list() {
-    return this.prisma.locker.findMany({
+  // Los casilleros reales se identifican SOLO por número (sin letra de
+  // zona, ver prisma/seed.ts) — un orden alfabético de `code` pondría
+  // "100" antes que "2" (comparación de texto, no numérica). Con solo ~110
+  // filas, ordenar en memoria es más simple que un ORDER BY con cast a
+  // entero en SQL crudo.
+  async list() {
+    const lockers = await this.prisma.locker.findMany({
       select: { id: true, code: true, zone: true, status: true },
-      orderBy: [{ zone: "asc" }, { code: "asc" }],
+    });
+    return lockers.sort((a, b) => {
+      if (a.zone !== b.zone) return a.zone.localeCompare(b.zone);
+      const numA = Number(a.code);
+      const numB = Number(b.code);
+      if (Number.isFinite(numA) && Number.isFinite(numB)) return numA - numB;
+      return a.code.localeCompare(b.code);
     });
   }
 

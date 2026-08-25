@@ -23,22 +23,35 @@ async function main() {
     },
   });
 
-  // Los 108 casilleros reales — hasta ahora esto solo existía como datos
-  // MOCK en el frontend (makeLockers() en src/lib/data.ts), sin nada real
-  // en la base de datos con lo que alquilar de verdad. 12 zonas (A-L) × 9
-  // casilleros, mismo patrón de código "<zona><número de 2 dígitos>" que
-  // ya usaba el mock, para no romper la convención visual existente.
-  const ZONES = "ABCDEFGHIJKL".split("");
-  const LOCKERS_PER_ZONE = 9;
-  for (const zone of ZONES) {
-    for (let i = 1; i <= LOCKERS_PER_ZONE; i++) {
-      const code = `${zone}${String(i).padStart(2, "0")}`;
-      await prisma.locker.upsert({
-        where: { code },
-        update: {},
-        create: { code, zone, status: "AVAILABLE" },
-      });
-    }
+  // Los 108 casilleros REALES — reemplaza el inventario de prueba anterior
+  // (12 zonas ficticias A-L × 9, "A01".."L09") por el inventario físico
+  // real que mandó el cliente (planilla casillero → código único del
+  // dueño). Hallazgo real: los casilleros físicos NO tienen zona por
+  // letra, solo un número — "los casilleros solo están por número, no por
+  // a b c d" — así que el código es el número tal cual, sin ceros a la
+  // izquierda ni prefijo. No se importan los códigos únicos de esa
+  // planilla: son de estudiantes que probablemente nunca iniciaron sesión
+  // en la app (no tienen User real), y crear un alquiler sin una cuenta
+  // real violaría la FK NOT NULL de LockerRental.userId (ver
+  // schema.prisma). zone queda en "General" para los 108 — no hay dato
+  // real de zona/piso, y LockersSection.svelte ya usa ese campo para un
+  // filtro por zona que sigue funcionando igual (con una sola zona).
+  //
+  // Excluidos de la planilla original por estar dañados/fuera de servicio:
+  // 45 y 84 (110 números reales - 2 dañados = 108).
+  const REAL_LOCKER_NUMBERS = [
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+    61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 85, 86, 87, 88, 89,
+    90, 91, 92, 93, 94, 100, 101, 110, 120, 121, 130, 131, 140, 141, 150, 151, 160, 161, 171, 181, 191,
+  ];
+  for (const n of REAL_LOCKER_NUMBERS) {
+    const code = String(n);
+    await prisma.locker.upsert({
+      where: { code },
+      update: {},
+      create: { code, zone: "General", status: "AVAILABLE" },
+    });
   }
 
   const tiers: Array<{ name: string; amount: number; benefits: unknown }> = [
@@ -160,7 +173,7 @@ async function main() {
   }
 
   console.log(
-    `Seed listo — periodo ${period.label}, ${ZONES.length * LOCKERS_PER_ZONE} casilleros, ${tiers.length} tiers (montos PLACEHOLDER), ${mockVentures.length} emprendimientos mock.`
+    `Seed listo — periodo ${period.label}, ${REAL_LOCKER_NUMBERS.length} casilleros, ${tiers.length} tiers (montos PLACEHOLDER), ${mockVentures.length} emprendimientos mock.`
   );
 }
 

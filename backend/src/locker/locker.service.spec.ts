@@ -718,6 +718,58 @@ describe("LockerService.releaseExpiredPayphoneReservations", () => {
   });
 });
 
+describe("LockerService.list", () => {
+  let service: LockerService;
+  let prisma: any;
+
+  beforeEach(async () => {
+    prisma = { locker: { findMany: jest.fn() } };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        LockerService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditService, useValue: { record: jest.fn() } },
+        { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
+        { provide: PeriodService, useValue: makePeriodMock() },
+        { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountInfo: jest.fn() } },
+        { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+    service = moduleRef.get(LockerService);
+  });
+
+  // Hallazgo real: los casilleros reales se identifican SOLO por número
+  // (ver prisma/seed.ts, "los casilleros solo están por número, no por a b
+  // c d"), sin cero a la izquierda — un orden alfabético de `code` pone
+  // "100" antes que "2" (compara texto, no número). La grilla debe verse
+  // en el orden real 1, 2, ..., 100, 101, ...
+  it("Dado casilleros con códigos numéricos de distinto largo, Cuando se listan, Entonces el orden es NUMÉRICO (2 antes que 100), no alfabético", async () => {
+    prisma.locker.findMany.mockResolvedValue([
+      { id: "l-100", code: "100", zone: "General", status: "AVAILABLE" },
+      { id: "l-2", code: "2", zone: "General", status: "AVAILABLE" },
+      { id: "l-11", code: "11", zone: "General", status: "AVAILABLE" },
+      { id: "l-1", code: "1", zone: "General", status: "AVAILABLE" },
+    ]);
+
+    const result = await service.list();
+
+    expect(result.map((l) => l.code)).toEqual(["1", "2", "11", "100"]);
+  });
+
+  it("Dado casilleros en zonas distintas, Cuando se listan, Entonces agrupa primero por zona (alfabético) y dentro de cada zona por número", async () => {
+    prisma.locker.findMany.mockResolvedValue([
+      { id: "l-b2", code: "2", zone: "B", status: "AVAILABLE" },
+      { id: "l-a10", code: "10", zone: "A", status: "AVAILABLE" },
+      { id: "l-a2", code: "2", zone: "A", status: "AVAILABLE" },
+    ]);
+
+    const result = await service.list();
+
+    expect(result.map((l) => `${l.zone}${l.code}`)).toEqual(["A2", "A10", "B2"]);
+  });
+});
+
 describe("LockerService.getMyRentedLocker", () => {
   let service: LockerService;
   let prisma: any;
