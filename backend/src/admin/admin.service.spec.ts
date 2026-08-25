@@ -4,6 +4,7 @@ import { AdminService } from "./admin.service";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PeriodService } from "../shared/period/period.service";
+import { UiVariantService } from "../shared/settings/ui-variant.service";
 
 const TEST_PERIOD = {
   id: "period-1",
@@ -27,6 +28,7 @@ async function buildService(overrides: { prisma?: any } = {}) {
   const prisma = overrides.prisma ?? makePrismaMock();
   const audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
   const period = { getCurrentPeriod: jest.fn().mockResolvedValue(TEST_PERIOD), getCurrentPeriodId: jest.fn().mockResolvedValue(TEST_PERIOD.id) };
+  const uiVariant = { get: jest.fn().mockResolvedValue("B"), set: jest.fn().mockResolvedValue(undefined) };
 
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -34,10 +36,11 @@ async function buildService(overrides: { prisma?: any } = {}) {
       { provide: PrismaService, useValue: prisma },
       { provide: AuditService, useValue: audit },
       { provide: PeriodService, useValue: period },
+      { provide: UiVariantService, useValue: uiVariant },
     ],
   }).compile();
 
-  return { service: moduleRef.get(AdminService), prisma, audit, period };
+  return { service: moduleRef.get(AdminService), prisma, audit, period, uiVariant };
 }
 
 describe("AdminService.listUsers", () => {
@@ -245,5 +248,34 @@ describe("AdminService.listAuditLogs", () => {
     await service.listAuditLogs({ page: 1, pageSize: 30, actorId: "user-1" });
 
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { actorId: "user-1" } }));
+  });
+});
+
+describe("AdminService.getUiVariant / updateUiVariant", () => {
+  it("Dado el flag actual, Cuando se pide, Entonces devuelve el valor real de UiVariantService", async () => {
+    const { service, uiVariant } = await buildService();
+    uiVariant.get.mockResolvedValue("A");
+
+    const result = await service.getUiVariant();
+
+    expect(result).toEqual({ variant: "A" });
+  });
+
+  it("Dado un cambio a rueda (A), Cuando se actualiza, Entonces lo guarda y audita admin.ui_variant.updated", async () => {
+    const { service, uiVariant, audit } = await buildService();
+
+    const result = await service.updateUiVariant({ variant: "A" }, { adminActorId: "admin-1", ipAddress: "1.2.3.4" });
+
+    expect(result).toEqual({ variant: "A" });
+    expect(uiVariant.set).toHaveBeenCalledWith("A");
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        adminActorId: "admin-1",
+        action: "admin.ui_variant.updated",
+        entityType: "AppSetting",
+        entityId: "ui_variant",
+        metadata: { variant: "A" },
+      })
+    );
   });
 });

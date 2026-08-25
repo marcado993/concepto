@@ -1,10 +1,14 @@
 <script lang="ts">
-  // Modal de alquiler — 3 pasos: 1) identidad (solo lectura, de la sesión)
-  // 2) PayPhone (widget) 3) confirmación. PayPhone es el único método de
-  // pago (transferencia + comprobante por OCR se retiró). Nunca se le pide
-  // al estudiante escribir su nombre/código a mano — ya está logueado,
-  // esos datos vienen de GET /auth/me (ver
-  // backend/src/shared/auth/auth.controller.ts).
+  // Modal de alquiler — 3 pasos: 1) identidad 2) PayPhone (widget) 3)
+  // confirmación. PayPhone es el único método de pago (transferencia +
+  // comprobante por OCR se retiró). Cédula/celular/código único/nombre
+  // llegan prellenados desde GET /auth/me (ver
+  // backend/src/shared/auth/auth.controller.ts) cuando ya existen de un
+  // alquiler anterior, pero TODOS son editables — el nombre en particular
+  // es el que va a salir firmado en el contrato (ver locker-contract.ts),
+  // y lo que trae Logto/GitHub/Google puede venir incompleto, en
+  // minúscula, o ser un username en vez del nombre real. Pedido explícito:
+  // que el estudiante confirme/corrija su nombre completo ANTES de pagar.
   import { fetchMe, rentLocker, fetchPayphoneConfig, fetchLockerPricePreview, ApiError, type MeResponse, type LockerPricePreview } from "./api";
   import { loadPayphoneSdk } from "./payphoneSdk";
   import { isAuthenticated } from "./auth.svelte";
@@ -44,6 +48,7 @@
     fetchMe()
       .then((data) => {
         me = data;
+        fullName = data.fullName ?? "";
         cedula = data.cedula ?? "";
         phone = data.phone ?? "";
         uniqueCode = data.uniqueCode ?? "";
@@ -58,6 +63,7 @@
   // perfil (alquiler de un semestre anterior) llegan prellenados desde
   // /auth/me arriba, acá solo se re-confirman o se corrigen, nunca se
   // escriben desde cero de nuevo (reconocimiento sobre recuerdo).
+  let fullName = $state("");
   let cedula = $state("");
   let phone = $state("");
   // Código único institucional — dato personal REAL usado para localizar
@@ -68,15 +74,21 @@
   // 202120100. Mismo patrón acá para dar el error al escribir, no recién
   // al mandar el formulario — el backend lo vuelve a validar igual.
   let uniqueCode = $state("");
+  // Al menos dos palabras (nombre + al menos un apellido) — sin exigir un
+  // conteo exacto: hay gente con un nombre y dos apellidos, otra con dos
+  // nombres y un apellido (mismo criterio que el backend, ver
+  // FULL_NAME_PATTERN en rent-locker.dto.ts).
+  const FULL_NAME_RE = /^\S+(\s+\S+)+$/;
   const CEDULA_RE = /^\d{10}$/;
   const PHONE_RE = /^0\d{9}$/;
   const UNIQUE_CODE_RE = /^2\d{3}[12]\d{4}$/;
+  const fullNameValid = $derived(FULL_NAME_RE.test(fullName.trim()));
   const cedulaValid = $derived(CEDULA_RE.test(cedula.trim()));
   const phoneValid = $derived(PHONE_RE.test(phone.trim()));
   const uniqueCodeValid = $derived(UNIQUE_CODE_RE.test(uniqueCode.trim()));
   let acceptedTerms = $state(false);
 
-  const identityValid = $derived(cedulaValid && phoneValid && uniqueCodeValid && acceptedTerms);
+  const identityValid = $derived(fullNameValid && cedulaValid && phoneValid && uniqueCodeValid && acceptedTerms);
 
   let showLogin = $state(false);
   let busy = $state(false);
@@ -119,6 +131,7 @@
     try {
       const rental = await rentLocker({
         lockerCode,
+        fullName: fullName.trim(),
         uniqueCode: uniqueCode.trim(),
         cedula: cedula.trim(),
         phone: phone.trim(),
@@ -232,22 +245,29 @@
         <!-- Antes era una línea de texto suelta — en una red móvil real con
              latencia, ese instante entre tocar el casillero y ver contenido
              se sentía como que la app no había reaccionado al tap. Una caja
-             con el mismo tamaño/borde que .identity-card (la que reemplaza
-             al llegar los datos) hace que el "está cargando" sea imposible
-             de pasar por alto, y evita que el modal salte de tamaño cuando
-             el contenido real aparece. -->
+             con borde propio hace que el "está cargando" sea imposible de
+             pasar por alto, y evita que el modal salte de tamaño cuando el
+             contenido real aparece. -->
         <div class="loading-box">
           <span class="loading-spinner">◎</span>
           Cargando tu perfil…
         </div>
       {:else}
-        <div class="identity-card">
-          <div class="identity-row"><span>Nombre</span><strong>{me.fullName}</strong></div>
-          <div class="identity-row"><span>Código</span><strong>{me.uniqueCode}</strong></div>
-        </div>
-
         {#if pricePreview?.tierName}
           <p class="tier-banner">✓ Aportante Plan {pricePreview.tierName} — descuento ya aplicado abajo</p>
+        {/if}
+
+        <label class="field-label" for="rl-full-name">Nombre completo</label>
+        <input
+          id="rl-full-name"
+          class="field-input"
+          class:invalid={fullName.length > 0 && !fullNameValid}
+          type="text"
+          placeholder="Nombre y apellido, tal como va en el contrato"
+          bind:value={fullName}
+        />
+        {#if fullName.length > 0 && !fullNameValid}
+          <p class="field-hint error">Escribe tu nombre completo (nombre y apellido)</p>
         {/if}
 
         <label class="field-label" for="rl-unique-code">Código único institucional</label>
@@ -406,10 +426,9 @@
     gap: 8px;
   }
 
-  /* Mismo tamaño/borde que .identity-card (lo que la reemplaza al llegar
-     los datos) — para que el modal no salte de alto y el estado de carga
-     se lea como una caja real, no como una línea de texto que se puede
-     pasar por alto. */
+  /* Alto mínimo propio — para que el modal no salte de alto cuando llegan
+     los datos, y el estado de carga se lea como una caja real, no como
+     una línea de texto que se puede pasar por alto. */
   .loading-box {
     display: flex;
     align-items: center;
@@ -488,14 +507,6 @@
   }
   .modal-copy.success {
     color: var(--accent, #21e0a0);
-  }
-
-  .identity-card {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 14px;
-    padding: 12px 14px;
-    margin-bottom: 14px;
   }
 
   .tier-banner {
@@ -625,19 +636,6 @@
     color: rgba(238, 244, 251, 0.5);
     margin-top: 3px;
   }
-  .identity-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    font-size: 12.5px;
-    padding: 4px 0;
-    color: rgba(238, 244, 251, 0.7);
-  }
-  .identity-row strong {
-    color: #eef4fb;
-    text-align: right;
-  }
-
   .price-row {
     display: flex;
     justify-content: space-between;

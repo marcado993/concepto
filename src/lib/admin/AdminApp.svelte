@@ -12,6 +12,7 @@
   import AdminPricing from "./AdminPricing.svelte";
   import AdminUsers from "./AdminUsers.svelte";
   import AdminAuditLog from "./AdminAuditLog.svelte";
+  import AdminNavigation from "./AdminNavigation.svelte";
   import { isAdminAuthenticated, adminLogout } from "./adminAuth.svelte";
   import { fetchAdminMe, AdminApiError, type AdminMe } from "./adminApi";
 
@@ -31,7 +32,7 @@
       });
   });
 
-  type Tab = "precios" | "usuarios" | "actividad";
+  type Tab = "precios" | "usuarios" | "actividad" | "navegacion";
   let tab = $state<Tab>("precios");
 </script>
 
@@ -62,6 +63,7 @@
       <button class:active={tab === "precios"} onclick={() => (tab = "precios")}>Precios</button>
       <button class:active={tab === "usuarios"} onclick={() => (tab = "usuarios")}>Usuarios</button>
       <button class:active={tab === "actividad"} onclick={() => (tab = "actividad")}>Registro de actividad</button>
+      <button class:active={tab === "navegacion"} onclick={() => (tab = "navegacion")}>Navegación</button>
     </nav>
 
     <main class="admin-content">
@@ -69,8 +71,10 @@
         <AdminPricing />
       {:else if tab === "usuarios"}
         <AdminUsers />
-      {:else}
+      {:else if tab === "actividad"}
         <AdminAuditLog />
+      {:else}
+        <AdminNavigation />
       {/if}
     </main>
   </div>

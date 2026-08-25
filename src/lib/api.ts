@@ -183,6 +183,7 @@ export function fetchLockers(): Promise<LockerFromApi[]> {
 // confirmLockerPayphonePayment() verifica el pago contra la API real.
 export interface RentLockerInput {
   lockerCode: string;
+  fullName: string;
   uniqueCode: string;
   cedula: string;
   phone: string;
@@ -319,6 +320,12 @@ export function subscribeToTier(input: SubscribeInput): Promise<SubscriptionFrom
 
 export function fetchSubscriptionPayphoneConfig(): Promise<PayphonePublicConfig> {
   return getJSON<PayphonePublicConfig>("/subscriptions/payphone/config");
+}
+
+// Rueda ("A") vs. lista accesible ("B") — feature flag editable desde el
+// panel de administración (ver abTest.ts para cómo se usa/cachea).
+export function fetchUiVariant(): Promise<{ variant: "A" | "B" }> {
+  return getJSON("/ui-variant");
 }
 
 // El cliente del panel de administración vive aparte, en

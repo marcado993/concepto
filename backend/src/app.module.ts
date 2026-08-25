@@ -11,6 +11,7 @@ import { HealthModule } from "./shared/health/health.module";
 import { MonitoringModule } from "./shared/monitoring/monitoring.module";
 import { VentureModule } from "./venture/venture.module";
 import { AdminModule } from "./admin/admin.module";
+import { SettingsModule } from "./shared/settings/settings.module";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AdminModule } from "./admin/admin.module";
     SecurityModule,
     VentureModule,
     AdminModule,
+    SettingsModule,
     // Módulos pendientes (ver docs/dominio/02-necesidades-stakeholders.md §3
     // MoSCoW): PeriodModule, EventModule, ResourceModule, AnalyticsModule.
   ],

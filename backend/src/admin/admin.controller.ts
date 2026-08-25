@@ -7,6 +7,7 @@ import { ListUsersQueryDto } from "./dto/list-users.dto";
 import { ListAuditLogsQueryDto } from "./dto/list-audit-logs.dto";
 import { UpdateSubscriptionTierDto } from "./dto/update-subscription-tier.dto";
 import { UpdateLockerPricingDto } from "./dto/update-locker-pricing.dto";
+import { UpdateUiVariantDto } from "./dto/update-ui-variant.dto";
 
 type AuthedRequest = Request & { user: { id: string } };
 
@@ -55,5 +56,15 @@ export class AdminController {
   @Get("audit-logs")
   listAuditLogs(@Query() query: ListAuditLogsQueryDto) {
     return this.admin.listAuditLogs(query);
+  }
+
+  @Get("ui-variant")
+  getUiVariant() {
+    return this.admin.getUiVariant();
+  }
+
+  @Patch("ui-variant")
+  updateUiVariant(@Body() dto: UpdateUiVariantDto, @Req() req: AuthedRequest) {
+    return this.admin.updateUiVariant(dto, { adminActorId: req.user.id, ipAddress: req.ip });
   }
 }

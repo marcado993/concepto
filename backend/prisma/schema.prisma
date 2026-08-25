@@ -230,6 +230,20 @@ model AdminAccount {
   @@map("admin_accounts")
 }
 
+// Bandeja genérica de valores (feature flags, ajustes globales) editables
+// desde el panel de administración sin necesitar un redeploy — arranca con
+// UNA sola clave real ("ui_variant", ver UiVariantService) pero el
+// esquema es clave/valor a propósito para no necesitar una migración
+// nueva cada vez que se agregue otro flag simple.
+model AppSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
 // actorId Y adminActorId son AMBOS nullable, pero AuditService.record()
 // (código de aplicación, ver audit.service.ts) exige por tipos que se pase
 // EXACTAMENTE uno de los dos — nunca los dos, nunca ninguno. Esto reemplaza

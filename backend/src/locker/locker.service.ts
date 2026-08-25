@@ -42,6 +42,7 @@ export function lockerTermsVersion(periodLabel: string): string {
 export interface RentLockerParams {
   userId: string;
   lockerCode: string;
+  fullName: string;
   uniqueCode: string;
   cedula: string;
   phone: string;
@@ -181,16 +182,20 @@ export class LockerService {
     const discountPercent = await this.subscriptionBenefits.getLockerDiscountPercent(params.userId);
     const price = calculateLockerPrice(Number(period.lockerBasePrice), discountPercent);
 
-    // Cédula/celular/código único se piden una sola vez — se guardan en
-    // User acá mismo (no en un endpoint de perfil aparte) para no agregar
-    // un paso extra al flujo; el siguiente alquiler/aportación los reutiliza
-    // sin volver a preguntarlos (ver GET /auth/me). uniqueCode reemplaza el
-    // placeholder "PENDIENTE-<uuid>" con el dato real — ver el comentario en
-    // rent-locker.dto.ts.
+    // Nombre/cédula/celular/código único se piden y confirman acá mismo —
+    // se guardan en User (no en un endpoint de perfil aparte) para no
+    // agregar un paso extra al flujo; el siguiente alquiler/aportación los
+    // reutiliza sin volver a preguntarlos (ver GET /auth/me). fullName
+    // sobreescribe lo que haya (aunque ya viniera de Logto/GitHub/Google) a
+    // propósito: es literalmente el nombre que va a salir firmado en el
+    // contrato (ver locker-contract.ts), tiene que ser el que el propio
+    // estudiante confirmó en este formulario, no lo que trajera el login
+    // social. uniqueCode reemplaza el placeholder "PENDIENTE-<uuid>" con
+    // el dato real — ver el comentario en rent-locker.dto.ts.
     try {
       await this.prisma.user.update({
         where: { id: params.userId },
-        data: { cedula: params.cedula, phone: params.phone, uniqueCode: params.uniqueCode },
+        data: { fullName: params.fullName, cedula: params.cedula, phone: params.phone, uniqueCode: params.uniqueCode },
       });
     } catch (err) {
       // P2002 = choque contra la restricción @unique de uniqueCode — dos

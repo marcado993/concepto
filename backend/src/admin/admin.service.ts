@@ -2,10 +2,12 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PeriodService } from "../shared/period/period.service";
+import { UiVariantService } from "../shared/settings/ui-variant.service";
 import { ListUsersQueryDto } from "./dto/list-users.dto";
 import { ListAuditLogsQueryDto } from "./dto/list-audit-logs.dto";
 import { UpdateSubscriptionTierDto } from "./dto/update-subscription-tier.dto";
 import { UpdateLockerPricingDto } from "./dto/update-locker-pricing.dto";
+import { UpdateUiVariantDto } from "./dto/update-ui-variant.dto";
 
 export interface AdminActionContext {
   // El actor de toda acción hecha desde el panel es SIEMPRE un
@@ -25,8 +27,31 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly period: PeriodService
+    private readonly period: PeriodService,
+    private readonly uiVariant: UiVariantService
   ) {}
+
+  // Rueda (ArcMenu, "A") vs. lista accesible (AccessibleCategoryNav, "B")
+  // — ver src/lib/abTest.ts en el frontend. El experimento real ya se
+  // cerró a favor de B, pero antes el valor quedaba hardcodeado en el
+  // frontend: cambiarlo necesitaba un redeploy. Ahora es un feature flag
+  // real, editable desde acá sin tocar código.
+  async getUiVariant() {
+    return { variant: await this.uiVariant.get() };
+  }
+
+  async updateUiVariant(dto: UpdateUiVariantDto, ctx: AdminActionContext) {
+    await this.uiVariant.set(dto.variant);
+    await this.audit.record({
+      adminActorId: ctx.adminActorId,
+      action: "admin.ui_variant.updated",
+      entityType: "AppSetting",
+      entityId: "ui_variant",
+      ipAddress: ctx.ipAddress,
+      metadata: { variant: dto.variant },
+    });
+    return { variant: dto.variant };
+  }
 
   async listUsers(query: ListUsersQueryDto) {
     const where = query.search

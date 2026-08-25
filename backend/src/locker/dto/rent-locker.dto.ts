@@ -1,4 +1,10 @@
-import { IsIn, IsString, Matches } from "class-validator";
+import { IsIn, IsString, Matches, MinLength } from "class-validator";
+
+// Al menos dos palabras (nombre + al menos un apellido) — sin exigir un
+// conteo exacto: hay gente con un nombre y dos apellidos, otra con dos
+// nombres y un apellido. Solo descarta lo que claramente NO es un nombre
+// completo (un username suelto, un solo nombre de pila).
+const FULL_NAME_PATTERN = /^\S+(\s+\S+)+$/;
 
 // Formato real del código único institucional de la EPN (confirmado con
 // datos reales del cliente, no inventado): 9 dígitos, sin letras ni
@@ -12,6 +18,18 @@ export const UNIQUE_CODE_PATTERN = /^2\d{3}[12]\d{4}$/;
 export class RentLockerDto {
   @IsString()
   lockerCode!: string;
+
+  // Nombre completo — pedido real: el que trae Logto/GitHub/Google puede
+  // venir incompleto, en minúscula, o ser un username en vez del nombre
+  // real (y a veces la app solo tenía la primera carga de OAuth, nunca
+  // actualizada). El alquiler es el momento de pedirlo/confirmarlo de
+  // verdad, igual que cédula/celular/código único — este texto es
+  // literalmente el que va a salir firmado en el contrato (ver
+  // locker-contract.ts), así que tiene que ser el correcto ANTES de
+  // pagar, no algo que se corrija después.
+  @Matches(FULL_NAME_PATTERN, { message: "Escribe tu nombre completo (nombre y apellido)" })
+  @MinLength(3)
+  fullName!: string;
 
   // Código único institucional — dato personal REAL usado para localizar
   // físicamente al dueño de un casillero (no un identificador interno

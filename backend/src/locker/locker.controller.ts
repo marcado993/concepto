@@ -86,6 +86,7 @@ export class LockerController {
     return this.lockerService.rent({
       userId: req.user.id,
       lockerCode: dto.lockerCode,
+      fullName: dto.fullName,
       uniqueCode: dto.uniqueCode,
       cedula: dto.cedula,
       phone: dto.phone,

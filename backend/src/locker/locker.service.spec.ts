@@ -40,6 +40,7 @@ describe("LockerService.rent", () => {
   const params = {
     userId: "user-1",
     lockerCode: "A07",
+    fullName: "Luis Andres Guerrero",
     uniqueCode: "AEIS-2026-001",
     cedula: "1723456789",
     phone: "0991234567",
@@ -220,15 +221,16 @@ describe("LockerService.rent", () => {
     );
   });
 
-  // Cédula/celular/código único se piden una sola vez (ver comentario en
-  // RentLockerModal.svelte) — el alquiler es el punto donde se guardan en
-  // User, para que el siguiente semestre no haya que volver a pedirlos.
-  it("Dado cédula, celular y código único, Cuando alquila, Entonces los guarda en User para no volver a pedirlos", async () => {
+  // Nombre/cédula/celular/código único se piden una sola vez (ver
+  // comentario en RentLockerModal.svelte) — el alquiler es el punto donde
+  // se guardan en User, para que el siguiente semestre no haya que volver
+  // a pedirlos.
+  it("Dado nombre, cédula, celular y código único, Cuando alquila, Entonces los guarda en User para no volver a pedirlos", async () => {
     await service.rent(params);
 
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { cedula: "1723456789", phone: "0991234567", uniqueCode: "AEIS-2026-001" },
+      data: { fullName: "Luis Andres Guerrero", cedula: "1723456789", phone: "0991234567", uniqueCode: "AEIS-2026-001" },
     });
   });
 

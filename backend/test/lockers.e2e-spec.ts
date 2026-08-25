@@ -60,17 +60,18 @@ function testAuthHeader(userId: string, role: "ESTUDIANTE" | "PRESIDENTE" | "DIR
 // (precio único, sin recargo — ver rental-calculator.ts).
 const EXPECTED_LOCKER_AMOUNT_CENTS = 650;
 
-// Cuerpo válido de POST /lockers/rent — cedula/phone/acceptedTerms/uniqueCode
-// son todos obligatorios en RentLockerDto (ver rent-locker.dto.ts), así que
-// cualquier request de prueba que solo mande lockerCode se rechazaría con
-// 400 antes de llegar a la lógica que este archivo quiere probar.
-// uniqueCode es @unique en User (ver schema.prisma) — dos estudiantes
-// distintos nunca pueden compartir el mismo valor, así que cada llamador
-// pasa el suyo (importa sobre todo en el test de concurrencia, donde
-// userA y userB alquilan a la vez: reusar el mismo literal ahí causaría un
-// choque real de unicidad y ya no probaría la carrera del casillero).
+// Cuerpo válido de POST /lockers/rent — fullName/cedula/phone/acceptedTerms/
+// uniqueCode son todos obligatorios en RentLockerDto (ver rent-locker.dto.ts),
+// así que cualquier request de prueba que solo mande lockerCode se
+// rechazaría con 400 antes de llegar a la lógica que este archivo quiere
+// probar. uniqueCode es @unique en User (ver schema.prisma) — dos
+// estudiantes distintos nunca pueden compartir el mismo valor, así que
+// cada llamador pasa el suyo (importa sobre todo en el test de
+// concurrencia, donde userA y userB alquilan a la vez: reusar el mismo
+// literal ahí causaría un choque real de unicidad y ya no probaría la
+// carrera del casillero).
 function validRentBody(lockerCode: string, uniqueCode = "209900001") {
-  return { lockerCode, cedula: "1723456789", phone: "0991234567", uniqueCode, acceptedTerms: true };
+  return { lockerCode, fullName: "Estudiante E2E", cedula: "1723456789", phone: "0991234567", uniqueCode, acceptedTerms: true };
 }
 
 describe("Lockers (e2e) — caja negra contra Postgres real", () => {

@@ -139,3 +139,16 @@ export function fetchAdminAuditLogs(page: number, action?: string): Promise<Admi
   if (action) params.set("action", action);
   return getJSON<AdminAuditLogsPage>(`/admin/audit-logs?${params.toString()}`);
 }
+
+// Rueda (ArcMenu, "A") vs. lista accesible (AccessibleCategoryNav, "B") —
+// ver ../abTest.ts. Feature flag real, editable acá en vez de hardcodeado
+// en el frontend público (antes cualquier cambio necesitaba un redeploy).
+export type UiVariant = "A" | "B";
+
+export function fetchAdminUiVariant(): Promise<{ variant: UiVariant }> {
+  return getJSON("/admin/ui-variant");
+}
+
+export function updateAdminUiVariant(variant: UiVariant): Promise<{ variant: UiVariant }> {
+  return patchJSON("/admin/ui-variant", { variant });
+}
