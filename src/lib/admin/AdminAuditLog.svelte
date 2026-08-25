@@ -52,17 +52,27 @@
   <h2>Registro de actividad</h2>
   <p class="hint">{total} eventos — cada pago, alquiler, aportación y cambio de precio queda acá con quién, cuándo y desde qué IP. Útil para investigar cualquier inconveniente reportado. (Los logs crudos del servidor son otra cosa — esto es el rastro de negocio, no la consola del contenedor.)</p>
 
-  <form class="search-row" onsubmit={onFilterSubmit}>
-    <input class="search-input" type="search" placeholder="Filtrar por acción (ej. locker, subscription, admin)…" bind:value={actionFilter} />
-    <button class="search-btn" type="submit">Filtrar</button>
+  <form class="admin-search-row" onsubmit={onFilterSubmit}>
+    <input class="admin-search-input" type="search" placeholder="Filtrar por acción (ej. locker, subscription, admin)…" bind:value={actionFilter} />
+    <button class="admin-btn admin-btn-ghost" type="submit">Filtrar</button>
   </form>
 
   {#if loading}
-    <p class="muted">Cargando…</p>
+    <div class="log-list skeleton-log">
+      {#each { length: 8 } as _}
+        <span class="admin-skeleton skeleton-row"></span>
+      {/each}
+    </div>
   {:else if error}
-    <p class="error">{error}</p>
+    <p class="admin-error">{error}</p>
   {:else if logs.length === 0}
-    <p class="muted">No hay eventos que coincidan.</p>
+    <div class="admin-empty">
+      <svg width="32" height="32" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="10" cy="10" r="7.25" />
+        <path d="M10 5.5V10l3 2" />
+      </svg>
+      <p>{actionFilter.trim() ? `No hay eventos que coincidan con "${actionFilter.trim()}".` : "Todavía no hay ningún evento registrado."}</p>
+    </div>
   {:else}
     <div class="log-list">
       {#each logs as log (log.id)}
@@ -84,10 +94,10 @@
       {/each}
     </div>
 
-    <div class="pager">
-      <button disabled={page <= 1} onclick={() => { page -= 1; load(); }}>‹ Anterior</button>
+    <div class="admin-pager">
+      <button class="admin-btn admin-btn-ghost" disabled={page <= 1} onclick={() => { page -= 1; load(); }}>‹ Anterior</button>
       <span>Página {page} de {totalPages}</span>
-      <button disabled={page >= totalPages} onclick={() => { page += 1; load(); }}>Siguiente ›</button>
+      <button class="admin-btn admin-btn-ghost" disabled={page >= totalPages} onclick={() => { page += 1; load(); }}>Siguiente ›</button>
     </div>
   {/if}
 </section>
@@ -108,43 +118,6 @@
     max-width: 640px;
   }
 
-  .search-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-    max-width: 480px;
-  }
-
-  .search-input {
-    flex: 1;
-    background: var(--bg-panel);
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-sm);
-    color: var(--ink-0);
-    padding: 8px 12px;
-    font-size: 13.5px;
-    font-family: inherit;
-  }
-
-  .search-btn {
-    padding: 8px 16px;
-    border-radius: var(--radius-sm);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--line-strong);
-    color: var(--ink-0);
-    font-size: 13px;
-    cursor: pointer;
-  }
-
-  .muted {
-    color: var(--ink-1);
-    font-size: 13px;
-  }
-
-  .error {
-    color: #ffb4b4;
-    font-size: 13px;
-  }
 
   .log-list {
     display: flex;
@@ -213,26 +186,12 @@
     color: var(--ink-0);
   }
 
-  .pager {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    margin-top: 14px;
-    font-size: 13px;
-    color: var(--ink-1);
+  .skeleton-log {
+    padding: 4px;
   }
 
-  .pager button {
-    padding: 6px 12px;
-    border-radius: 999px;
-    border: 1px solid var(--line-strong);
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--ink-0);
-    cursor: pointer;
-  }
-
-  .pager button:disabled {
-    opacity: 0.4;
-    cursor: default;
+  .skeleton-log .admin-skeleton {
+    height: 40px;
+    margin-bottom: 1px;
   }
 </style>

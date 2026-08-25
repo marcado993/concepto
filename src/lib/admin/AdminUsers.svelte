@@ -41,17 +41,27 @@
   <h2>Estudiantes registrados</h2>
   <p class="hint">{total} en total — nunca se muestra el identificador interno de Logto, solo lo que ya ve el propio estudiante en su perfil.</p>
 
-  <form class="search-row" onsubmit={onSearchSubmit}>
-    <input class="search-input" type="search" placeholder="Buscar por nombre, correo o código único…" bind:value={search} />
-    <button class="search-btn" type="submit">Buscar</button>
+  <form class="admin-search-row" onsubmit={onSearchSubmit}>
+    <input class="admin-search-input" type="search" placeholder="Buscar por nombre, correo o código único…" bind:value={search} />
+    <button class="admin-btn admin-btn-ghost" type="submit">Buscar</button>
   </form>
 
   {#if loading}
-    <p class="muted">Cargando…</p>
+    <div class="table-wrap skeleton-table">
+      {#each { length: 6 } as _}
+        <span class="admin-skeleton skeleton-row"></span>
+      {/each}
+    </div>
   {:else if error}
-    <p class="error">{error}</p>
+    <p class="admin-error">{error}</p>
   {:else if users.length === 0}
-    <p class="muted">No hay estudiantes que coincidan.</p>
+    <div class="admin-empty">
+      <svg width="32" height="32" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="7.5" cy="6.5" r="2.5" />
+        <path d="M2.5 17c0-3 2.2-5 5-5s5 2 5 5" />
+      </svg>
+      <p>{search.trim() ? `No hay estudiantes que coincidan con "${search.trim()}".` : "Todavía no hay ningún estudiante registrado."}</p>
+    </div>
   {:else}
     <div class="table-wrap">
       <table>
@@ -82,10 +92,10 @@
       </table>
     </div>
 
-    <div class="pager">
-      <button disabled={page <= 1} onclick={() => { page -= 1; load(); }}>‹ Anterior</button>
+    <div class="admin-pager">
+      <button class="admin-btn admin-btn-ghost" disabled={page <= 1} onclick={() => { page -= 1; load(); }}>‹ Anterior</button>
       <span>Página {page} de {totalPages}</span>
-      <button disabled={page >= totalPages} onclick={() => { page += 1; load(); }}>Siguiente ›</button>
+      <button class="admin-btn admin-btn-ghost" disabled={page >= totalPages} onclick={() => { page += 1; load(); }}>Siguiente ›</button>
     </div>
   {/if}
 </section>
@@ -102,44 +112,6 @@
     margin: 0 0 14px;
     font-size: 13px;
     color: var(--ink-1);
-  }
-
-  .search-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-    max-width: 480px;
-  }
-
-  .search-input {
-    flex: 1;
-    background: var(--bg-panel);
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-sm);
-    color: var(--ink-0);
-    padding: 8px 12px;
-    font-size: 13.5px;
-    font-family: inherit;
-  }
-
-  .search-btn {
-    padding: 8px 16px;
-    border-radius: var(--radius-sm);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--line-strong);
-    color: var(--ink-0);
-    font-size: 13px;
-    cursor: pointer;
-  }
-
-  .muted {
-    color: var(--ink-1);
-    font-size: 13px;
-  }
-
-  .error {
-    color: #ffb4b4;
-    font-size: 13px;
   }
 
   .table-wrap {
@@ -190,26 +162,14 @@
     border: 1px solid var(--accent-dim);
   }
 
-  .pager {
+  .skeleton-table {
     display: flex;
-    align-items: center;
-    gap: 14px;
-    margin-top: 14px;
-    font-size: 13px;
-    color: var(--ink-1);
+    flex-direction: column;
+    gap: 1px;
+    padding: 8px;
   }
 
-  .pager button {
-    padding: 6px 12px;
-    border-radius: 999px;
-    border: 1px solid var(--line-strong);
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--ink-0);
-    cursor: pointer;
-  }
-
-  .pager button:disabled {
-    opacity: 0.4;
-    cursor: default;
+  .skeleton-row {
+    height: 34px;
   }
 </style>

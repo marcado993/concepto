@@ -1,0 +1,183 @@
+/* Piezas compartidas del panel de administración — antes cada pantalla
+   (Precios/Usuarios/Actividad/Navegación) repetía, casi letra por letra, el
+   mismo botón/buscador/paginador/estado vacío. Un solo lugar ahora, para que
+   un ajuste (ej. el color de un botón) no tenga que hacerse 4 veces y
+   termine divergiendo con el tiempo. Global (no scoped) a propósito: se
+   importa una vez en admin-main.ts y cada componente solo referencia las
+   clases, igual que ya hace con las variables de app.css. */
+
+.admin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: transform 0.12s ease, opacity 0.12s ease, border-color 0.12s ease;
+}
+
+.admin-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.admin-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+.admin-btn-primary {
+  background: linear-gradient(165deg, var(--accent) 0%, var(--accent-dim) 100%);
+  color: #010805;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15) inset;
+}
+
+.admin-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 0 0 3px var(--accent-ghost);
+}
+
+.admin-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--line-strong);
+  color: var(--ink-0);
+}
+
+.admin-btn-ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Buscador/filtro — mismo patrón de input+botón en Usuarios y Actividad. */
+.admin-search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  max-width: 480px;
+}
+
+.admin-search-input {
+  flex: 1;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-0);
+  padding: 9px 13px;
+  font-size: 13.5px;
+  font-family: inherit;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.admin-search-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ghost);
+}
+
+/* Paginador */
+.admin-pager {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Texto de estado */
+.admin-muted {
+  color: var(--ink-1);
+  font-size: 13px;
+}
+
+.admin-error {
+  color: #ffb4b4;
+  font-size: 13px;
+}
+
+.admin-saved-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--accent);
+  animation: admin-fade-in 0.15s ease;
+}
+
+.admin-saved-tag::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+@keyframes admin-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Estado vacío — antes un <p> de texto plano; con ícono es más fácil de
+   distinguir de un error a simple vista (heurística: reconocimiento, no
+   solo lectura del mensaje). */
+.admin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  color: var(--ink-1);
+  text-align: center;
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius-md);
+}
+
+.admin-empty svg {
+  color: var(--ink-2);
+}
+
+.admin-empty p {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+/* Skeleton de carga — reemplaza el "Cargando…" de texto plano por una
+   silueta del contenido real, para que la pantalla no "salte" cuando llegan
+   los datos y el usuario ya intuya la forma de lo que viene. */
+.admin-skeleton {
+  background: linear-gradient(90deg, var(--bg-panel) 25%, var(--bg-panel-2) 37%, var(--bg-panel) 63%);
+  background-size: 400% 100%;
+  animation: admin-shimmer 1.4s ease infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes admin-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-skeleton {
+    animation: none;
+    background: var(--bg-panel);
+  }
+  .admin-saved-tag {
+    animation: none;
+  }
+}

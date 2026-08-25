@@ -58,6 +58,14 @@
   let lockerError = $state<string | null>(null);
   let lockerSaving = $state(false);
   let lockerSavedAt = $state<number | null>(null);
+  // Guarda el valor exacto que se guardó — el "tag" de Guardado solo se
+  // muestra si el input SIGUE igual a eso. Antes se quedaba pegado
+  // indefinidamente aunque el admin ya hubiera cambiado el número de nuevo
+  // sin volver a guardar (heurística: visibilidad del estado del sistema —
+  // "Guardado" tiene que significar "esto de acá ya está guardado", no
+  // "algo se guardó alguna vez").
+  let lockerSavedValue = $state<string | null>(null);
+  const lockerShowSaved = $derived(lockerSavedAt !== null && lockerInput === lockerSavedValue);
 
   function loadLockerPricing() {
     lockerLoading = true;
@@ -87,6 +95,7 @@
       const updated = await updateAdminLockerPricing(value);
       lockerBasePrice = updated.basePrice;
       lockerInput = String(updated.basePrice);
+      lockerSavedValue = lockerInput;
       lockerSavedAt = Date.now();
     } catch (err) {
       lockerError = err instanceof AdminApiError ? err.message : "No se pudo guardar el precio.";
@@ -108,6 +117,13 @@
   let tierSaving = $state<Record<string, boolean>>({});
   let tierError = $state<Record<string, string | null>>({});
   let tierSavedAt = $state<Record<string, number>>({});
+  // Mismo criterio que lockerSavedValue arriba: guarda una "foto" de lo que
+  // se guardó para poder distinguir "esto ya está guardado" de "se guardó
+  // hace rato pero ya lo cambiaste".
+  let tierSavedSnapshot = $state<Record<string, string>>({});
+  function tierIsSaved(tierId: string): boolean {
+    return tierSavedAt[tierId] !== undefined && JSON.stringify([amountDrafts[tierId], benefitDrafts[tierId]]) === tierSavedSnapshot[tierId];
+  }
 
   function loadTiers() {
     tiersLoading = true;
@@ -147,6 +163,7 @@
       tiers = tiers.map((t) => (t.id === tier.id ? updated : t));
       amountDrafts[tier.id] = String(updated.amount);
       benefitDrafts[tier.id] = parseBenefits(updated.benefits);
+      tierSavedSnapshot[tier.id] = JSON.stringify([amountDrafts[tier.id], benefitDrafts[tier.id]]);
       tierSavedAt[tier.id] = Date.now();
     } catch (err) {
       tierError[tier.id] = err instanceof AdminApiError ? err.message : "No se pudo guardar este tier.";
@@ -161,20 +178,20 @@
   <p class="hint">Se aplica al semestre activo{lockerPeriodLabel ? ` (${lockerPeriodLabel})` : ""}. Rango permitido: $5.50 – $9.00.</p>
 
   {#if lockerLoading}
-    <p class="muted">Cargando…</p>
+    <div class="row"><span class="admin-skeleton skeleton-input"></span><span class="admin-skeleton skeleton-btn"></span></div>
   {:else}
     <div class="row">
       <span class="prefix">$</span>
       <input class="amount-input" type="number" step="0.01" min="5.5" max="9" bind:value={lockerInput} />
-      <button class="save-btn" disabled={lockerSaving} onclick={saveLockerPrice}>
+      <button class="admin-btn admin-btn-primary" disabled={lockerSaving} onclick={saveLockerPrice}>
         {lockerSaving ? "Guardando…" : "Guardar"}
       </button>
-      {#if lockerSavedAt}
-        <span class="saved-tag">Guardado</span>
+      {#if lockerShowSaved}
+        <span class="admin-saved-tag">Guardado</span>
       {/if}
     </div>
-    {#if lockerError}<p class="error">{lockerError}</p>{/if}
-    {#if lockerBasePrice !== null}<p class="muted small">Precio actual: ${lockerBasePrice.toFixed(2)}</p>{/if}
+    {#if lockerError}<p class="admin-error">{lockerError}</p>{/if}
+    {#if lockerBasePrice !== null}<p class="admin-muted small">Precio actual: ${lockerBasePrice.toFixed(2)}</p>{/if}
   {/if}
 </section>
 
@@ -183,9 +200,13 @@
   <p class="hint">Tiers del semestre activo{tiersPeriodLabel ? ` (${tiersPeriodLabel})` : ""}. Cambia el monto y los descuentos, y toca Guardar.</p>
 
   {#if tiersLoading}
-    <p class="muted">Cargando…</p>
+    <div class="tiers-grid">
+      {#each { length: 3 } as _}
+        <div class="tier-card"><span class="admin-skeleton skeleton-card"></span></div>
+      {/each}
+    </div>
   {:else if tiersError}
-    <p class="error">{tiersError}</p>
+    <p class="admin-error">{tiersError}</p>
   {:else}
     <div class="tiers-grid">
       {#each tiers as tier (tier.id)}
@@ -234,12 +255,12 @@
           {/if}
 
           <div class="row save-row">
-            <button class="save-btn" disabled={tierSaving[tier.id]} onclick={() => saveTier(tier)}>
+            <button class="admin-btn admin-btn-primary" disabled={tierSaving[tier.id]} onclick={() => saveTier(tier)}>
               {tierSaving[tier.id] ? "Guardando…" : "Guardar"}
             </button>
-            {#if tierSavedAt[tier.id]}<span class="saved-tag">Guardado</span>{/if}
+            {#if tierIsSaved(tier.id)}<span class="admin-saved-tag">Guardado</span>{/if}
           </div>
-          {#if tierError[tier.id]}<p class="error">{tierError[tier.id]}</p>{/if}
+          {#if tierError[tier.id]}<p class="admin-error">{tierError[tier.id]}</p>{/if}
         </div>
       {/each}
     </div>
@@ -274,12 +295,7 @@
     line-height: 1.5;
   }
 
-  .muted {
-    color: var(--ink-1);
-    font-size: 13px;
-  }
-
-  .muted.small {
+  .small {
     margin-top: 8px;
   }
 
@@ -334,32 +350,6 @@
     cursor: pointer;
   }
 
-  .save-btn {
-    padding: 8px 16px;
-    border-radius: 999px;
-    background: linear-gradient(165deg, var(--accent) 0%, var(--accent-dim) 100%);
-    color: #010805;
-    font-weight: 600;
-    font-size: 13px;
-    cursor: pointer;
-  }
-
-  .save-btn:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  .saved-tag {
-    font-size: 12px;
-    color: var(--accent);
-  }
-
-  .error {
-    margin: 8px 0 0;
-    color: #ffb4b4;
-    font-size: 12.5px;
-  }
-
   .tiers-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -371,5 +361,24 @@
     border: 1px solid var(--line-soft);
     border-radius: var(--radius-md);
     padding: 16px;
+  }
+
+  .skeleton-input {
+    display: block;
+    width: 120px;
+    height: 34px;
+  }
+
+  .skeleton-btn {
+    display: block;
+    width: 88px;
+    height: 34px;
+    border-radius: 999px;
+  }
+
+  .skeleton-card {
+    display: block;
+    width: 100%;
+    height: 160px;
   }
 </style>

@@ -17,8 +17,7 @@
       "name": "aeis-admin-dev",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "--config", "vite.admin.config.ts", "--port", "5174", "--strictPort"],
-      "port": 5174,
-      "url": "http://localhost:5174/admin.html"
+      "port": 5174
     }
   ]
 }

@@ -52,9 +52,12 @@
   <p class="hint">Solo cuenta pagos ya confirmados por PayPhone — nunca reservas pendientes.</p>
 
   {#if loading}
-    <p class="muted">Cargando…</p>
+    <div class="hero-row">
+      <span class="admin-skeleton skeleton-hero"></span>
+      <span class="admin-skeleton skeleton-hero"></span>
+    </div>
   {:else if error}
-    <p class="error">{error}</p>
+    <p class="admin-error">{error}</p>
   {:else if data}
     <div class="hero-row">
       <div class="hero-card">
@@ -126,7 +129,7 @@
         </div>
       </div>
     {:else}
-      <p class="error">Escribe un número válido.</p>
+      <p class="admin-error">Escribe un número válido.</p>
     {/if}
   </section>
 {/if}
@@ -160,15 +163,8 @@
     line-height: 1.5;
   }
 
-  .muted {
-    color: var(--ink-1);
-    font-size: 13px;
-  }
-
-  .error {
-    margin: 8px 0 0;
-    color: #ffb4b4;
-    font-size: 12.5px;
+  .skeleton-hero {
+    height: 106px;
   }
 
   .hero-row {

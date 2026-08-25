@@ -43,9 +43,12 @@
   </p>
 
   {#if loading}
-    <p class="muted">Cargando…</p>
+    <div class="choice-grid">
+      <span class="admin-skeleton skeleton-card"></span>
+      <span class="admin-skeleton skeleton-card"></span>
+    </div>
   {:else if error}
-    <p class="error">{error}</p>
+    <p class="admin-error">{error}</p>
   {:else}
     <div class="choice-grid">
       <button class="choice-card" class:active={variant === "A"} disabled={saving} onclick={() => choose("A")}>
@@ -57,7 +60,7 @@
         <span class="choice-desc">Lista simple con botones — la que está activa hoy por defecto.</span>
       </button>
     </div>
-    {#if savedAt}<p class="saved-tag">Guardado</p>{/if}
+    {#if savedAt}<p class="admin-saved-tag">Guardado</p>{/if}
   {/if}
 </section>
 
@@ -80,20 +83,14 @@
     line-height: 1.5;
   }
 
-  .muted {
-    color: var(--ink-1);
-    font-size: 13px;
-  }
-
-  .error {
-    color: #ffb4b4;
-    font-size: 13px;
-  }
-
   .choice-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 12px;
+  }
+
+  .skeleton-card {
+    height: 78px;
   }
 
   .choice-card {
@@ -135,9 +132,7 @@
     line-height: 1.4;
   }
 
-  .saved-tag {
+  .admin-saved-tag {
     margin-top: 12px;
-    font-size: 12px;
-    color: var(--accent);
   }
 </style>
