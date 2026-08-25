@@ -6,6 +6,8 @@
   // animación de "código enviado" de Login.svelte (mismo lenguaje visual
   // en toda la app: algo importante acaba de pasar, se dibuja, no aparece
   // de golpe).
+  import TypeText from "./TypeText.svelte";
+
   interface Props {
     ok: boolean;
     text: string;
@@ -13,6 +15,11 @@
   }
 
   let { ok, text, onclose }: Props = $props();
+
+  // Arranca justo cuando el check/x termina de dibujarse (badge-pop 0.4s +
+  // el trazo del ícono, ver CSS abajo) — se siente como una secuencia, no
+  // como dos animaciones sueltas compitiendo.
+  const titleText = $derived(ok ? "¡Pago confirmado!" : "No se pudo confirmar el pago");
 
   function onScrimKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") onclose();
@@ -44,7 +51,7 @@
       {/if}
     </span>
 
-    <h3 class="modal-title">{ok ? "¡Pago confirmado!" : "No se pudo confirmar el pago"}</h3>
+    <TypeText tag="h3" class="modal-title" text={titleText} speed={26} startDelay={480} />
     <p class="modal-copy">{text}</p>
     <button class="cta" class:error={!ok} onclick={onclose}>Entendido</button>
   </div>
@@ -160,7 +167,12 @@
     }
   }
 
-  .modal-title {
+  /* :global() a propósito — TypeText.svelte renderiza este h3 (efecto de
+     máquina de escribir en el título), no el template de este componente
+     directamente; sin :global() el hash de scoped-CSS de Svelte nunca
+     matchea (mismo hallazgo real que .venture-name en CommunitySection y
+     .login-title en Login.svelte). */
+  :global(.modal-title) {
     font-family: var(--font-heading, sans-serif);
     font-size: 18px;
     letter-spacing: 0.02em;

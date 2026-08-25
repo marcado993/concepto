@@ -41,13 +41,21 @@ if ('requestIdleCallback' in window) {
 // 600ms) on purpose — index.html's own inline script types out a short
 // "system boot" log inside #bootLog, and cutting it off mid-sentence would
 // look broken instead of intentional; the sequence finishes in ~1.3s.
+//
+// Excepción: PayPhone redirige de vuelta con una recarga COMPLETA de
+// página (App.svelte lee ?id=&clientTransactionId= al montar) — sin esto,
+// alguien que ya estaba en la app, fue a pagar y volvió, se topaba con el
+// "arrancando sistema" completo de nuevo ANTES de ver si su pago se
+// confirmó (reporte real: "es como que se recarga"). Ahí no hace falta la
+// narrativa completa de arranque — se corta antes.
 const boot = document.getElementById('boot')
 if (boot) {
   const dismiss = () => {
     boot.classList.add('done')
     boot.addEventListener('transitionend', () => boot.remove(), { once: true })
   }
-  setTimeout(dismiss, 1500)
+  const returningFromPayphone = new URLSearchParams(window.location.search).has('clientTransactionId')
+  setTimeout(dismiss, returningFromPayphone ? 300 : 1500)
 }
 
 // Registra el Service Worker que cachea el style JSON, tiles, glyphs y
