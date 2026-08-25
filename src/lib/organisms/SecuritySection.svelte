@@ -107,3 +107,200 @@
     </a>
   {/if}
 </div>
+
+<style>
+  .sec-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 4px 20px 24px;
+  }
+
+  :global(.content-wrap.wide) .sec-panel {
+    padding: 20px 28px 32px;
+  }
+
+  .sec-panel--hidden {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  .sec-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  :global(.content-wrap.wide) .sec-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  }
+
+  .sec-card {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .sec-label {
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    color: rgba(234, 255, 245, 0.65);
+  }
+
+  .sec-value-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .sec-value {
+    font-family: var(--font-heading);
+    font-size: 22px;
+    font-weight: 500;
+    color: #eafff5;
+  }
+
+  .sec-trend {
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .sec-trend.trend-up {
+    color: #ef4444;
+  }
+
+  .sec-trend.trend-down {
+    color: #21e0a0;
+  }
+
+  .sec-unit {
+    font-size: 10px;
+    color: rgba(234, 255, 245, 0.5);
+  }
+
+  .sec-note {
+    font-size: 10px;
+    color: rgba(234, 255, 245, 0.4);
+    margin-top: 2px;
+  }
+
+  .sec-src-note {
+    margin: 2px 0 0;
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: rgba(234, 255, 245, 0.45);
+  }
+
+  .sec-risk {
+    align-self: flex-start;
+    margin-top: 6px;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+
+  .sec-risk.risk-low {
+    color: #0a1a12;
+    background: #21e0a0;
+  }
+
+  .sec-risk.risk-moderate {
+    color: #241c0a;
+    background: #f5b942;
+  }
+
+  .sec-risk.risk-high {
+    color: #2a0a0a;
+    background: #ef4444;
+  }
+
+  .sec-source {
+    font-size: 11px;
+    color: var(--sheet-accent);
+    text-decoration: none;
+    border-bottom: 1px dashed currentColor;
+    align-self: flex-start;
+    opacity: 0.85;
+  }
+
+  .sec-map-frame {
+    position: relative;
+    width: 100%;
+    height: 260px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.25);
+  }
+
+  :global(.content-wrap.wide) .sec-map-frame {
+    height: min(46vh, 420px);
+  }
+
+  .sec-map-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 16px;
+    background: rgba(4, 6, 13, 0.88);
+    color: var(--sheet-accent);
+    font-family: var(--font-heading);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    transition: opacity 0.55s ease;
+    opacity: 1;
+  }
+
+  .sec-map-overlay--hidden {
+    opacity: 0;
+  }
+
+  .sec-map-cta {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 16px;
+    border: 1px dashed var(--line-strong);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--sheet-accent);
+    font-family: var(--font-heading);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+
+  .sec-map-icon {
+    font-size: 22px;
+  }
+
+  .sec-map-icon.spin {
+    animation: sec-spin 1.1s linear infinite;
+  }
+
+  @keyframes sec-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>
+
