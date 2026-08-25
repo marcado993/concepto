@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 // Resolución mínima del periodo activo — antes vivía duplicada, palabra
@@ -26,7 +27,7 @@ export class PeriodService {
   // como prueba. Un texto legal con la fecha mal no lo arregla una
   // corrección de copy: tiene que salir del mismo dato que usa el backend
   // para asignar el alquiler, o vuelve a desincronizarse el otro semestre.
-  async getCurrentPeriod(): Promise<{ id: string; label: string; startsAt: Date; endsAt: Date }> {
+  async getCurrentPeriod(): Promise<{ id: string; label: string; startsAt: Date; endsAt: Date; lockerBasePrice: Prisma.Decimal }> {
     const period = await this.prisma.period.findFirst({
       where: { endsAt: { gte: new Date() } },
       orderBy: { startsAt: "asc" },

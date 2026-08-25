@@ -18,6 +18,7 @@ const TEST_PERIOD = {
   label: "2026-B",
   startsAt: new Date("2026-09-01T00:00:00Z"),
   endsAt: new Date("2027-02-28T00:00:00Z"),
+  lockerBasePrice: 6.5,
 };
 
 function makePeriodMock() {

@@ -112,6 +112,15 @@ model Period {
   label     String   @unique // ej. "2026-A"
   startsAt  DateTime
   endsAt    DateTime
+  // Precio base del casillero para ESTE periodo — antes era la constante
+  // DEFAULT_LOCKER_BASE_PRICE ($6.50) escrita a mano en locker.service.ts,
+  // sin forma de que la directiva la cambiara sin un redeploy. El sponsor
+  // puede fijar cualquier valor entre $5.50 y $9.00 según la utilidad
+  // objetivo (docs/dominio/03-analisis-financiero-costos.md §4/§8.7) — eso
+  // es una decisión de negocio por semestre, igual que el monto de cada
+  // SubscriptionTier de abajo, así que vive en la misma tabla que ya
+  // representa "las condiciones económicas de este periodo".
+  lockerBasePrice Decimal  @default(6.50) @db.Decimal(10, 2)
 
   rentals            LockerRental[]
   subscriptionTiers  SubscriptionTier[]

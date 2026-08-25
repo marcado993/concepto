@@ -89,6 +89,25 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Mismo patrón que postJSON — usado por el dashboard de administración
+// (PATCH /admin/...) para editar precios sin reemplazar el recurso entero.
+async function patchJSON<T>(path: string, body: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetchWithRetry(`${API_BASE_URL}${path}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(networkErrorMessage());
+  }
+  if (!res.ok) {
+    throw new ApiError(await friendlyErrorMessage(res, path), res.status);
+  }
+  return res.json() as Promise<T>;
+}
+
 // El backend (NestJS) manda {message, error, statusCode} en sus errores —
 // mostrar ese `message` es mucho más útil para el estudiante que "Backend
 // respondió 400", sobre todo en el flujo de alquiler (ej. "El casillero ya
@@ -319,4 +338,83 @@ export function subscribeToTier(input: SubscribeInput): Promise<SubscriptionFrom
 
 export function fetchSubscriptionPayphoneConfig(): Promise<PayphonePublicConfig> {
   return getJSON<PayphonePublicConfig>("/subscriptions/payphone/config");
+}
+
+// ── Dashboard de administración (PRESIDENTE/DIRECTOR) ───────────────────────
+// Todo bajo /admin — el backend exige el rol (RolesGuard); acá solo se
+// asume que quien llama ya pasó esa puerta (ver AdminApp.svelte).
+
+export interface AdminUser {
+  id: string;
+  fullName: string;
+  email: string | null;
+  uniqueCode: string;
+  role: string;
+  cedula: string | null;
+  phone: string | null;
+  createdAt: string;
+}
+
+export interface AdminUsersPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  users: AdminUser[];
+}
+
+export function fetchAdminUsers(page: number, search?: string): Promise<AdminUsersPage> {
+  const params = new URLSearchParams({ page: String(page) });
+  if (search) params.set("search", search);
+  return getJSON<AdminUsersPage>(`/admin/users?${params.toString()}`, { auth: true });
+}
+
+export interface AdminSubscriptionTier {
+  id: string;
+  name: string;
+  amount: string;
+  benefits: unknown;
+}
+
+export function fetchAdminSubscriptionTiers(): Promise<{ periodLabel: string; tiers: AdminSubscriptionTier[] }> {
+  return getJSON("/admin/subscription-tiers", { auth: true });
+}
+
+export function updateAdminSubscriptionTier(
+  id: string,
+  input: { amount?: number; benefits?: unknown[] }
+): Promise<AdminSubscriptionTier> {
+  return patchJSON(`/admin/subscription-tiers/${id}`, input);
+}
+
+export function fetchAdminLockerPricing(): Promise<{ periodLabel: string; basePrice: number }> {
+  return getJSON("/admin/locker-pricing", { auth: true });
+}
+
+export function updateAdminLockerPricing(basePrice: number): Promise<{ periodLabel: string; basePrice: number }> {
+  return patchJSON("/admin/locker-pricing", { basePrice });
+}
+
+export interface AdminAuditLogEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  actorId: string;
+  actorName: string;
+  ipAddress: string | null;
+  metadata: unknown;
+  createdAt: string;
+}
+
+export interface AdminAuditLogsPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  logs: AdminAuditLogEntry[];
+}
+
+export function fetchAdminAuditLogs(page: number, action?: string): Promise<AdminAuditLogsPage> {
+  const params = new URLSearchParams({ page: String(page) });
+  if (action) params.set("action", action);
+  return getJSON<AdminAuditLogsPage>(`/admin/audit-logs?${params.toString()}`, { auth: true });
 }

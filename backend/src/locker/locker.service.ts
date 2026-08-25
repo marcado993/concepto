@@ -11,11 +11,6 @@ import { calculateLockerPrice } from "./rental-calculator";
 import { MailService } from "../shared/mail/mail.service";
 import { lockerContractHtml, lockerContractSubject } from "./locker-contract";
 
-// Precio base semestral — configurable porque el sponsor puede fijarlo
-// entre $5.50 y $9.00 según utilidad objetivo (ver rental-calculator.ts).
-// $6.50 es el valor de partida ya usado hoy por AEIS, no un techo.
-export const DEFAULT_LOCKER_BASE_PRICE = 6.5;
-
 export class LockerUnavailableError extends ConflictException {
   constructor(lockerCode: string) {
     super(`El casillero ${lockerCode} ya no está disponible para este periodo`);
@@ -111,11 +106,12 @@ export class LockerService {
     // PeriodService.getCurrentPeriod — antes el modal lo tenía escrito a
     // mano y nombraba un semestre que ya no era el vigente).
     const period = await this.period.getCurrentPeriod();
+    const basePrice = Number(period.lockerBasePrice);
     return {
-      basePrice: DEFAULT_LOCKER_BASE_PRICE,
+      basePrice,
       discountPercent,
       tierName,
-      price: { PAYPHONE: calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, discountPercent).amount },
+      price: { PAYPHONE: calculateLockerPrice(basePrice, discountPercent).amount },
       period: { label: period.label, endsAt: period.endsAt.toISOString() },
     };
   }
@@ -166,7 +162,7 @@ export class LockerService {
     // no aporta o su tier no trae ese beneficio) — ver
     // subscription/subscription-benefits.service.ts.
     const discountPercent = await this.subscriptionBenefits.getLockerDiscountPercent(params.userId);
-    const price = calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, discountPercent);
+    const price = calculateLockerPrice(Number(period.lockerBasePrice), discountPercent);
 
     // Cédula/celular/código único se piden una sola vez — se guardan en
     // User acá mismo (no en un endpoint de perfil aparte) para no agregar

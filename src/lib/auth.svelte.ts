@@ -14,6 +14,13 @@
 const STORAGE_KEY = "aeis_access_token";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
+// Login social (GitHub/Google) navega el navegador ENTERO fuera de la app —
+// a diferencia del login por correo, que se queda en la página — así que
+// cualquier ruta que no sea la raíz ("/admin", pensado para el dashboard de
+// PRESIDENTE/DIRECTOR) se perdería en el camino de ida y vuelta por Logto.
+// Se guarda acá, antes de salir, y se restaura en consumeAuthCallback().
+const POST_LOGIN_REDIRECT_KEY = "aeis_post_login_redirect";
+
 let token = $state<string | null>(readStoredToken());
 
 function readStoredToken(): string | null {
@@ -38,6 +45,14 @@ export function consumeAuthCallback() {
   // Limpia el fragmento de la URL — el token ya no debe quedar visible en
   // la barra de direcciones ni en el historial del navegador.
   history.replaceState(null, "", window.location.pathname + window.location.search);
+
+  const redirect = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
+  if (redirect) {
+    sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+    if (redirect !== window.location.pathname) {
+      window.location.replace(redirect);
+    }
+  }
 }
 
 export function isAuthenticated(): boolean {
@@ -56,6 +71,9 @@ export function getAccessToken(): string | null {
  *  habla con la Experience API de Logto server-side y redirige derecho al
  *  proveedor real (ver backend/src/shared/auth/auth.controller.ts). */
 export function loginSocial(connector: "github" | "google") {
+  if (typeof window !== "undefined" && window.location.pathname !== "/") {
+    sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, window.location.pathname);
+  }
   window.location.href = `${API_BASE_URL}/auth/social/start?connector=${connector}`;
 }
 
