@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Category } from "../data";
+  import TypeText from "../TypeText.svelte";
 
   // Un tono por categoría de emprendimiento, no una paleta fija — el
   // estudiante puede escribir cualquier texto en "categoría", así que un
@@ -41,7 +42,13 @@
           <span class="venture-badge">{v.category}</span>
         </div>
         <div class="venture-body">
-          <h3 class="venture-name">{v.name}</h3>
+          <TypeText
+            tag="h3"
+            class="venture-name"
+            text={v.name}
+            speed={22}
+            startDelay={i * 45 + 360}
+          />
           <p class="venture-desc">{v.description}</p>
           <a class="venture-cta" href={v.whatsappLink} target="_blank" rel="noreferrer">
             <svg class="wa-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -182,7 +189,13 @@
     flex: 1;
   }
 
-  .venture-name {
+  /* :global() a propósito — TypeText.svelte es quien renderiza este
+     elemento (efecto de máquina de escribir en el nombre del
+     emprendimiento), y class="venture-name" le llega como texto plano, no
+     como parte del template de CommunitySection.svelte. Sin :global() el
+     hash de scoped-CSS de Svelte nunca matchea (mismo hallazgo real que
+     .login-title en Login.svelte y .label en App.svelte). */
+  :global(.venture-name) {
     margin: 0;
     font-family: var(--font-heading);
     font-weight: 600;

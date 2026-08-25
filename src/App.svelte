@@ -9,6 +9,7 @@
   import CategoryContent from "./lib/CategoryContent.svelte";
   import TypeText from "./lib/TypeText.svelte";
   import Login from "./lib/Login.svelte";
+  import PaymentConfirmedModal from "./lib/PaymentConfirmedModal.svelte";
   import { categories, type SecurityIndicator, type VenturePublic, type LockerStatus, type LockerUnit } from "./lib/data";
   import { riskForHour, themeForRisk } from "./lib/risk";
   import {
@@ -426,10 +427,7 @@
     </div>
 
     {#if payphoneBanner}
-      <div class="auth-error-banner" class:ok={payphoneBanner.ok} role="alert">
-        <span>{payphoneBanner.text}</span>
-        <button onclick={() => (payphoneBanner = null)} aria-label="Cerrar aviso">×</button>
-      </div>
+      <PaymentConfirmedModal ok={payphoneBanner.ok} text={payphoneBanner.text} onclose={() => (payphoneBanner = null)} />
     {/if}
 
     {#if isDesktop}
@@ -666,38 +664,6 @@
       border-color: var(--accent);
       color: var(--accent);
     }
-  }
-
-  .auth-error-banner {
-    position: relative;
-    z-index: 5;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    margin: 0 14px 4px;
-    padding: 8px 12px;
-    border-radius: 12px;
-    background: rgba(239, 68, 68, 0.14);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    color: #ffb4b4;
-    font-size: 11.5px;
-    line-height: 1.4;
-  }
-  .auth-error-banner button {
-    background: none;
-    border: none;
-    color: inherit;
-    font-size: 15px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 2px;
-  }
-
-  .auth-error-banner.ok {
-    background: rgba(33, 224, 160, 0.14);
-    border-color: rgba(33, 224, 160, 0.35);
-    color: var(--accent, #21e0a0);
   }
 
   .brand-name {
