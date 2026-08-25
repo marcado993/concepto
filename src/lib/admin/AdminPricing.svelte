@@ -220,38 +220,45 @@
           </div>
 
           {#if benefitDrafts[tier.id]}
-            <label class="field-label" for={`casillero-${tier.id}`}>Descuento en casillero (%)</label>
-            <div class="row">
-              <input
-                id={`casillero-${tier.id}`}
-                class="amount-input"
-                type="number"
-                step="1"
-                min="0"
-                max="100"
-                bind:value={benefitDrafts[tier.id].casilleroPercent}
-              />
-              <span class="suffix">%</span>
-            </div>
-
-            <label class="field-label" for={`billar-${tier.id}`}>Descuento en billar (%)</label>
-            <div class="row">
-              <input
-                id={`billar-${tier.id}`}
-                class="amount-input"
-                type="number"
-                step="1"
-                min="0"
-                max="100"
-                bind:value={benefitDrafts[tier.id].billarPercent}
-              />
-              <span class="suffix">%</span>
-            </div>
-
-            <label class="checkbox-row" for={`ps4-${tier.id}`}>
-              <input id={`ps4-${tier.id}`} type="checkbox" bind:checked={benefitDrafts[tier.id].ps4} />
-              Incluye acceso a PS4
-            </label>
+            <span class="field-label benefits-label">Beneficios</span>
+            <ul class="benefit-list">
+              <li class="benefit-row">
+                <label for={`casillero-${tier.id}`}>Descuento en casillero</label>
+                <div class="benefit-control">
+                  <input
+                    id={`casillero-${tier.id}`}
+                    class="amount-input-sm"
+                    type="number"
+                    step="1"
+                    min="0"
+                    max="100"
+                    bind:value={benefitDrafts[tier.id].casilleroPercent}
+                  />
+                  <span class="suffix">%</span>
+                </div>
+              </li>
+              <li class="benefit-row">
+                <label for={`billar-${tier.id}`}>Descuento en billar</label>
+                <div class="benefit-control">
+                  <input
+                    id={`billar-${tier.id}`}
+                    class="amount-input-sm"
+                    type="number"
+                    step="1"
+                    min="0"
+                    max="100"
+                    bind:value={benefitDrafts[tier.id].billarPercent}
+                  />
+                  <span class="suffix">%</span>
+                </div>
+              </li>
+              <li class="benefit-row">
+                <label for={`ps4-${tier.id}`}>Acceso a PS4</label>
+                <div class="benefit-control">
+                  <input id={`ps4-${tier.id}`} type="checkbox" bind:checked={benefitDrafts[tier.id].ps4} />
+                </div>
+              </li>
+            </ul>
           {/if}
 
           <div class="row save-row">
@@ -333,17 +340,56 @@
     margin: 14px 0 6px;
   }
 
-  .checkbox-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 16px 0 0;
-    font-size: 13.5px;
-    color: var(--ink-0);
-    cursor: pointer;
+  .benefits-label {
+    margin-top: 16px;
   }
 
-  .checkbox-row input {
+  .benefit-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .benefit-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+  }
+
+  .benefit-row + .benefit-row {
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .benefit-row label {
+    font-size: 13px;
+    color: var(--ink-0);
+  }
+
+  .benefit-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .amount-input-sm {
+    background: var(--bg-panel-2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    color: var(--ink-0);
+    font-family: inherit;
+    padding: 5px 7px;
+    font-size: 13px;
+    width: 56px;
+    text-align: right;
+  }
+
+  .benefit-control input[type="checkbox"] {
     width: 18px;
     height: 18px;
     accent-color: var(--accent);
