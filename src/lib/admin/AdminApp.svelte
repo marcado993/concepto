@@ -1,14 +1,15 @@
 <script lang="ts">
-  // Dashboard de administración — completamente separado de la app del
-  // estudiante (rueda/wheel), pensado para escritorio: tablas y formularios,
-  // no gestos táctiles. Vive en su propia ruta ("/admin", ver App.svelte)
-  // para no arrastrar ningún riesgo hacia la UI ya afinada del estudiante.
-  //
-  // Reutiliza la MISMA sesión (token en localStorage, Login.svelte) que el
-  // resto de la app — no hay un login aparte para administración — pero
-  // exige el rol PRESIDENTE/DIRECTOR contra el backend antes de mostrar
-  // nada (RolesGuard ya lo exige en cada endpoint /admin/*; esta pantalla
-  // solo evita el parpadeo de "cargando" seguido de puros 403).
+  // Dashboard de administración — app COMPLETAMENTE aparte de la del
+  // estudiante: build propio (ver admin.html/src/admin-main.ts/
+  // vite.admin.config.ts), servido por Caddy SOLO en la red Tailscale
+  // (panel.aeis-app.online, ver Caddyfile) — no vive en aeis.app/Vercel ni
+  // es alcanzable desde el internet público, ni siquiera para ver el
+  // "acceso restringido". Reutiliza Login.svelte (con hideSocial: GitHub/
+  // Google navegan a un origen fijo que no es este, ver el comentario en
+  // Login.svelte) y exige el rol PRESIDENTE/DIRECTOR contra el backend
+  // antes de mostrar nada (RolesGuard ya lo exige en cada endpoint
+  // /admin/*; esta pantalla solo evita el parpadeo de "cargando" seguido
+  // de puros 403).
   import Login from "../Login.svelte";
   import AdminPricing from "./AdminPricing.svelte";
   import AdminUsers from "./AdminUsers.svelte";
@@ -36,11 +37,11 @@
 </script>
 
 {#if !authed}
-  <Login onclose={() => {}} showBack={false} errorMessage={null} />
+  <Login onclose={() => {}} showBack={false} errorMessage={null} hideSocial />
 {:else if meError}
   <div class="gate">
     <p>{meError}</p>
-    <a href="/">Volver a AEIS-APP</a>
+    <a href="https://aeis.app">Ir a AEIS-APP</a>
   </div>
 {:else if !me}
   <div class="gate">
@@ -49,7 +50,7 @@
 {:else if !isAdmin}
   <div class="gate">
     <p>Esta sección es solo para la directiva de AEIS.</p>
-    <a href="/">Volver a AEIS-APP</a>
+    <a href="https://aeis.app">Ir a AEIS-APP</a>
   </div>
 {:else}
   <div class="admin-shell">

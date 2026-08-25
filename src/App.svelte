@@ -9,7 +9,6 @@
   import CategoryContent from "./lib/CategoryContent.svelte";
   import TypeText from "./lib/TypeText.svelte";
   import Login from "./lib/Login.svelte";
-  import AdminApp from "./lib/admin/AdminApp.svelte";
   import { categories, type SecurityIndicator, type VenturePublic, type LockerStatus, type LockerUnit } from "./lib/data";
   import { riskForHour, themeForRisk } from "./lib/risk";
   import {
@@ -37,13 +36,6 @@
   // → backend → aquí), el access_token viene en location.hash — se
   // consume una sola vez, al montar, antes de cualquier otra cosa.
   consumeAuthCallback();
-
-  // Dashboard de administración (precios, usuarios, registro de actividad)
-  // — completamente separado de la rueda/wheel del estudiante, en su
-  // propia ruta para no arrastrar ningún riesgo hacia esa UI. Se decide
-  // UNA vez al montar (misma razón que uiVariant arriba): no es algo que
-  // deba cambiar a media sesión.
-  const isAdminRoute = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
   // $derived, NO $state: antes esto capturaba isAuthenticated() UNA sola vez
   // al montar, así que cuando el login por correo guardaba el token sin
   // recargar la página (verifyEmailLogin en auth.svelte.ts), esta puerta se
@@ -417,9 +409,7 @@
   // justo lo que pasa tras el redirect de vuelta de Logto/GitHub).
 </script>
 
-{#if isAdminRoute}
-  <AdminApp />
-{:else if !authed}
+{#if !authed}
   <Login onclose={() => {}} showBack={false} errorMessage={authError} />
 {:else}
 <div class="phone-frame" class:desktop={isDesktop}>

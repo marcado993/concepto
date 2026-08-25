@@ -53,3 +53,30 @@ admin.aeis-app.online {
 	reverse_proxy logto:3002
 	encode gzip
 }
+
+# Panel de administración de AEIS-APP (precios de casillero/aportaciones,
+# directorio de estudiantes, registro de auditoría — ver
+# backend/src/admin/, src/lib/admin/) — pedido explícito: que sea "como una
+# app aparte", solo por Tailscale, igual que admin.aeis-app.online arriba.
+#
+# Es un build de Vite COMPLETAMENTE aparte del de aeis.app (ver
+# vite.admin.config.ts / admin.html) — nunca lo sirve Vercel. El HTML/JS/CSS
+# compilado se copia a mano a ./panel-dist en esta misma instancia (ver
+# docker-compose.prod.yml, bind mount de solo lectura) y Caddy lo sirve
+# como archivos estáticos, con la MISMA restricción de IP que la consola de
+# Logto: desde el internet público responde 404, ni se nota que existe.
+#
+# Requiere su propio registro DNS tipo A ("panel" → IP pública de esta
+# instancia) antes de que Caddy pueda emitir su certificado — mismo
+# requisito que los demás hostnames de este archivo.
+panel.aeis-app.online {
+	@bloqueado {
+		not remote_ip 100.64.0.0/10
+		not path /.well-known/acme-challenge/*
+	}
+	respond @bloqueado "Not found" 404
+
+	root * /srv/panel
+	file_server
+	encode gzip
+}

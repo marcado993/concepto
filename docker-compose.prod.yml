@@ -105,6 +105,7 @@ services:
       # SELinux Enforcing) — sin esto, Caddy no puede leer el bind mount
       # y falla con "permission denied" aunque los permisos Unix esten bien.
       - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - ./panel-dist:/srv/panel:ro,Z
       - aeis-caddy-data:/data
       - aeis-caddy-config:/config
     depends_on:

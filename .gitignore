@@ -9,10 +9,16 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-admin
 dist-ssr
 *.local
 .env
 coverage
+
+# Build local del panel de administración copiado al VPS por SSH (ver
+# Caddyfile/docker-compose.prod.yml) — nunca vive en git, se regenera con
+# `npm run build:admin` y se copia a mano.
+panel-dist
 
 # Artefactos de Playwright — vídeos/trazas/capturas de cada corrida, no
 # código fuente de los tests (e2e/*.spec.ts sí se commitea).
