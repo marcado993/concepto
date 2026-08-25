@@ -257,56 +257,82 @@
           <p class="tier-banner">✓ Aportante Plan {pricePreview.tierName} — descuento ya aplicado abajo</p>
         {/if}
 
+        <!-- Cada campo: borde rojo + pista mientras está mal, un ✓ verde en
+             cuanto queda bien — pedido real: "cositas visuales que le
+             indiquen que está llenando" en vez de que el único indicio sea
+             el botón de abajo activándose solo sin explicar por qué. -->
         <label class="field-label" for="rl-full-name">Nombre completo</label>
-        <input
-          id="rl-full-name"
-          class="field-input"
-          class:invalid={fullName.length > 0 && !fullNameValid}
-          type="text"
-          placeholder="Nombre y apellido, tal como va en el contrato"
-          bind:value={fullName}
-        />
+        <div class="field-wrap">
+          <input
+            id="rl-full-name"
+            class="field-input"
+            class:invalid={fullName.length > 0 && !fullNameValid}
+            class:valid={fullNameValid}
+            type="text"
+            placeholder="Pon tus nombres, ej. Luis Andrés Guerrero"
+            bind:value={fullName}
+          />
+          {#if fullNameValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
+        </div>
         {#if fullName.length > 0 && !fullNameValid}
-          <p class="field-hint error">Escribe tu nombre completo (nombre y apellido)</p>
+          <p class="field-hint error">Te falta el apellido — escribe tu nombre completo</p>
         {/if}
 
         <label class="field-label" for="rl-unique-code">Código único institucional</label>
-        <input
-          id="rl-unique-code"
-          class="field-input"
-          class:invalid={uniqueCode.length > 0 && !uniqueCodeValid}
-          type="text"
-          inputmode="numeric"
-          placeholder="Ej. 202120100"
-          bind:value={uniqueCode}
-        />
+        <div class="field-wrap">
+          <input
+            id="rl-unique-code"
+            class="field-input"
+            class:invalid={uniqueCode.length > 0 && !uniqueCodeValid}
+            class:valid={uniqueCodeValid}
+            type="text"
+            inputmode="numeric"
+            placeholder="Ej. 202120100"
+            bind:value={uniqueCode}
+          />
+          {#if uniqueCodeValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
+        </div>
         {#if uniqueCode.length > 0 && !uniqueCodeValid}
           <p class="field-hint error">9 dígitos: año + periodo (1 o 2) + secuencial — ej. 202120100</p>
         {/if}
 
         <label class="field-label" for="rl-cedula">Cédula</label>
-        <input
-          id="rl-cedula"
-          class="field-input"
-          class:invalid={cedula.length > 0 && !cedulaValid}
-          type="text"
-          inputmode="numeric"
-          maxlength="10"
-          placeholder="10 dígitos"
-          bind:value={cedula}
-        />
+        <div class="field-wrap">
+          <input
+            id="rl-cedula"
+            class="field-input"
+            class:invalid={cedula.length > 0 && !cedulaValid}
+            class:valid={cedulaValid}
+            type="text"
+            inputmode="numeric"
+            maxlength="10"
+            placeholder="Los 10 dígitos, sin guiones"
+            bind:value={cedula}
+          />
+          {#if cedulaValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
+        </div>
+        {#if cedula.length > 0 && !cedulaValid}
+          <p class="field-hint error">Te faltan dígitos — la cédula tiene 10 en total</p>
+        {/if}
 
         <label class="field-label" for="rl-phone">Celular</label>
-        <input
-          id="rl-phone"
-          class="field-input"
-          class:invalid={phone.length > 0 && !phoneValid}
-          type="text"
-          inputmode="numeric"
-          maxlength="10"
-          placeholder="0991234567"
-          bind:value={phone}
-        />
+        <div class="field-wrap">
+          <input
+            id="rl-phone"
+            class="field-input"
+            class:invalid={phone.length > 0 && !phoneValid}
+            class:valid={phoneValid}
+            type="text"
+            inputmode="numeric"
+            maxlength="10"
+            placeholder="Ej. 0991234567"
+            bind:value={phone}
+          />
+          {#if phoneValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
+        </div>
+        {#if phone.length > 0 && !phoneValid}
+          <p class="field-hint error">Empieza en 0 y tiene 10 dígitos, ej. 0991234567</p>
+        {/if}
 
         <div class="price-row">
           <span class="price-label">
@@ -528,6 +554,9 @@
     color: rgba(238, 244, 251, 0.55);
     margin-bottom: 6px;
   }
+  .field-wrap {
+    position: relative;
+  }
   .field-input {
     width: 100%;
     padding: 10px 13px;
@@ -537,6 +566,13 @@
     color: #eef4fb;
     font-size: 13.5px;
     margin-bottom: 12px;
+    transition: border-color 0.15s ease;
+  }
+  /* Espacio para el ✓ a la derecha — SOLO cuando el wrapper lo trae, para
+     no dejarle un hueco vacío a los inputs que no lo usan (ej. el monto
+     del panel de administración, que reusa .field-input pero sin check). */
+  .field-wrap .field-input {
+    padding-right: 34px;
   }
   .field-input:focus {
     outline: none;
@@ -544,6 +580,39 @@
   }
   .field-input.invalid {
     border-color: #ff8a8a;
+  }
+  .field-input.valid {
+    border-color: var(--accent, #21e0a0);
+  }
+
+  /* El ✓ aparece EN CUANTO el campo queda válido — pedido real: "cositas
+     visuales que le indiquen que está llenando", no solo el botón de abajo
+     activándose solo al final sin explicar cuál campo faltaba. */
+  .field-check {
+    position: absolute;
+    right: 12px;
+    top: 10px;
+    color: var(--accent, #21e0a0);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    animation: check-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes check-pop {
+    from {
+      transform: scale(0.5);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .field-check {
+      animation: none;
+    }
   }
 
   .field-hint {
