@@ -7,6 +7,7 @@ import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
 import { PeriodService } from "../shared/period/period.service";
 import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
+import { MailService } from "../shared/mail/mail.service";
 
 // El periodo activo real, no solo su id: el texto de términos que el
 // estudiante firma y la etiqueta con que se archiva esa aceptación salen
@@ -38,6 +39,7 @@ describe("LockerService.rent", () => {
   const params = {
     userId: "user-1",
     lockerCode: "A07",
+    uniqueCode: "AEIS-2026-001",
     cedula: "1723456789",
     phone: "0991234567",
     acceptedTerms: true,
@@ -77,6 +79,7 @@ describe("LockerService.rent", () => {
         { provide: PayphoneClient, useValue: payphone },
         { provide: PeriodService, useValue: period },
         { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
+        { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(LockerService);
@@ -216,16 +219,26 @@ describe("LockerService.rent", () => {
     );
   });
 
-  // Cédula/celular se piden una sola vez (ver comentario en
+  // Cédula/celular/código único se piden una sola vez (ver comentario en
   // RentLockerModal.svelte) — el alquiler es el punto donde se guardan en
   // User, para que el siguiente semestre no haya que volver a pedirlos.
-  it("Dado cédula y celular, Cuando alquila, Entonces los guarda en User para no volver a pedirlos", async () => {
+  it("Dado cédula, celular y código único, Cuando alquila, Entonces los guarda en User para no volver a pedirlos", async () => {
     await service.rent(params);
 
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { cedula: "1723456789", phone: "0991234567" },
+      data: { cedula: "1723456789", phone: "0991234567", uniqueCode: "AEIS-2026-001" },
     });
+  });
+
+  it("Dado un código único que ya usa OTRO estudiante, Cuando alquila, Entonces rechaza con BadRequestException (mensaje claro, no un 500 crudo)", async () => {
+    const dbError = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+      code: "P2002",
+      clientVersion: "6.4.1",
+    });
+    prisma.user.update.mockRejectedValue(dbError);
+
+    await expect(service.rent(params)).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -246,6 +259,7 @@ describe("LockerService.getPricePreview", () => {
         { provide: PayphoneClient, useValue: {} },
         { provide: PeriodService, useValue: makePeriodMock() },
         { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
+        { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(LockerService);
@@ -289,14 +303,24 @@ describe("LockerService.confirmPayphonePayment", () => {
   let prisma: any;
   let audit: { record: jest.Mock };
   let payphone: { confirm: jest.Mock; getPublicConfig: jest.Mock };
+  let mail: { send: jest.Mock };
 
   const pendingRental = {
     id: "rental-1",
     userId: "user-1",
     lockerId: "locker-1",
+    periodId: "period-1",
     paymentId: "payment-1",
     payment: { id: "payment-1", method: "PAYPHONE", status: "PENDING", amount: 6.5 },
     locker: { id: "locker-1", code: "A07" },
+  };
+
+  const contractUser = {
+    id: "user-1",
+    fullName: "luis andres guerrero",
+    cedula: "1723456789",
+    uniqueCode: "AEIS-2026-001",
+    email: "luis@epn.edu.ec",
   };
 
   beforeEach(async () => {
@@ -306,11 +330,15 @@ describe("LockerService.confirmPayphonePayment", () => {
     };
     prisma = {
       lockerRental: { findUnique: jest.fn().mockResolvedValue(pendingRental) },
+      user: { findUnique: jest.fn().mockResolvedValue(contractUser) },
+      locker: { findUnique: jest.fn().mockResolvedValue({ id: "locker-1", code: "A07" }) },
+      period: { findUnique: jest.fn().mockResolvedValue(TEST_PERIOD) },
       $transaction: jest.fn((cb: any) => cb(tx)),
       __tx: tx,
     };
     audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
     payphone = { confirm: jest.fn(), getPublicConfig: jest.fn() };
+    mail = { send: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -323,9 +351,74 @@ describe("LockerService.confirmPayphonePayment", () => {
           provide: SubscriptionBenefitsService,
           useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
         },
+        { provide: MailService, useValue: mail },
       ],
     }).compile();
     service = moduleRef.get(LockerService);
+  });
+
+  function approvePayphone() {
+    payphone.confirm.mockResolvedValue({
+      approved: true,
+      transactionId: 999,
+      clientTransactionId: "rental-1",
+      amountCents: 650,
+      raw: {},
+    });
+  }
+
+  // Hallazgo de pentesting anterior en esta misma auditoría: el contrato es
+  // justo el mecanismo que el cliente pidió para tener el nombre del
+  // estudiante EN MAYÚSCULA INICIAL, sin importar cómo lo haya escrito
+  // Logto/GitHub/Google (a veces todo en minúscula).
+  it("Dado un pago aprobado, Cuando se confirma, Entonces manda el contrato por correo con el nombre en Title Case y los datos reales del alquiler", async () => {
+    approvePayphone();
+
+    await service.confirmPayphonePayment("rental-1", 999, "user-1");
+
+    expect(mail.send).toHaveBeenCalledTimes(1);
+    const call = mail.send.mock.calls[0][0];
+    expect(call.to).toBe("luis@epn.edu.ec");
+    expect(call.subject).toContain("A07");
+    expect(call.html).toContain("Luis Andres Guerrero"); // title case, no "luis andres guerrero"
+    expect(call.html).toContain("1723456789");
+    expect(call.html).toContain("AEIS-2026-001");
+    expect(call.html).toContain("A07");
+  });
+
+  it("Dado un pago aprobado, Cuando se manda el contrato con éxito, Entonces audita locker.contract.sent", async () => {
+    approvePayphone();
+
+    await service.confirmPayphonePayment("rental-1", 999, "user-1");
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "locker.contract.sent", entityId: "rental-1" })
+    );
+  });
+
+  // El correo NUNCA debe poder tumbar un pago que YA se confirmó de verdad
+  // contra PayPhone — mismo principio que AlertService: una notificación
+  // que falla se audita y se loguea, no revierte la transacción de dinero.
+  it("Dado que Resend rechaza el envío, Cuando se confirma el pago, Entonces el alquiler queda CONFIRMED/RENTED igual, sin lanzar, y audita locker.contract.send_failed", async () => {
+    approvePayphone();
+    mail.send.mockRejectedValue(new Error("dominio no verificado"));
+
+    const result = await service.confirmPayphonePayment("rental-1", 999, "user-1");
+
+    expect(result.locker.status).toBe("RENTED");
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "locker.contract.send_failed", entityId: "rental-1" })
+    );
+  });
+
+  it("Dado un usuario sin correo guardado (caso legacy), Cuando se confirma el pago, Entonces NO intenta mandar nada y el alquiler queda confirmado igual", async () => {
+    approvePayphone();
+    prisma.user.findUnique.mockResolvedValue({ ...contractUser, email: null });
+
+    const result = await service.confirmPayphonePayment("rental-1", 999, "user-1");
+
+    expect(mail.send).not.toHaveBeenCalled();
+    expect(result.locker.status).toBe("RENTED");
   });
 
   it("Dado un alquiler que no existe, Cuando se confirma el pago, Entonces lanza NotFoundException", async () => {
@@ -485,6 +578,7 @@ describe("LockerService.releaseExpiredTransferReservations (limpieza de datos le
           provide: SubscriptionBenefitsService,
           useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
         },
+        { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(LockerService);
@@ -583,6 +677,7 @@ describe("LockerService.releaseExpiredPayphoneReservations", () => {
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
         { provide: PeriodService, useValue: makePeriodMock() },
         { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) } },
+        { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(LockerService);
@@ -639,6 +734,7 @@ describe("LockerService.getMyRentedLocker", () => {
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
         { provide: PeriodService, useValue: period },
         { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountInfo: jest.fn() } },
+        { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(LockerService);

@@ -17,6 +17,13 @@ export function isValidEmail(email: string | undefined): email is string {
   return !!email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// Prefijo del uniqueCode placeholder que nace en el primer login — antes de
+// que el estudiante complete su código único real al primer alquiler/
+// aportación (ver rent-locker.dto.ts). Exportado para que /auth/me pueda
+// reconocerlo y devolver null en vez del placeholder, mismo patrón que ya
+// usa con cedula/phone.
+export const PENDING_UNIQUE_CODE_PREFIX = "PENDIENTE-";
+
 /**
  * Lógica de dominio del login — intercambio de código OIDC y provisión de
  * usuario. Extraído de AuthController (mismo patrón que LockerService
@@ -87,7 +94,7 @@ export class AuthService {
         // colisionar entre dos `sub` distintos y romper la restricción
         // @unique de uniqueCode con un 500 no controlado (hallazgo de la
         // auditoría de seguridad, 07-iso27001-sgsi-politica.md).
-        uniqueCode: `PENDIENTE-${randomUUID()}`,
+        uniqueCode: `${PENDING_UNIQUE_CODE_PREFIX}${randomUUID()}`,
         fullName: name ?? email ?? "Estudiante pendiente de completar registro",
       },
     });

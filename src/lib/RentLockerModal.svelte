@@ -46,6 +46,7 @@
         me = data;
         cedula = data.cedula ?? "";
         phone = data.phone ?? "";
+        uniqueCode = data.uniqueCode ?? "";
       })
       .catch(() => (meError = true));
     fetchLockerPricePreview()
@@ -53,19 +54,27 @@
       .catch(() => (pricePreviewError = true));
   });
 
-  // Cédula/celular — se piden UNA vez; si ya están en el perfil (alquiler
-  // de un semestre anterior) llegan prellenados desde /auth/me arriba, acá
-  // solo se re-confirman o se corrigen, nunca se escriben desde cero de
-  // nuevo (reconocimiento sobre recuerdo).
+  // Cédula/celular/código único — se piden UNA vez; si ya están en el
+  // perfil (alquiler de un semestre anterior) llegan prellenados desde
+  // /auth/me arriba, acá solo se re-confirman o se corrigen, nunca se
+  // escriben desde cero de nuevo (reconocimiento sobre recuerdo).
   let cedula = $state("");
   let phone = $state("");
+  // Código único institucional — dato personal REAL usado para localizar
+  // físicamente al dueño de un casillero, no un identificador interno
+  // nuestro (ver backend/src/locker/dto/rent-locker.dto.ts). Obligatorio:
+  // sin un formato EPN oficial confirmado, solo se exige que no esté
+  // vacío — no se inventa un patrón más estricto que podría rechazar
+  // códigos reales válidos.
+  let uniqueCode = $state("");
   const CEDULA_RE = /^\d{10}$/;
   const PHONE_RE = /^0\d{9}$/;
   const cedulaValid = $derived(CEDULA_RE.test(cedula.trim()));
   const phoneValid = $derived(PHONE_RE.test(phone.trim()));
+  const uniqueCodeValid = $derived(uniqueCode.trim().length >= 3);
   let acceptedTerms = $state(false);
 
-  const identityValid = $derived(cedulaValid && phoneValid && acceptedTerms);
+  const identityValid = $derived(cedulaValid && phoneValid && uniqueCodeValid && acceptedTerms);
 
   let showLogin = $state(false);
   let busy = $state(false);
@@ -108,6 +117,7 @@
     try {
       const rental = await rentLocker({
         lockerCode,
+        uniqueCode: uniqueCode.trim(),
         cedula: cedula.trim(),
         phone: phone.trim(),
         acceptedTerms,
@@ -237,6 +247,16 @@
         {#if pricePreview?.tierName}
           <p class="tier-banner">✓ Aportante Plan {pricePreview.tierName} — descuento ya aplicado abajo</p>
         {/if}
+
+        <label class="field-label" for="rl-unique-code">Código único institucional</label>
+        <input
+          id="rl-unique-code"
+          class="field-input"
+          class:invalid={uniqueCode.length > 0 && !uniqueCodeValid}
+          type="text"
+          placeholder="Tu código de la EPN"
+          bind:value={uniqueCode}
+        />
 
         <label class="field-label" for="rl-cedula">Cédula</label>
         <input

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { LockerRental } from "@prisma/client";
+import { LockerRental, Prisma } from "@prisma/client";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
@@ -8,6 +8,8 @@ import { PeriodService } from "../shared/period/period.service";
 import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
 import { executeMoneyMutation } from "../shared/payment/money-mutation.helper";
 import { calculateLockerPrice } from "./rental-calculator";
+import { MailService } from "../shared/mail/mail.service";
+import { lockerContractHtml, lockerContractSubject } from "./locker-contract";
 
 // Precio base semestral — configurable porque el sponsor puede fijarlo
 // entre $5.50 y $9.00 según utilidad objetivo (ver rental-calculator.ts).
@@ -39,6 +41,7 @@ export function lockerTermsVersion(periodLabel: string): string {
 export interface RentLockerParams {
   userId: string;
   lockerCode: string;
+  uniqueCode: string;
   cedula: string;
   phone: string;
   acceptedTerms: boolean;
@@ -67,7 +70,8 @@ export class LockerService {
     private readonly audit: AuditService,
     private readonly payphone: PayphoneClient,
     private readonly period: PeriodService,
-    private readonly subscriptionBenefits: SubscriptionBenefitsService
+    private readonly subscriptionBenefits: SubscriptionBenefitsService,
+    private readonly mail: MailService
   ) {}
 
   list() {
@@ -164,14 +168,27 @@ export class LockerService {
     const discountPercent = await this.subscriptionBenefits.getLockerDiscountPercent(params.userId);
     const price = calculateLockerPrice(DEFAULT_LOCKER_BASE_PRICE, discountPercent);
 
-    // Cédula/celular se piden una sola vez — se guardan en User acá mismo
-    // (no en un endpoint de perfil aparte) para no agregar un paso extra al
-    // flujo; el siguiente alquiler/aportación los reutiliza sin volver a
-    // preguntarlos (ver GET /auth/me).
-    await this.prisma.user.update({
-      where: { id: params.userId },
-      data: { cedula: params.cedula, phone: params.phone },
-    });
+    // Cédula/celular/código único se piden una sola vez — se guardan en
+    // User acá mismo (no en un endpoint de perfil aparte) para no agregar
+    // un paso extra al flujo; el siguiente alquiler/aportación los reutiliza
+    // sin volver a preguntarlos (ver GET /auth/me). uniqueCode reemplaza el
+    // placeholder "PENDIENTE-<uuid>" con el dato real — ver el comentario en
+    // rent-locker.dto.ts.
+    try {
+      await this.prisma.user.update({
+        where: { id: params.userId },
+        data: { cedula: params.cedula, phone: params.phone, uniqueCode: params.uniqueCode },
+      });
+    } catch (err) {
+      // P2002 = choque contra la restricción @unique de uniqueCode — dos
+      // estudiantes distintos escribiendo el MISMO código real. Nunca
+      // debería pasar con datos reales, pero un error genérico de base de
+      // datos ("500 crudo") no le dice al estudiante qué hacer; esto sí.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new BadRequestException("Ese código único ya está registrado con otra cuenta — revísalo e intenta de nuevo");
+      }
+      throw err;
+    }
 
     return executeMoneyMutation<LockerRental>(
       { prisma: this.prisma, audit: this.audit },
@@ -295,7 +312,7 @@ export class LockerService {
       throw new BadRequestException("PayPhone no aprobó esta transacción");
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const confirmed = await this.prisma.$transaction(async (tx) => {
       // updateMany + WHERE status:"PENDING" en vez de update() simple,
       // para que un doble callback de PayPhone (o el usuario recargando la
       // página de respuesta) no pueda confirmar el mismo pago dos veces.
@@ -327,6 +344,82 @@ export class LockerService {
       );
       return { rental, locker: updatedLocker };
     });
+
+    // Fuera de la transacción, a propósito: un correo que falla en enviarse
+    // no debe revertir un pago que YA se confirmó de verdad contra
+    // PayPhone. Igual que AlertService, el fallo se audita y se loguea,
+    // nunca tumba la petición — el estudiante ya tiene su casillero aunque
+    // el contrato tarde en llegar o haya que reenviarlo a mano.
+    await this.sendContractEmail(rental.id, rental.userId, rental.lockerId, rental.periodId, amount, ipAddress);
+
+    return confirmed;
+  }
+
+  // Correo de "Contrato de Uso de Locker" — se manda justo después de
+  // confirmar el pago (ver comentario arriba). Nunca bloquea ni revierte el
+  // alquiler si falla: solo audita y loguea.
+  private async sendContractEmail(
+    rentalId: string,
+    userId: string,
+    lockerId: string,
+    periodId: string,
+    amount: number,
+    ipAddress?: string
+  ): Promise<void> {
+    const [user, locker, period] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId } }),
+      this.prisma.locker.findUnique({ where: { id: lockerId } }),
+      this.prisma.period.findUnique({ where: { id: periodId } }),
+    ]);
+    if (!user || !locker || !period) {
+      this.logger.error(`sendContractEmail(${userId}) — faltan datos (user/locker/period) para armar el contrato`);
+      return;
+    }
+    if (!user.email) {
+      // No debería pasar — el correo se rellena en cada login (ver
+      // provisionUser) — pero un usuario muy viejo sin ningún login desde
+      // que existe la columna es posible en teoría. Sin destino no hay
+      // correo que mandar; se deja constancia y se sigue.
+      this.logger.warn(`sendContractEmail(${userId}) — el usuario no tiene correo guardado, no se manda el contrato`);
+      return;
+    }
+
+    const contractData = {
+      fullName: user.fullName,
+      cedula: user.cedula ?? "—",
+      uniqueCode: user.uniqueCode,
+      lockerCode: locker.code,
+      periodLabel: period.label,
+      periodEndsAt: period.endsAt,
+      amount,
+      signedAt: new Date(),
+    };
+
+    try {
+      await this.mail.send({
+        to: user.email,
+        subject: lockerContractSubject(contractData),
+        html: lockerContractHtml(contractData),
+      });
+      await this.audit.record({
+        actorId: userId,
+        action: "locker.contract.sent",
+        entityType: "LockerRental",
+        entityId: rentalId,
+        ipAddress,
+        metadata: { to: user.email, lockerCode: locker.code },
+      });
+    } catch (err) {
+      this.logger.error(`sendContractEmail(${userId}) — no se pudo enviar el contrato: ${(err as Error).message}`);
+      await this.audit.record({
+        actorId: userId,
+        action: "locker.contract.send_failed",
+        entityType: "LockerRental",
+        entityId: rentalId,
+        ipAddress,
+        metadata: { to: user.email, reason: (err as Error).message },
+      });
+    }
   }
 
   // Reserva PayPhone sin completar el pago: el widget de la Cajita de Pagos

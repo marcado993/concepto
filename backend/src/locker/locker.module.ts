@@ -5,9 +5,10 @@ import { PayphoneClient } from "../shared/payment/payphone.client";
 import { AuditModule } from "../shared/audit/audit.module";
 import { PeriodModule } from "../shared/period/period.module";
 import { SubscriptionModule } from "../subscription/subscription.module";
+import { MailModule } from "../shared/mail/mail.module";
 
 @Module({
-  imports: [AuditModule, PeriodModule, SubscriptionModule],
+  imports: [AuditModule, PeriodModule, SubscriptionModule, MailModule],
   controllers: [LockerController],
   providers: [LockerService, PayphoneClient],
 })
