@@ -14,7 +14,7 @@ import { Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { Public } from "./public.decorator";
 import { PrismaService } from "../prisma/prisma.service";
-import { PENDING_UNIQUE_CODE_PREFIX } from "./auth.service";
+import { PENDING_UNIQUE_CODE_PREFIX, PENDING_FULL_NAME } from "./auth.service";
 import { OidcRedirectStrategy } from "./strategies/oidc-redirect.strategy";
 import { SocialEmbeddedStrategy } from "./strategies/social-embedded.strategy";
 import { EmailOtpStrategy } from "./strategies/email-otp.strategy";
@@ -121,12 +121,16 @@ export class AuthController {
       select: { fullName: true, uniqueCode: true, role: true, cedula: true, phone: true },
     });
     if (!user) throw new UnauthorizedException();
-    // Mismo patrón que cedula/phone: el frontend nunca debe ver el
-    // placeholder interno "PENDIENTE-<uuid>" — null significa "todavía no
-    // lo completó", y el paso de alquiler lo pide como campo obligatorio
-    // (ver rent-locker.dto.ts).
+    // Mismo patrón que cedula/phone: el frontend nunca debe ver ningún
+    // placeholder interno — null significa "todavía no lo completó", y el
+    // paso de alquiler pide ambos como campo obligatorio (ver
+    // rent-locker.dto.ts). fullName en particular: el placeholder JAMÁS
+    // debe llegar a prellenar el formulario (bug real reportado — antes
+    // el fallback ni siquiera era un placeholder reconocible, era
+    // literalmente el correo del estudiante).
     return {
       ...user,
+      fullName: user.fullName === PENDING_FULL_NAME ? null : user.fullName,
       uniqueCode: user.uniqueCode.startsWith(PENDING_UNIQUE_CODE_PREFIX) ? null : user.uniqueCode,
     };
   }

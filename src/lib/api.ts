@@ -144,10 +144,17 @@ export function createVenture(input: CreateVentureInput) {
   return postJSON("/ventures", input);
 }
 
-// Identidad del estudiante logueado — para mostrar en el formulario de
-// alquiler en modo solo-lectura (ver backend/src/shared/auth/auth.controller.ts).
+// Identidad del estudiante logueado — para prellenar el formulario de
+// alquiler/aportación, siempre editable (ver
+// backend/src/shared/auth/auth.controller.ts).
 export interface MeResponse {
-  fullName: string;
+  /** null mientras siga siendo el placeholder interno — mismo patrón que
+   *  uniqueCode/cedula/phone. El login por correo no trae ningún nombre
+   *  real (a diferencia de GitHub/Google), así que el alquiler/aportación
+   *  lo piden como campo obligatorio, editable, nunca prellenado con el
+   *  placeholder (bug real corregido: ese placeholder llegó a ser
+   *  literalmente el correo del estudiante). */
+  fullName: string | null;
   /** null mientras siga siendo el placeholder interno ("PENDIENTE-...") —
    *  mismo patrón que cedula/phone. El paso de alquiler lo pide como
    *  campo obligatorio (dato real usado para localizar al dueño de un
@@ -303,6 +310,7 @@ export function fetchMySubscription(): Promise<MySubscription | null> {
 
 export interface SubscribeInput {
   tierName: string;
+  fullName: string;
 }
 
 export interface SubscriptionFromApi {

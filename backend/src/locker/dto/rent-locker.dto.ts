@@ -1,10 +1,5 @@
 import { IsIn, IsString, Matches, MinLength } from "class-validator";
-
-// Al menos dos palabras (nombre + al menos un apellido) — sin exigir un
-// conteo exacto: hay gente con un nombre y dos apellidos, otra con dos
-// nombres y un apellido. Solo descarta lo que claramente NO es un nombre
-// completo (un username suelto, un solo nombre de pila).
-const FULL_NAME_PATTERN = /^\S+(\s+\S+)+$/;
+import { FULL_NAME_PATTERN, FULL_NAME_MESSAGE } from "../../shared/validation/full-name.pattern";
 
 // Formato real del código único institucional de la EPN (confirmado con
 // datos reales del cliente, no inventado): 9 dígitos, sin letras ni
@@ -27,7 +22,7 @@ export class RentLockerDto {
   // literalmente el que va a salir firmado en el contrato (ver
   // locker-contract.ts), así que tiene que ser el correcto ANTES de
   // pagar, no algo que se corrija después.
-  @Matches(FULL_NAME_PATTERN, { message: "Escribe tu nombre completo (nombre y apellido)" })
+  @Matches(FULL_NAME_PATTERN, { message: FULL_NAME_MESSAGE })
   @MinLength(3)
   fullName!: string;
 

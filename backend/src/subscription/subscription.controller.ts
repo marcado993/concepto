@@ -45,6 +45,7 @@ export class SubscriptionController {
     return this.subscriptionService.subscribe({
       userId: req.user.id,
       tierName: dto.tierName,
+      fullName: dto.fullName,
       ipAddress: req.ip,
     });
   }

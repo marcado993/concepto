@@ -24,6 +24,18 @@ export function isValidEmail(email: string | undefined): email is string {
 // usa con cedula/phone.
 export const PENDING_UNIQUE_CODE_PREFIX = "PENDIENTE-";
 
+// Mismo patrón que arriba, para fullName — el login por correo (OTP) no
+// trae ningún claim `name` (a diferencia de GitHub/Google), y antes el
+// fallback usaba el CORREO como nombre. Bug real reportado: el "nombre
+// completo" de medio estudiante literalmente era su dirección de correo —
+// salía así en /auth/me, en el formulario de alquiler, y habría salido
+// FIRMANDO EL CONTRATO si nadie lo corregía a mano. El correo nunca es un
+// nombre, así que el placeholder ahora es explícito y reconocible (igual
+// que PENDING_UNIQUE_CODE_PREFIX), no un dato real disfrazado de dato
+// real. El estudiante lo completa/confirma como campo obligatorio al
+// primer alquiler (ver rent-locker.dto.ts / RentLockerModal.svelte).
+export const PENDING_FULL_NAME = "Estudiante pendiente de completar registro";
+
 /**
  * Lógica de dominio del login — intercambio de código OIDC y provisión de
  * usuario. Extraído de AuthController (mismo patrón que LockerService
@@ -95,7 +107,9 @@ export class AuthService {
         // @unique de uniqueCode con un 500 no controlado (hallazgo de la
         // auditoría de seguridad, 07-iso27001-sgsi-politica.md).
         uniqueCode: `${PENDING_UNIQUE_CODE_PREFIX}${randomUUID()}`,
-        fullName: name ?? email ?? "Estudiante pendiente de completar registro",
+        // NUNCA el correo como nombre — ver el comentario de
+        // PENDING_FULL_NAME arriba.
+        fullName: name ?? PENDING_FULL_NAME,
       },
     });
   }

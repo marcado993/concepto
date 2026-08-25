@@ -25,10 +25,22 @@
 
   let me = $state<MeResponse | null>(null);
   let meError = $state(false);
+  // Nombre completo — mismo motivo/patrón que RentLockerModal.svelte:
+  // aportar nunca lo pedía en absoluto, así que quedaba con el placeholder
+  // interno para siempre (que llegó a ser literalmente el correo del
+  // estudiante — bug real corregido, ver PENDING_FULL_NAME en
+  // auth.service.ts). Siempre editable, nunca prellenado con ese
+  // placeholder.
+  let fullName = $state("");
+  const FULL_NAME_RE = /^\S+(\s+\S+)+$/;
+  const fullNameValid = $derived(FULL_NAME_RE.test(fullName.trim()));
   $effect(() => {
     if (!isAuthenticated()) return;
     fetchMe()
-      .then((data) => (me = data))
+      .then((data) => {
+        me = data;
+        fullName = data.fullName ?? "";
+      })
       .catch(() => (meError = true));
   });
 
@@ -41,10 +53,11 @@
   // cobro real todavía no pasó, pasa en el widget del paso 2 (ver
   // backend/src/subscription/subscription.service.ts confirmPayphonePayment).
   async function continueFromIdentity() {
+    if (!fullNameValid) return;
     errorMessage = null;
     busy = true;
     try {
-      const subscription = await subscribeToTier({ tierName });
+      const subscription = await subscribeToTier({ tierName, fullName: fullName.trim() });
       subscriptionId = subscription.id;
       step = "payphone";
     } catch (err) {
@@ -129,9 +142,24 @@
       {:else if !me}
         <p class="modal-copy">Cargando tu perfil…</p>
       {:else}
+        <label class="field-label" for="sub-full-name">Nombre completo</label>
+        <div class="field-wrap">
+          <input
+            id="sub-full-name"
+            class="field-input"
+            class:invalid={fullName.length > 0 && !fullNameValid}
+            class:valid={fullNameValid}
+            type="text"
+            placeholder="Pon tus nombres, ej. Luis Andrés Guerrero"
+            bind:value={fullName}
+          />
+          {#if fullNameValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
+        </div>
+        {#if fullName.length > 0 && !fullNameValid}
+          <p class="field-hint error">Te falta el apellido — escribe tu nombre completo</p>
+        {/if}
+
         <div class="identity-card">
-          <div class="identity-row"><span>Nombre</span><strong>{me.fullName}</strong></div>
-          <div class="identity-row"><span>Código</span><strong>{me.uniqueCode}</strong></div>
           <div class="identity-row"><span>Tier</span><strong>{tierName} — {priceLabel}</strong></div>
         </div>
 
@@ -144,7 +172,7 @@
 
         {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
 
-        <button class="cta" disabled={busy} onclick={continueFromIdentity}>
+        <button class="cta" disabled={busy || !fullNameValid} onclick={continueFromIdentity}>
           {busy ? "Un momento…" : "Continuar"}
         </button>
       {/if}
@@ -285,6 +313,75 @@
   .identity-row strong {
     color: #eef4fb;
     text-align: right;
+  }
+
+  /* Mismo patrón que RentLockerModal.svelte — check verde en cuanto el
+     campo queda válido, pista clara si no. */
+  .field-label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: rgba(238, 244, 251, 0.55);
+    margin-bottom: 6px;
+  }
+  .field-wrap {
+    position: relative;
+  }
+  .field-input {
+    width: 100%;
+    padding: 10px 34px 10px 13px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #eef4fb;
+    font-size: 13.5px;
+    margin-bottom: 12px;
+    transition: border-color 0.15s ease;
+  }
+  .field-input:focus {
+    outline: none;
+    border-color: var(--accent, #21e0a0);
+  }
+  .field-input.invalid {
+    border-color: #ff8a8a;
+  }
+  .field-input.valid {
+    border-color: var(--accent, #21e0a0);
+  }
+  .field-check {
+    position: absolute;
+    right: 12px;
+    top: 10px;
+    color: var(--accent, #21e0a0);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    animation: check-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes check-pop {
+    from {
+      transform: scale(0.5);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .field-check {
+      animation: none;
+    }
+  }
+  .field-hint {
+    margin: -8px 0 12px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .field-hint.error {
+    color: #ff8a8a;
   }
 
   .price-row {

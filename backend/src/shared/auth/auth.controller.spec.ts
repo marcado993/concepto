@@ -78,6 +78,21 @@ describe("AuthController", () => {
     });
   });
 
+  it('Dado un usuario cuyo fullName sigue siendo el placeholder interno ("Estudiante pendiente de completar registro" — nunca llegó a confirmarlo al alquilar/aportar), Cuando pide /auth/me, Entonces lo devuelve como null, igual que uniqueCode', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      fullName: "Estudiante pendiente de completar registro",
+      uniqueCode: "PENDIENTE-abc",
+      role: "ESTUDIANTE",
+      cedula: null,
+      phone: null,
+    });
+    const req = { user: { id: "user-1" } } as any;
+
+    const result = await controller.me(req);
+
+    expect(result.fullName).toBeNull();
+  });
+
   it("Dado un usuario que ya registró su código único institucional (al alquilar un casillero), Cuando pide /auth/me, Entonces lo devuelve tal cual — nunca el logtoSub ni otros campos internos", async () => {
     prisma.user.findUnique.mockResolvedValue({
       fullName: "Estudiante EPN",

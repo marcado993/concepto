@@ -72,6 +72,25 @@ describe("AuthService.finishTokenExchange", () => {
     expect(args.update).not.toHaveProperty("uniqueCode");
   });
 
+  // Bug real reportado: el login por correo (OTP) no trae ningún claim
+  // `name` — antes el fallback usaba el CORREO como fullName, así que el
+  // "nombre completo" de medio estudiante era literalmente su dirección
+  // de correo (visible en /auth/me, en el formulario de alquiler, y a
+  // punto de salir firmando el contrato).
+  it("Dado un intercambio SIN claim de nombre (típico del login por correo/OTP), Cuando se provisiona, Entonces usa el placeholder reconocible — NUNCA el correo como nombre", async () => {
+    const { service, logto, prisma } = makeService();
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-4",
+      claims: () => ({ sub: "logto|otp-1", email: "estudiante@epn.edu.ec" }),
+    });
+
+    await service.finishTokenExchange({ code: "c", state: "s", expectedState: "s", codeVerifier: "v" });
+
+    const args = prisma.user.upsert.mock.calls[0][0];
+    expect(args.create.fullName).not.toBe("estudiante@epn.edu.ec");
+    expect(args.create.fullName).toBe("Estudiante pendiente de completar registro");
+  });
+
   it("Dado un token sin claim de correo (GitHub sin correo público/verificado), Cuando se completa, Entonces rechaza SIN tocar la base de datos — nunca un User a medias", async () => {
     const { service, logto, prisma } = makeService();
     logto.exchangeCode.mockResolvedValue({

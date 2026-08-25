@@ -33,6 +33,7 @@ describe("SubscriptionService.subscribe", () => {
   const params = {
     userId: "user-1",
     tierName: "Platino" as const,
+    fullName: "Luis Andres Guerrero",
   };
 
   beforeEach(async () => {
@@ -42,6 +43,7 @@ describe("SubscriptionService.subscribe", () => {
     };
     prisma = {
       subscriptionTier: { findUnique: jest.fn().mockResolvedValue(tier) },
+      user: { update: jest.fn().mockResolvedValue({ id: "user-1" }) },
       $transaction: jest.fn((cb: any) => cb(tx)),
       __tx: tx,
     };
@@ -62,6 +64,19 @@ describe("SubscriptionService.subscribe", () => {
     expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ amount: 19.99, method: "PAYPHONE", status: "PENDING" }) })
     );
+  });
+
+  // Bug real reportado: aportar nunca pedía el nombre completo — quien
+  // SOLO aportaba (nunca alquiló un casillero) se quedaba con el
+  // placeholder interno para siempre (que llegó a ser literalmente el
+  // correo del estudiante, ver PENDING_FULL_NAME en auth.service.ts).
+  it("Dado un nombre completo, Cuando se aporta, Entonces lo guarda en User — no solo lockers confirma la identidad real", async () => {
+    await service.subscribe(params);
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { fullName: "Luis Andres Guerrero" },
+    });
   });
 
   it("Dado que el estudiante ya tiene una aportación activa este periodo, Cuando intenta aportar de nuevo, Entonces la restricción única lo traduce a AlreadySubscribedError", async () => {

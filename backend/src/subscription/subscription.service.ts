@@ -16,6 +16,7 @@ export class AlreadySubscribedError extends ConflictException {
 export interface SubscribeParams {
   userId: string;
   tierName: SubscriptionTierName;
+  fullName: string;
   ipAddress?: string;
 }
 
@@ -78,6 +79,13 @@ export class SubscriptionService {
     }
 
     const amount = Number(tier.amount);
+
+    // Confirma/completa el nombre completo — mismo motivo que
+    // locker.service.ts::rent(): antes aportar nunca lo pedía en
+    // absoluto, así que un estudiante que SOLO aportara (nunca alquiló un
+    // casillero) se quedaba con el placeholder interno para siempre (ver
+    // PENDING_FULL_NAME en auth.service.ts).
+    await this.prisma.user.update({ where: { id: params.userId }, data: { fullName: params.fullName } });
 
     return executeMoneyMutation<Subscription>(
       { prisma: this.prisma, audit: this.audit },
