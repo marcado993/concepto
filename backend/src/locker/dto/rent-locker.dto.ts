@@ -42,10 +42,18 @@ export class RentLockerDto {
   // Cédula ecuatoriana — 10 dígitos, sin guiones ni espacios (el frontend
   // los limpia antes de mandar). Se guarda en User (ver locker.service.ts)
   // para no volver a pedirla el siguiente semestre.
+  //
+  // A PROPÓSITO nunca se completa con el "document"/"phoneNumber" que
+  // devuelve PayPhone tras el pago (se evaluó y se descartó): eso es del
+  // DUEÑO DE LA TARJETA, no necesariamente del estudiante — es común pagar
+  // con la tarjeta de un familiar. Usar ese dato pondría a la persona
+  // equivocada en el contrato del casillero. Siempre lo escribe el propio
+  // estudiante.
   @Matches(/^\d{10}$/, { message: "La cédula debe tener 10 dígitos" })
   cedula!: string;
 
   // Celular ecuatoriano — 10 dígitos empezando en 0 (ej. 0991234567).
+  // Mismo criterio que cédula, arriba.
   @Matches(/^0\d{9}$/, { message: "El celular debe tener 10 dígitos (ej. 0991234567)" })
   phone!: string;
 
