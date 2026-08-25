@@ -380,6 +380,7 @@ describe("LockerService.confirmPayphonePayment", () => {
     expect(mail.send).toHaveBeenCalledTimes(1);
     const call = mail.send.mock.calls[0][0];
     expect(call.to).toBe("luis@epn.edu.ec");
+    expect(call.cc).toBe("aeis.fis.epn@gmail.com"); // AEIS también queda con copia de cada contrato
     expect(call.subject).toContain("A07");
     expect(call.html).toContain("Luis Andres Guerrero"); // title case, no "luis andres guerrero"
     expect(call.html).toContain("1723456789");

@@ -69,7 +69,7 @@ const EXPECTED_LOCKER_AMOUNT_CENTS = 650;
 // pasa el suyo (importa sobre todo en el test de concurrencia, donde
 // userA y userB alquilan a la vez: reusar el mismo literal ahí causaría un
 // choque real de unicidad y ya no probaría la carrera del casillero).
-function validRentBody(lockerCode: string, uniqueCode = "E2E-CODE-001") {
+function validRentBody(lockerCode: string, uniqueCode = "209900001") {
   return { lockerCode, cedula: "1723456789", phone: "0991234567", uniqueCode, acceptedTerms: true };
 }
 
@@ -202,11 +202,11 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
       request(app.getHttpServer())
         .post("/lockers/rent")
         .set("Authorization", testAuthHeader(userAId!))
-        .send(validRentBody(LOCKER_CODE, "E2E-CODE-RACE-A")),
+        .send(validRentBody(LOCKER_CODE, "209900002")),
       request(app.getHttpServer())
         .post("/lockers/rent")
         .set("Authorization", testAuthHeader(userBId!))
-        .send(validRentBody(LOCKER_CODE, "E2E-CODE-RACE-B")),
+        .send(validRentBody(LOCKER_CODE, "209900003")),
     ]);
 
     const statuses = [resA.status, resB.status].sort();
@@ -235,7 +235,7 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
     const rentRes = await request(app.getHttpServer())
       .post("/lockers/rent")
       .set("Authorization", testAuthHeader(userAId!))
-      .send(validRentBody(LOCKER_CODE, "E2E-CODE-CONFIRM-A"));
+      .send(validRentBody(LOCKER_CODE, "209900004"));
     const rentalId = rentRes.body.id;
 
     const [resA, resB] = await Promise.all([

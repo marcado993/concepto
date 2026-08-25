@@ -62,16 +62,18 @@
   let phone = $state("");
   // Código único institucional — dato personal REAL usado para localizar
   // físicamente al dueño de un casillero, no un identificador interno
-  // nuestro (ver backend/src/locker/dto/rent-locker.dto.ts). Obligatorio:
-  // sin un formato EPN oficial confirmado, solo se exige que no esté
-  // vacío — no se inventa un patrón más estricto que podría rechazar
-  // códigos reales válidos.
+  // nuestro. Formato real de la EPN confirmado con datos del cliente (ver
+  // UNIQUE_CODE_PATTERN en backend/src/locker/dto/rent-locker.dto.ts):
+  // año (empieza en 2) + periodo (1 o 2) + secuencial de 4 dígitos, ej.
+  // 202120100. Mismo patrón acá para dar el error al escribir, no recién
+  // al mandar el formulario — el backend lo vuelve a validar igual.
   let uniqueCode = $state("");
   const CEDULA_RE = /^\d{10}$/;
   const PHONE_RE = /^0\d{9}$/;
+  const UNIQUE_CODE_RE = /^2\d{3}[12]\d{4}$/;
   const cedulaValid = $derived(CEDULA_RE.test(cedula.trim()));
   const phoneValid = $derived(PHONE_RE.test(phone.trim()));
-  const uniqueCodeValid = $derived(uniqueCode.trim().length >= 3);
+  const uniqueCodeValid = $derived(UNIQUE_CODE_RE.test(uniqueCode.trim()));
   let acceptedTerms = $state(false);
 
   const identityValid = $derived(cedulaValid && phoneValid && uniqueCodeValid && acceptedTerms);
@@ -254,9 +256,13 @@
           class="field-input"
           class:invalid={uniqueCode.length > 0 && !uniqueCodeValid}
           type="text"
-          placeholder="Tu código de la EPN"
+          inputmode="numeric"
+          placeholder="Ej. 202120100"
           bind:value={uniqueCode}
         />
+        {#if uniqueCode.length > 0 && !uniqueCodeValid}
+          <p class="field-hint error">9 dígitos: año + periodo (1 o 2) + secuencial — ej. 202120100</p>
+        {/if}
 
         <label class="field-label" for="rl-cedula">Cédula</label>
         <input
@@ -527,6 +533,15 @@
   }
   .field-input.invalid {
     border-color: #ff8a8a;
+  }
+
+  .field-hint {
+    margin: -8px 0 12px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .field-hint.error {
+    color: #ff8a8a;
   }
 
   /* El checkbox nativo se veía gris y plano en Windows/Chrome —

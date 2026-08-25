@@ -1,4 +1,13 @@
-import { IsIn, IsString, Length, Matches } from "class-validator";
+import { IsIn, IsString, Matches } from "class-validator";
+
+// Formato real del código único institucional de la EPN (confirmado con
+// datos reales del cliente, no inventado): 9 dígitos, sin letras ni
+// guiones — AAAAP NNNN.
+//   AAAA = año (empieza en "2", ej. 2017..2022 en los datos reales vistos)
+//   P    = periodo, 1 o 2 (semestre A/B)
+//   NNNN = secuencial de 4 dígitos, sin patrón — puede ser cualquiera
+// Ejemplos reales: 202120100, 201710909, 202221129.
+export const UNIQUE_CODE_PATTERN = /^2\d{3}[12]\d{4}$/;
 
 export class RentLockerDto {
   @IsString()
@@ -12,11 +21,9 @@ export class RentLockerDto {
   // 06-iso27701-privacidad.md §3: "completar el código único institucional
   // es un paso posterior y consciente, no implícito en el login social").
   // El alquiler es justo ese paso: es obligatorio, no un placeholder más.
-  // Sin un formato EPN oficial confirmado, solo se valida longitud
-  // razonable — no se inventa un patrón más estricto que podría rechazar
-  // códigos reales válidos.
-  @IsString()
-  @Length(3, 20, { message: "El código único debe tener entre 3 y 20 caracteres" })
+  @Matches(UNIQUE_CODE_PATTERN, {
+    message: "El código único debe tener el formato real de la EPN: año + periodo (1 o 2) + secuencial, ej. 202120100",
+  })
   uniqueCode!: string;
 
   // Cédula ecuatoriana — 10 dígitos, sin guiones ni espacios (el frontend

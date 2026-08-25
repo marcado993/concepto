@@ -17,6 +17,12 @@ export class LockerUnavailableError extends ConflictException {
   }
 }
 
+// Correo institucional que recibe copia de cada contrato de casillero —
+// pedido real del cliente: no solo el estudiante que compra, también AEIS
+// (para tener respaldo propio de cada contrato firmado, sin depender de
+// que el estudiante reenvíe el suyo si hace falta después).
+export const CONTRACT_CC_EMAIL = "aeis.fis.epn@gmail.com";
+
 // Versión del texto de términos que se le muestra al estudiante — si el
 // texto cambia de un semestre a otro, un AuditLog viejo con
 // termsVersion:"2026-A-v1" sigue siendo prueba de qué versión ACEPTÓ en su
@@ -405,6 +411,7 @@ export class LockerService {
     try {
       await this.mail.send({
         to: user.email,
+        cc: CONTRACT_CC_EMAIL,
         subject: lockerContractSubject(contractData),
         html: lockerContractHtml(contractData),
       });
@@ -414,7 +421,7 @@ export class LockerService {
         entityType: "LockerRental",
         entityId: rentalId,
         ipAddress,
-        metadata: { to: user.email, lockerCode: locker.code },
+        metadata: { to: user.email, cc: CONTRACT_CC_EMAIL, lockerCode: locker.code },
       });
     } catch (err) {
       this.logger.error(`sendContractEmail(${userId}) — no se pudo enviar el contrato: ${(err as Error).message}`);

@@ -28,13 +28,14 @@ export class MailService {
     return this.client;
   }
 
-  async send(params: { to: string; subject: string; html: string }): Promise<void> {
+  async send(params: { to: string; subject: string; html: string; cc?: string | string[] }): Promise<void> {
     const from = this.config.getOrThrow<string>("MAIL_FROM");
     const { error } = await this.getClient().emails.send({
       from,
       to: params.to,
       subject: params.subject,
       html: params.html,
+      ...(params.cc ? { cc: params.cc } : {}),
     });
     if (error) {
       // Nunca se propaga el detalle crudo de Resend más allá de este log —
