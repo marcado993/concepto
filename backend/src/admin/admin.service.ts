@@ -31,6 +31,73 @@ export class AdminService {
     private readonly uiVariant: UiVariantService
   ) {}
 
+  // Resumen del semestre activo — pedido real: el panel solo tenía
+  // pantallas sueltas de precios/usuarios/auditoría, sin ningún lugar que
+  // respondiera "¿cómo vamos?" de un vistazo (heurística de Nielsen
+  // "reconocimiento antes que recuerdo" — el presidente no debería tener
+  // que sumar mentalmente entre 3 pantallas distintas). Solo cuenta
+  // ingresos CONFIRMADOS (pagos ya aprobados por PayPhone) — nunca
+  // reservas PENDING, que todavía pueden no completarse.
+  async getOverview() {
+    const period = await this.period.getCurrentPeriod();
+
+    const [lockers, lockerRevenue, tiers] = await Promise.all([
+      // Con 108 filas, contar en memoria es más simple y menos propenso a
+      // errores que un groupBy (que además omitiría un status con 0
+      // casilleros en vez de mostrar el cero real).
+      this.prisma.locker.findMany({ select: { status: true } }),
+      this.prisma.payment.aggregate({
+        where: { status: "CONFIRMED", rental: { periodId: period.id } },
+        _sum: { amount: true },
+      }),
+      this.prisma.subscriptionTier.findMany({
+        where: { periodId: period.id },
+        select: {
+          id: true,
+          name: true,
+          amount: true,
+          subscriptions: {
+            where: { payment: { status: "CONFIRMED" } },
+            select: { payment: { select: { amount: true } } },
+          },
+        },
+        orderBy: { amount: "asc" },
+      }),
+    ]);
+
+    const rented = lockers.filter((l) => l.status === "RENTED").length;
+    const reserved = lockers.filter((l) => l.status === "RESERVED").length;
+    const available = lockers.filter((l) => l.status === "AVAILABLE").length;
+
+    const tierStats = tiers.map((t) => ({
+      id: t.id,
+      name: t.name,
+      amount: Number(t.amount),
+      subscriberCount: t.subscriptions.length,
+      revenueConfirmed: t.subscriptions.reduce((sum, s) => sum + Number(s.payment.amount), 0),
+    }));
+
+    const lockerRevenueConfirmed = Number(lockerRevenue._sum.amount ?? 0);
+    const subscriptionRevenueConfirmed = tierStats.reduce((sum, t) => sum + t.revenueConfirmed, 0);
+
+    return {
+      periodLabel: period.label,
+      lockers: {
+        total: lockers.length,
+        rented,
+        reserved,
+        available,
+        basePrice: Number(period.lockerBasePrice),
+        revenueConfirmed: lockerRevenueConfirmed,
+      },
+      subscriptions: {
+        tiers: tierStats,
+        revenueConfirmed: subscriptionRevenueConfirmed,
+      },
+      totalRevenueConfirmed: lockerRevenueConfirmed + subscriptionRevenueConfirmed,
+    };
+  }
+
   // Rueda (ArcMenu, "A") vs. lista accesible (AccessibleCategoryNav, "B")
   // — ver src/lib/abTest.ts en el frontend. El experimento real ya se
   // cerró a favor de B, pero antes el valor quedaba hardcodeado en el

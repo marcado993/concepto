@@ -9,6 +9,7 @@
   // un directivo no termine controlando la sesión de administrador Y la de
   // estudiante con el mismo login/token.
   import AdminLogin from "./AdminLogin.svelte";
+  import AdminOverview from "./AdminOverview.svelte";
   import AdminPricing from "./AdminPricing.svelte";
   import AdminUsers from "./AdminUsers.svelte";
   import AdminAuditLog from "./AdminAuditLog.svelte";
@@ -32,8 +33,8 @@
       });
   });
 
-  type Tab = "precios" | "usuarios" | "actividad" | "navegacion";
-  let tab = $state<Tab>("precios");
+  type Tab = "resumen" | "precios" | "usuarios" | "actividad" | "navegacion";
+  let tab = $state<Tab>("resumen");
 </script>
 
 {#if !authed}
@@ -60,6 +61,7 @@
     </header>
 
     <nav class="admin-tabs" aria-label="Secciones del dashboard">
+      <button class:active={tab === "resumen"} onclick={() => (tab = "resumen")}>Resumen</button>
       <button class:active={tab === "precios"} onclick={() => (tab = "precios")}>Precios</button>
       <button class:active={tab === "usuarios"} onclick={() => (tab = "usuarios")}>Usuarios</button>
       <button class:active={tab === "actividad"} onclick={() => (tab = "actividad")}>Registro de actividad</button>
@@ -67,7 +69,9 @@
     </nav>
 
     <main class="admin-content">
-      {#if tab === "precios"}
+      {#if tab === "resumen"}
+        <AdminOverview />
+      {:else if tab === "precios"}
         <AdminPricing />
       {:else if tab === "usuarios"}
         <AdminUsers />

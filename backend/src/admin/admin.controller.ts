@@ -24,6 +24,11 @@ type AuthedRequest = Request & { user: { id: string } };
 export class AdminController {
   constructor(private readonly admin: AdminService) {}
 
+  @Get("overview")
+  getOverview() {
+    return this.admin.getOverview();
+  }
+
   @Get("users")
   listUsers(@Query() query: ListUsersQueryDto) {
     return this.admin.listUsers(query);

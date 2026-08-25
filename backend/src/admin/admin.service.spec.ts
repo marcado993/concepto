@@ -18,6 +18,8 @@ function makePrismaMock() {
   return {
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
     user: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+    locker: { findMany: jest.fn().mockResolvedValue([]) },
+    payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
     subscriptionTier: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), update: jest.fn() },
     period: { update: jest.fn() },
     auditLog: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
@@ -277,5 +279,94 @@ describe("AdminService.getUiVariant / updateUiVariant", () => {
         metadata: { variant: "A" },
       })
     );
+  });
+});
+
+describe("AdminService.getOverview", () => {
+  it("Dado casilleros en distintos status, Cuando se pide el resumen, Entonces cuenta ocupación correctamente", async () => {
+    const prisma = makePrismaMock();
+    prisma.locker.findMany.mockResolvedValue([
+      { status: "RENTED" },
+      { status: "RENTED" },
+      { status: "RESERVED" },
+      { status: "AVAILABLE" },
+      { status: "AVAILABLE" },
+      { status: "AVAILABLE" },
+    ]);
+    const { service } = await buildService({ prisma });
+
+    const result = await service.getOverview();
+
+    expect(result.lockers.total).toBe(6);
+    expect(result.lockers.rented).toBe(2);
+    expect(result.lockers.reserved).toBe(1);
+    expect(result.lockers.available).toBe(3);
+    expect(result.lockers.basePrice).toBe(6.5);
+  });
+
+  it("Dado pagos de casillero CONFIRMED, Cuando se pide el resumen, Entonces suma solo lo confirmado", async () => {
+    const prisma = makePrismaMock();
+    prisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 45.5 } });
+    const { service } = await buildService({ prisma });
+
+    const result = await service.getOverview();
+
+    expect(result.lockers.revenueConfirmed).toBe(45.5);
+    expect(prisma.payment.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: "CONFIRMED", rental: { periodId: TEST_PERIOD.id } },
+      })
+    );
+  });
+
+  it("Dado tiers con suscriptores confirmados, Cuando se pide el resumen, Entonces calcula conteo e ingreso por tier", async () => {
+    const prisma = makePrismaMock();
+    prisma.subscriptionTier.findMany.mockResolvedValue([
+      {
+        id: "tier-1",
+        name: "Básico",
+        amount: 10,
+        subscriptions: [{ payment: { amount: 10 } }, { payment: { amount: 10 } }],
+      },
+      {
+        id: "tier-2",
+        name: "Premium",
+        amount: 20,
+        subscriptions: [{ payment: { amount: 20 } }],
+      },
+    ]);
+    const { service } = await buildService({ prisma });
+
+    const result = await service.getOverview();
+
+    expect(result.subscriptions.tiers).toEqual([
+      { id: "tier-1", name: "Básico", amount: 10, subscriberCount: 2, revenueConfirmed: 20 },
+      { id: "tier-2", name: "Premium", amount: 20, subscriberCount: 1, revenueConfirmed: 20 },
+    ]);
+    expect(result.subscriptions.revenueConfirmed).toBe(40);
+  });
+
+  it("Dado ingresos de casilleros y de tiers, Cuando se pide el resumen, Entonces totalRevenueConfirmed es la suma de ambos", async () => {
+    const prisma = makePrismaMock();
+    prisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 30 } });
+    prisma.subscriptionTier.findMany.mockResolvedValue([
+      { id: "tier-1", name: "Básico", amount: 10, subscriptions: [{ payment: { amount: 10 } }] },
+    ]);
+    const { service } = await buildService({ prisma });
+
+    const result = await service.getOverview();
+
+    expect(result.totalRevenueConfirmed).toBe(40);
+    expect(result.periodLabel).toBe(TEST_PERIOD.label);
+  });
+
+  it("Dado ningún pago confirmado, Cuando se pide el resumen, Entonces los ingresos son 0 en vez de null/NaN", async () => {
+    const { service } = await buildService();
+
+    const result = await service.getOverview();
+
+    expect(result.lockers.revenueConfirmed).toBe(0);
+    expect(result.subscriptions.revenueConfirmed).toBe(0);
+    expect(result.totalRevenueConfirmed).toBe(0);
   });
 });

@@ -65,6 +65,35 @@ export function fetchAdminMe(): Promise<AdminMe> {
   return getJSON<AdminMe>("/admin/auth/me");
 }
 
+export interface AdminOverviewTier {
+  id: string;
+  name: string;
+  amount: number;
+  subscriberCount: number;
+  revenueConfirmed: number;
+}
+
+export interface AdminOverview {
+  periodLabel: string;
+  lockers: {
+    total: number;
+    rented: number;
+    reserved: number;
+    available: number;
+    basePrice: number;
+    revenueConfirmed: number;
+  };
+  subscriptions: {
+    tiers: AdminOverviewTier[];
+    revenueConfirmed: number;
+  };
+  totalRevenueConfirmed: number;
+}
+
+export function fetchAdminOverview(): Promise<AdminOverview> {
+  return getJSON<AdminOverview>("/admin/overview");
+}
+
 export interface AdminUser {
   id: string;
   fullName: string;
