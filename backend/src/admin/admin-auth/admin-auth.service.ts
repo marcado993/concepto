@@ -7,15 +7,22 @@ export interface AdminLoginResult {
   accessToken: string;
 }
 
-// Hash señuelo (bcrypt de un texto fijo cualquiera, precalculado) — cuando
-// el correo no existe, se compara igual contra ESTE hash en vez de saltar
-// directo al 401. Sin esto, "correo no existe" responde más rápido que
-// "correo existe pero contraseña mala" (bcrypt.compare es la parte lenta),
-// y ese tiempo de respuesta ya es suficiente para que alguien enumere qué
-// correos SÍ tienen cuenta de administración — mismo principio que ya se
-// aplicó en el flujo de correo/OTP (nunca confirmar existencia por un
-// canal lateral).
-const DUMMY_HASH = "$2b$10$uDiNKi3.UTZfwt7AorZFtO4JwLOsQQSya0ME8NK9LfELwWR/WcI9u";
+// Hash señuelo — cuando el correo no existe, se compara igual contra ESTE
+// hash en vez de saltar directo al 401. Sin esto, "correo no existe"
+// responde más rápido que "correo existe pero contraseña mala"
+// (bcrypt.compare es la parte lenta), y ese tiempo de respuesta ya es
+// suficiente para que alguien enumere qué correos SÍ tienen cuenta de
+// administración — mismo principio que ya se aplicó en el flujo de
+// correo/OTP (nunca confirmar existencia por un canal lateral).
+//
+// Generado en tiempo de ejecución (no un string bcrypt literal en el
+// código) a propósito — un hash hardcodeado, aunque sea de un texto
+// inventado y no de una contraseña real, tiene la MISMA forma que un
+// secreto real filtrado y dispara escáneres de secretos (hallazgo real:
+// generic.secrets.security.detected-bcrypt-hash bloqueó el pipeline de
+// CI). El costo de calcularlo (bcrypt real, ~50-100ms) se paga UNA sola
+// vez al levantar el proceso, no en cada login.
+const DUMMY_HASH = bcrypt.hashSync("nunca-es-una-cuenta-real", 10);
 
 @Injectable()
 export class AdminAuthService {

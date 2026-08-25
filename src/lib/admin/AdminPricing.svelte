@@ -8,6 +8,48 @@
     type AdminSubscriptionTier,
   } from "./adminApi";
 
+  // Pedido explícito: quien usa este panel no sabe qué es JSON — "solo
+  // cajas y guarda". Los beneficios siguen siendo JSON libre por debajo
+  // (schema.prisma: SubscriptionTier.benefits, a propósito sin tipar), pero
+  // acá se traducen a 3 campos simples — los ÚNICOS tipos de beneficio que
+  // existen hoy (ver prisma/seed.ts). Cualquier tipo de beneficio que no
+  // sea uno de estos tres (si algún día se agrega uno nuevo directo en la
+  // base) se conserva tal cual al guardar — nunca se borra por edición
+  // desde acá, solo no se muestra un campo para él.
+  const BENEFIT_TYPE_CASILLERO = "descuento_casillero";
+  const BENEFIT_TYPE_BILLAR = "descuento_billar";
+  const BENEFIT_TYPE_PS4 = "acceso_ps4";
+
+  interface BenefitFields {
+    casilleroPercent: number;
+    billarPercent: number;
+    ps4: boolean;
+    otros: unknown[];
+  }
+
+  function parseBenefits(raw: unknown): BenefitFields {
+    const arr = Array.isArray(raw) ? raw : [];
+    const known = new Set([BENEFIT_TYPE_CASILLERO, BENEFIT_TYPE_BILLAR, BENEFIT_TYPE_PS4]);
+    const find = (type: string) => arr.find((b) => b && typeof b === "object" && (b as { type?: unknown }).type === type) as
+      | Record<string, unknown>
+      | undefined;
+    return {
+      casilleroPercent: Number(find(BENEFIT_TYPE_CASILLERO)?.percent ?? 0),
+      billarPercent: Number(find(BENEFIT_TYPE_BILLAR)?.percent ?? 0),
+      ps4: find(BENEFIT_TYPE_PS4)?.included === true,
+      otros: arr.filter((b) => !(b && typeof b === "object" && known.has((b as { type?: unknown }).type as string))),
+    };
+  }
+
+  function buildBenefits(fields: BenefitFields): unknown[] {
+    return [
+      ...fields.otros,
+      { type: BENEFIT_TYPE_CASILLERO, percent: fields.casilleroPercent },
+      { type: BENEFIT_TYPE_BILLAR, percent: fields.billarPercent },
+      ...(fields.ps4 ? [{ type: BENEFIT_TYPE_PS4, included: true }] : []),
+    ];
+  }
+
   // ── Precio del casillero ────────────────────────────────────────────────
   let lockerPeriodLabel = $state("");
   let lockerBasePrice = $state<number | null>(null);
@@ -59,11 +101,10 @@
   let tiersLoading = $state(true);
   let tiersError = $state<string | null>(null);
 
-  // Estado de edición por tier — se guarda como texto (input de monto,
-  // textarea de JSON de beneficios) hasta que se confirma, para no pelear
-  // con el cursor mientras el estudiante-admin sigue escribiendo.
+  // Estado de edición por tier — texto para el monto (no pelear con el
+  // cursor mientras se escribe) y los campos de beneficio ya separados.
   let amountDrafts = $state<Record<string, string>>({});
-  let benefitsDrafts = $state<Record<string, string>>({});
+  let benefitDrafts = $state<Record<string, BenefitFields>>({});
   let tierSaving = $state<Record<string, boolean>>({});
   let tierError = $state<Record<string, string | null>>({});
   let tierSavedAt = $state<Record<string, number>>({});
@@ -77,7 +118,7 @@
         tiers = data.tiers;
         for (const t of data.tiers) {
           amountDrafts[t.id] = String(t.amount);
-          benefitsDrafts[t.id] = JSON.stringify(t.benefits, null, 2);
+          benefitDrafts[t.id] = parseBenefits(t.benefits);
         }
       })
       .catch((err) => {
@@ -93,25 +134,19 @@
       tierError[tier.id] = "El monto debe ser un número mayor a 0.";
       return;
     }
-    let benefitsValue: unknown;
-    try {
-      benefitsValue = JSON.parse(benefitsDrafts[tier.id]);
-    } catch {
-      tierError[tier.id] = "Los beneficios no son un JSON válido — revisa comas/llaves.";
-      return;
-    }
-    if (!Array.isArray(benefitsValue)) {
-      tierError[tier.id] = 'Los beneficios deben ser un array, ej. [{ "type": "descuento_casillero", "percent": 10 }].';
+    const fields = benefitDrafts[tier.id];
+    if (fields.casilleroPercent < 0 || fields.casilleroPercent > 100 || fields.billarPercent < 0 || fields.billarPercent > 100) {
+      tierError[tier.id] = "Los descuentos deben estar entre 0 y 100.";
       return;
     }
 
     tierSaving[tier.id] = true;
     tierError[tier.id] = null;
     try {
-      const updated = await updateAdminSubscriptionTier(tier.id, { amount: amountValue, benefits: benefitsValue as unknown[] });
+      const updated = await updateAdminSubscriptionTier(tier.id, { amount: amountValue, benefits: buildBenefits(fields) });
       tiers = tiers.map((t) => (t.id === tier.id ? updated : t));
       amountDrafts[tier.id] = String(updated.amount);
-      benefitsDrafts[tier.id] = JSON.stringify(updated.benefits, null, 2);
+      benefitDrafts[tier.id] = parseBenefits(updated.benefits);
       tierSavedAt[tier.id] = Date.now();
     } catch (err) {
       tierError[tier.id] = err instanceof AdminApiError ? err.message : "No se pudo guardar este tier.";
@@ -145,7 +180,7 @@
 
 <section class="block">
   <h2>Aportaciones — precio y beneficios</h2>
-  <p class="hint">Tiers del semestre activo{tiersPeriodLabel ? ` (${tiersPeriodLabel})` : ""}. Los beneficios son JSON libre — el tipo "descuento_casillero" ya lo interpreta el sistema para calcular el precio del casillero.</p>
+  <p class="hint">Tiers del semestre activo{tiersPeriodLabel ? ` (${tiersPeriodLabel})` : ""}. Cambia el monto y los descuentos, y toca Guardar.</p>
 
   {#if tiersLoading}
     <p class="muted">Cargando…</p>
@@ -156,16 +191,49 @@
       {#each tiers as tier (tier.id)}
         <div class="tier-card">
           <h3>{tier.name}</h3>
+
           <label class="field-label" for={`amt-${tier.id}`}>Monto (USD)</label>
           <div class="row">
             <span class="prefix">$</span>
             <input id={`amt-${tier.id}`} class="amount-input" type="number" step="0.01" min="0.01" bind:value={amountDrafts[tier.id]} />
           </div>
 
-          <label class="field-label" for={`ben-${tier.id}`}>Beneficios (JSON)</label>
-          <textarea id={`ben-${tier.id}`} class="benefits-input" rows="6" bind:value={benefitsDrafts[tier.id]}></textarea>
+          {#if benefitDrafts[tier.id]}
+            <label class="field-label" for={`casillero-${tier.id}`}>Descuento en casillero (%)</label>
+            <div class="row">
+              <input
+                id={`casillero-${tier.id}`}
+                class="amount-input"
+                type="number"
+                step="1"
+                min="0"
+                max="100"
+                bind:value={benefitDrafts[tier.id].casilleroPercent}
+              />
+              <span class="suffix">%</span>
+            </div>
 
-          <div class="row">
+            <label class="field-label" for={`billar-${tier.id}`}>Descuento en billar (%)</label>
+            <div class="row">
+              <input
+                id={`billar-${tier.id}`}
+                class="amount-input"
+                type="number"
+                step="1"
+                min="0"
+                max="100"
+                bind:value={benefitDrafts[tier.id].billarPercent}
+              />
+              <span class="suffix">%</span>
+            </div>
+
+            <label class="checkbox-row" for={`ps4-${tier.id}`}>
+              <input id={`ps4-${tier.id}`} type="checkbox" bind:checked={benefitDrafts[tier.id].ps4} />
+              Incluye acceso a PS4
+            </label>
+          {/if}
+
+          <div class="row save-row">
             <button class="save-btn" disabled={tierSaving[tier.id]} onclick={() => saveTier(tier)}>
               {tierSaving[tier.id] ? "Guardando…" : "Guardar"}
             </button>
@@ -222,12 +290,16 @@
     flex-wrap: wrap;
   }
 
-  .prefix {
+  .save-row {
+    margin-top: 16px;
+  }
+
+  .prefix,
+  .suffix {
     color: var(--ink-1);
   }
 
-  .amount-input,
-  .benefits-input {
+  .amount-input {
     background: var(--bg-panel);
     border: 1px solid var(--line-strong);
     border-radius: var(--radius-sm);
@@ -235,18 +307,7 @@
     font-family: inherit;
     padding: 8px 10px;
     font-size: 13.5px;
-  }
-
-  .amount-input {
     width: 120px;
-  }
-
-  .benefits-input {
-    width: 100%;
-    font-family: "Courier New", monospace;
-    font-size: 12.5px;
-    resize: vertical;
-    margin: 6px 0 10px;
   }
 
   .field-label {
@@ -254,6 +315,23 @@
     font-size: 12px;
     color: var(--ink-1);
     margin: 14px 0 6px;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 16px 0 0;
+    font-size: 13.5px;
+    color: var(--ink-0);
+    cursor: pointer;
+  }
+
+  .checkbox-row input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+    cursor: pointer;
   }
 
   .save-btn {
