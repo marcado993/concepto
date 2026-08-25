@@ -1,8 +1,23 @@
-import { IsIn, IsString, Matches } from "class-validator";
+import { IsIn, IsString, Length, Matches } from "class-validator";
 
 export class RentLockerDto {
   @IsString()
   lockerCode!: string;
+
+  // Código único institucional — dato personal REAL usado para localizar
+  // físicamente al dueño de un casillero (no un identificador interno
+  // nuestro). Hasta ahora User.uniqueCode nacía como placeholder
+  // ("PENDIENTE-<uuid>") en el primer login y nunca se completaba con un
+  // dato real — decisión consciente de diseño (ver docs/dominio/
+  // 06-iso27701-privacidad.md §3: "completar el código único institucional
+  // es un paso posterior y consciente, no implícito en el login social").
+  // El alquiler es justo ese paso: es obligatorio, no un placeholder más.
+  // Sin un formato EPN oficial confirmado, solo se valida longitud
+  // razonable — no se inventa un patrón más estricto que podría rechazar
+  // códigos reales válidos.
+  @IsString()
+  @Length(3, 20, { message: "El código único debe tener entre 3 y 20 caracteres" })
+  uniqueCode!: string;
 
   // Cédula ecuatoriana — 10 dígitos, sin guiones ni espacios (el frontend
   // los limpia antes de mandar). Se guarda en User (ver locker.service.ts)

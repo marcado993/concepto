@@ -148,7 +148,11 @@ export function createVenture(input: CreateVentureInput) {
 // alquiler en modo solo-lectura (ver backend/src/shared/auth/auth.controller.ts).
 export interface MeResponse {
   fullName: string;
-  uniqueCode: string;
+  /** null mientras siga siendo el placeholder interno ("PENDIENTE-...") —
+   *  mismo patrón que cedula/phone. El paso de alquiler lo pide como
+   *  campo obligatorio (dato real usado para localizar al dueño de un
+   *  casillero, no un identificador nuestro). */
+  uniqueCode: string | null;
   role: string;
   cedula: string | null;
   phone: string | null;
@@ -179,6 +183,7 @@ export function fetchLockers(): Promise<LockerFromApi[]> {
 // confirmLockerPayphonePayment() verifica el pago contra la API real.
 export interface RentLockerInput {
   lockerCode: string;
+  uniqueCode: string;
   cedula: string;
   phone: string;
   acceptedTerms: boolean;

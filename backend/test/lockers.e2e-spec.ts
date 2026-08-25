@@ -60,6 +60,19 @@ function testAuthHeader(userId: string, role: "ESTUDIANTE" | "PRESIDENTE" | "DIR
 // (precio único, sin recargo — ver rental-calculator.ts).
 const EXPECTED_LOCKER_AMOUNT_CENTS = 650;
 
+// Cuerpo válido de POST /lockers/rent — cedula/phone/acceptedTerms/uniqueCode
+// son todos obligatorios en RentLockerDto (ver rent-locker.dto.ts), así que
+// cualquier request de prueba que solo mande lockerCode se rechazaría con
+// 400 antes de llegar a la lógica que este archivo quiere probar.
+// uniqueCode es @unique en User (ver schema.prisma) — dos estudiantes
+// distintos nunca pueden compartir el mismo valor, así que cada llamador
+// pasa el suyo (importa sobre todo en el test de concurrencia, donde
+// userA y userB alquilan a la vez: reusar el mismo literal ahí causaría un
+// choque real de unicidad y ya no probaría la carrera del casillero).
+function validRentBody(lockerCode: string, uniqueCode = "E2E-CODE-001") {
+  return { lockerCode, cedula: "1723456789", phone: "0991234567", uniqueCode, acceptedTerms: true };
+}
+
 describe("Lockers (e2e) — caja negra contra Postgres real", () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -145,7 +158,7 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
   });
 
   it("Dado un intento de alquiler sin header de autenticación, Cuando se llama POST /lockers/rent, Entonces responde 401 (JwtAuthGuard real de la app, no el mock, rechaza sin req.user)", async () => {
-    const res = await request(app.getHttpServer()).post("/lockers/rent").send({ lockerCode: LOCKER_CODE });
+    const res = await request(app.getHttpServer()).post("/lockers/rent").send(validRentBody(LOCKER_CODE));
 
     expect(res.status).toBe(401);
   });
@@ -154,7 +167,7 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
     const res = await request(app.getHttpServer())
       .post("/lockers/rent")
       .set("Authorization", testAuthHeader(userAId!))
-      .send({ lockerCode: LOCKER_CODE });
+      .send(validRentBody(LOCKER_CODE));
 
     expect(res.status).toBe(201);
 
@@ -189,11 +202,11 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
       request(app.getHttpServer())
         .post("/lockers/rent")
         .set("Authorization", testAuthHeader(userAId!))
-        .send({ lockerCode: LOCKER_CODE }),
+        .send(validRentBody(LOCKER_CODE, "E2E-CODE-RACE-A")),
       request(app.getHttpServer())
         .post("/lockers/rent")
         .set("Authorization", testAuthHeader(userBId!))
-        .send({ lockerCode: LOCKER_CODE }),
+        .send(validRentBody(LOCKER_CODE, "E2E-CODE-RACE-B")),
     ]);
 
     const statuses = [resA.status, resB.status].sort();
@@ -222,7 +235,7 @@ describe("Lockers (e2e) — caja negra contra Postgres real", () => {
     const rentRes = await request(app.getHttpServer())
       .post("/lockers/rent")
       .set("Authorization", testAuthHeader(userAId!))
-      .send({ lockerCode: LOCKER_CODE });
+      .send(validRentBody(LOCKER_CODE, "E2E-CODE-CONFIRM-A"));
     const rentalId = rentRes.body.id;
 
     const [resA, resB] = await Promise.all([

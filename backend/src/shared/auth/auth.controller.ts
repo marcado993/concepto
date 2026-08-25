@@ -14,6 +14,7 @@ import { Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { Public } from "./public.decorator";
 import { PrismaService } from "../prisma/prisma.service";
+import { PENDING_UNIQUE_CODE_PREFIX } from "./auth.service";
 import { OidcRedirectStrategy } from "./strategies/oidc-redirect.strategy";
 import { SocialEmbeddedStrategy } from "./strategies/social-embedded.strategy";
 import { EmailOtpStrategy } from "./strategies/email-otp.strategy";
@@ -120,7 +121,14 @@ export class AuthController {
       select: { fullName: true, uniqueCode: true, role: true, cedula: true, phone: true },
     });
     if (!user) throw new UnauthorizedException();
-    return user;
+    // Mismo patrón que cedula/phone: el frontend nunca debe ver el
+    // placeholder interno "PENDIENTE-<uuid>" — null significa "todavía no
+    // lo completó", y el paso de alquiler lo pide como campo obligatorio
+    // (ver rent-locker.dto.ts).
+    return {
+      ...user,
+      uniqueCode: user.uniqueCode.startsWith(PENDING_UNIQUE_CODE_PREFIX) ? null : user.uniqueCode,
+    };
   }
 
   @Public()

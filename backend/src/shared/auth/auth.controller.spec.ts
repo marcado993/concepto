@@ -58,7 +58,7 @@ describe("AuthController", () => {
     controller = moduleRef.get(AuthController);
   });
 
-  it("Dado un usuario autenticado, Cuando pide /auth/me, Entonces retorna nombre/código/rol/cédula/celular, nunca el logtoSub ni otros campos internos", async () => {
+  it("Dado un usuario autenticado sin código único todavía (placeholder PENDIENTE-*), Cuando pide /auth/me, Entonces lo devuelve como null — el placeholder es un detalle interno, no un dato real del estudiante", async () => {
     const req = { user: { id: "user-1" } } as any;
 
     const result = await controller.me(req);
@@ -71,10 +71,31 @@ describe("AuthController", () => {
     );
     expect(result).toEqual({
       fullName: "Estudiante EPN",
-      uniqueCode: "PENDIENTE-abc",
+      uniqueCode: null,
       role: "ESTUDIANTE",
       cedula: null,
       phone: null,
+    });
+  });
+
+  it("Dado un usuario que ya registró su código único institucional (al alquilar un casillero), Cuando pide /auth/me, Entonces lo devuelve tal cual — nunca el logtoSub ni otros campos internos", async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      fullName: "Estudiante EPN",
+      uniqueCode: "AEIS-2026-001",
+      role: "ESTUDIANTE",
+      cedula: "1723456789",
+      phone: "0991234567",
+    });
+    const req = { user: { id: "user-1" } } as any;
+
+    const result = await controller.me(req);
+
+    expect(result).toEqual({
+      fullName: "Estudiante EPN",
+      uniqueCode: "AEIS-2026-001",
+      role: "ESTUDIANTE",
+      cedula: "1723456789",
+      phone: "0991234567",
     });
   });
 
