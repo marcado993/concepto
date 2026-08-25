@@ -4,9 +4,9 @@
     updateAdminLockerPricing,
     fetchAdminSubscriptionTiers,
     updateAdminSubscriptionTier,
-    ApiError,
+    AdminApiError,
     type AdminSubscriptionTier,
-  } from "../api";
+  } from "./adminApi";
 
   // ── Precio del casillero ────────────────────────────────────────────────
   let lockerPeriodLabel = $state("");
@@ -27,7 +27,7 @@
         lockerInput = String(data.basePrice);
       })
       .catch((err) => {
-        lockerError = err instanceof ApiError ? err.message : "No se pudo cargar el precio del casillero.";
+        lockerError = err instanceof AdminApiError ? err.message : "No se pudo cargar el precio del casillero.";
       })
       .finally(() => (lockerLoading = false));
   }
@@ -47,7 +47,7 @@
       lockerInput = String(updated.basePrice);
       lockerSavedAt = Date.now();
     } catch (err) {
-      lockerError = err instanceof ApiError ? err.message : "No se pudo guardar el precio.";
+      lockerError = err instanceof AdminApiError ? err.message : "No se pudo guardar el precio.";
     } finally {
       lockerSaving = false;
     }
@@ -81,7 +81,7 @@
         }
       })
       .catch((err) => {
-        tiersError = err instanceof ApiError ? err.message : "No se pudo cargar las aportaciones.";
+        tiersError = err instanceof AdminApiError ? err.message : "No se pudo cargar las aportaciones.";
       })
       .finally(() => (tiersLoading = false));
   }
@@ -114,7 +114,7 @@
       benefitsDrafts[tier.id] = JSON.stringify(updated.benefits, null, 2);
       tierSavedAt[tier.id] = Date.now();
     } catch (err) {
-      tierError[tier.id] = err instanceof ApiError ? err.message : "No se pudo guardar este tier.";
+      tierError[tier.id] = err instanceof AdminApiError ? err.message : "No se pudo guardar este tier.";
     } finally {
       tierSaving[tier.id] = false;
     }

@@ -3,54 +3,47 @@
   // estudiante: build propio (ver admin.html/src/admin-main.ts/
   // vite.admin.config.ts), servido por Caddy SOLO en la red Tailscale
   // (panel.aeis-app.online, ver Caddyfile) — no vive en aeis.app/Vercel ni
-  // es alcanzable desde el internet público, ni siquiera para ver el
-  // "acceso restringido". Reutiliza Login.svelte (con hideSocial: GitHub/
-  // Google navegan a un origen fijo que no es este, ver el comentario en
-  // Login.svelte) y exige el rol PRESIDENTE/DIRECTOR contra el backend
-  // antes de mostrar nada (RolesGuard ya lo exige en cada endpoint
-  // /admin/*; esta pantalla solo evita el parpadeo de "cargando" seguido
-  // de puros 403).
-  import Login from "../Login.svelte";
+  // es alcanzable desde el internet público. Login propio de correo+
+  // contraseña (AdminLogin.svelte / adminAuth.svelte.ts), completamente
+  // aparte de Logto/User — pedido explícito: que el mismo correo real de
+  // un directivo no termine controlando la sesión de administrador Y la de
+  // estudiante con el mismo login/token.
+  import AdminLogin from "./AdminLogin.svelte";
   import AdminPricing from "./AdminPricing.svelte";
   import AdminUsers from "./AdminUsers.svelte";
   import AdminAuditLog from "./AdminAuditLog.svelte";
-  import { isAuthenticated, logout } from "../auth.svelte";
-  import { fetchMe, ApiError, type MeResponse } from "../api";
+  import { isAdminAuthenticated, adminLogout } from "./adminAuth.svelte";
+  import { fetchAdminMe, AdminApiError, type AdminMe } from "./adminApi";
 
-  const authed = $derived(isAuthenticated());
+  const authed = $derived(isAdminAuthenticated());
 
-  let me = $state<MeResponse | null>(null);
+  let me = $state<AdminMe | null>(null);
   let meError = $state<string | null>(null);
   $effect(() => {
     if (!authed) return;
-    fetchMe()
+    fetchAdminMe()
       .then((data) => (me = data))
       .catch((err) => {
-        meError = err instanceof ApiError ? err.message : "No se pudo verificar tu sesión.";
+        // Token vencido/inválido — mismo efecto que cerrar sesión: vuelve
+        // a mostrar AdminLogin en vez de quedarse en un estado a medias.
+        meError = err instanceof AdminApiError ? err.message : "No se pudo verificar tu sesión.";
+        adminLogout();
       });
   });
-
-  const isAdmin = $derived(me?.role === "PRESIDENTE" || me?.role === "DIRECTOR");
 
   type Tab = "precios" | "usuarios" | "actividad";
   let tab = $state<Tab>("precios");
 </script>
 
 {#if !authed}
-  <Login onclose={() => {}} showBack={false} errorMessage={null} hideSocial />
+  <AdminLogin />
 {:else if meError}
   <div class="gate">
     <p>{meError}</p>
-    <a href="https://aeis.app">Ir a AEIS-APP</a>
   </div>
 {:else if !me}
   <div class="gate">
     <p>Verificando acceso…</p>
-  </div>
-{:else if !isAdmin}
-  <div class="gate">
-    <p>Esta sección es solo para la directiva de AEIS.</p>
-    <a href="https://aeis.app">Ir a AEIS-APP</a>
   </div>
 {:else}
   <div class="admin-shell">
@@ -60,8 +53,8 @@
         <span>AEIS · Administración</span>
       </div>
       <div class="header-right">
-        <span class="whoami">{me.fullName}</span>
-        <button class="link-btn" onclick={() => logout()}>Cerrar sesión</button>
+        <span class="whoami">{me.email}</span>
+        <button class="link-btn" onclick={() => adminLogout()}>Cerrar sesión</button>
       </div>
     </header>
 
@@ -95,10 +88,6 @@
     color: var(--ink-1);
     text-align: center;
     padding: 24px;
-  }
-
-  .gate a {
-    color: var(--accent);
   }
 
   .admin-shell {

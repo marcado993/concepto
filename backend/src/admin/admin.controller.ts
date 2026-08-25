@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from "@nestjs/common";
 import { Request } from "express";
-import { Role } from "@prisma/client";
-import { Roles } from "../shared/auth/roles.decorator";
+import { Public } from "../shared/auth/public.decorator";
+import { AdminJwtAuthGuard } from "./admin-auth/admin-jwt-auth.guard";
 import { AdminService } from "./admin.service";
 import { ListUsersQueryDto } from "./dto/list-users.dto";
 import { ListAuditLogsQueryDto } from "./dto/list-audit-logs.dto";
@@ -10,12 +10,16 @@ import { UpdateLockerPricingDto } from "./dto/update-locker-pricing.dto";
 
 type AuthedRequest = Request & { user: { id: string } };
 
-// Todo lo de acá exige PRESIDENTE — RolesGuard resuelve la jerarquía, así
-// que DIRECTOR (que hereda todo lo de PRESIDENTE, ver roles.guard.ts)
-// también entra. Un ESTUDIANTE nunca llega ni siquiera a los GET: JwtAuthGuard
-// ya exige sesión, y RolesGuard corta antes del controller.
+// @Public() aquí NO significa "sin autenticación" — significa "sáltate el
+// JwtAuthGuard GLOBAL (que valida contra Logto), esto usa su propio guard"
+// (ver admin-jwt-auth.guard.ts / admin-auth.service.ts: login propio
+// correo+contraseña, completamente aparte de User/Logto). Sin @Roles():
+// llegar hasta acá YA exige un AdminAccount válido — no existe el concepto
+// de "AdminAccount sin privilegios" que RolesGuard tendría que filtrar,
+// a diferencia de User (donde ESTUDIANTE/PRESIDENTE/DIRECTOR conviven).
 @Controller("admin")
-@Roles(Role.PRESIDENTE)
+@Public()
+@UseGuards(AdminJwtAuthGuard)
 export class AdminController {
   constructor(private readonly admin: AdminService) {}
 
@@ -35,7 +39,7 @@ export class AdminController {
     @Body() dto: UpdateSubscriptionTierDto,
     @Req() req: AuthedRequest
   ) {
-    return this.admin.updateSubscriptionTier(id, dto, { actorId: req.user.id, ipAddress: req.ip });
+    return this.admin.updateSubscriptionTier(id, dto, { adminActorId: req.user.id, ipAddress: req.ip });
   }
 
   @Get("locker-pricing")
@@ -45,7 +49,7 @@ export class AdminController {
 
   @Patch("locker-pricing")
   updateLockerPricing(@Body() dto: UpdateLockerPricingDto, @Req() req: AuthedRequest) {
-    return this.admin.updateLockerPricing(dto, { actorId: req.user.id, ipAddress: req.ip });
+    return this.admin.updateLockerPricing(dto, { adminActorId: req.user.id, ipAddress: req.ip });
   }
 
   @Get("audit-logs")

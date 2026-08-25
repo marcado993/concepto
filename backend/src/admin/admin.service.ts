@@ -8,7 +8,10 @@ import { UpdateSubscriptionTierDto } from "./dto/update-subscription-tier.dto";
 import { UpdateLockerPricingDto } from "./dto/update-locker-pricing.dto";
 
 export interface AdminActionContext {
-  actorId: string;
+  // El actor de toda acción hecha desde el panel es SIEMPRE un
+  // AdminAccount (login propio, ver admin-auth.service.ts), nunca un User
+  // — el panel es una identidad completamente aparte.
+  adminActorId: string;
   ipAddress?: string;
 }
 
@@ -97,7 +100,7 @@ export class AdminService {
     });
 
     await this.audit.record({
-      actorId: ctx.actorId,
+      adminActorId: ctx.adminActorId,
       action: "admin.subscription_tier.updated",
       entityType: "SubscriptionTier",
       entityId: tierId,
@@ -123,7 +126,7 @@ export class AdminService {
     });
 
     await this.audit.record({
-      actorId: ctx.actorId,
+      adminActorId: ctx.adminActorId,
       action: "admin.locker_pricing.updated",
       entityType: "Period",
       entityId: period.id,
@@ -144,7 +147,10 @@ export class AdminService {
       this.prisma.auditLog.count({ where }),
       this.prisma.auditLog.findMany({
         where,
-        include: { actor: { select: { fullName: true } } },
+        // El actor puede ser un User (Logto) o un AdminAccount (panel) —
+        // nunca los dos — ver el comentario grande sobre AuditLog en
+        // schema.prisma. Se piden ambas relaciones y se usa la que venga.
+        include: { actor: { select: { fullName: true } }, adminActor: { select: { email: true } } },
         orderBy: { createdAt: "desc" },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -160,8 +166,8 @@ export class AdminService {
         action: l.action,
         entityType: l.entityType,
         entityId: l.entityId,
-        actorId: l.actorId,
-        actorName: l.actor.fullName,
+        actorId: l.actorId ?? l.adminActorId,
+        actorName: l.actor?.fullName ?? (l.adminActor ? `${l.adminActor.email} (admin)` : "—"),
         ipAddress: l.ipAddress,
         metadata: l.metadata,
         createdAt: l.createdAt,

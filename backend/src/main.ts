@@ -11,7 +11,7 @@ import { AppModule } from "./app.module";
 // (07-iso27001-sgsi-politica.md): sin esta validación, un despliegue sin
 // COOKIE_SECRET simplemente rechaza todos los logins con un 400 confuso,
 // en vez de un error de arranque claro.
-const REQUIRED_ENV = ["COOKIE_SECRET", "LOGTO_ISSUER", "LOGTO_APP_ID", "LOGTO_AUDIENCE", "FRONTEND_ORIGIN"];
+const REQUIRED_ENV = ["COOKIE_SECRET", "LOGTO_ISSUER", "LOGTO_APP_ID", "LOGTO_AUDIENCE", "FRONTEND_ORIGIN", "ADMIN_JWT_SECRET"];
 
 // Frontend (Vercel) y backend (VPS) desacoplados — CORS explícito en vez de
 // "*", porque este backend maneja pagos y datos KYC/biométricos (ver

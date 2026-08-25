@@ -1,0 +1,141 @@
+// Cliente del backend para el panel de administración — separado a
+// propósito de ../api.ts (esa es la sesión de estudiante/Logto). Todo acá
+// usa adminAuthHeader() (ver adminAuth.svelte.ts), nunca authHeader().
+import { adminAuthHeader } from "./adminAuth.svelte";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+
+export class AdminApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number
+  ) {
+    super(message);
+    this.name = "AdminApiError";
+  }
+}
+
+function networkErrorMessage(): string {
+  return "No se pudo conectar con el servidor — revisa tu conexión a internet e intenta de nuevo.";
+}
+
+async function friendlyErrorMessage(res: Response, path: string): Promise<string> {
+  try {
+    const body = await res.clone().json();
+    if (typeof body?.message === "string") return body.message;
+    if (Array.isArray(body?.message)) return body.message.join(", ");
+  } catch {
+    // el body no era JSON — cae al mensaje genérico de abajo
+  }
+  return `Backend respondió ${res.status} en ${path}`;
+}
+
+async function getJSON<T>(path: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { headers: adminAuthHeader() });
+  } catch {
+    throw new AdminApiError(networkErrorMessage());
+  }
+  if (!res.ok) throw new AdminApiError(await friendlyErrorMessage(res, path), res.status);
+  return res.json() as Promise<T>;
+}
+
+async function patchJSON<T>(path: string, body: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...adminAuthHeader() },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new AdminApiError(networkErrorMessage());
+  }
+  if (!res.ok) throw new AdminApiError(await friendlyErrorMessage(res, path), res.status);
+  return res.json() as Promise<T>;
+}
+
+export interface AdminMe {
+  email: string;
+  role: string;
+}
+
+export function fetchAdminMe(): Promise<AdminMe> {
+  return getJSON<AdminMe>("/admin/auth/me");
+}
+
+export interface AdminUser {
+  id: string;
+  fullName: string;
+  email: string | null;
+  uniqueCode: string;
+  role: string;
+  cedula: string | null;
+  phone: string | null;
+  createdAt: string;
+}
+
+export interface AdminUsersPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  users: AdminUser[];
+}
+
+export function fetchAdminUsers(page: number, search?: string): Promise<AdminUsersPage> {
+  const params = new URLSearchParams({ page: String(page) });
+  if (search) params.set("search", search);
+  return getJSON<AdminUsersPage>(`/admin/users?${params.toString()}`);
+}
+
+export interface AdminSubscriptionTier {
+  id: string;
+  name: string;
+  amount: string;
+  benefits: unknown;
+}
+
+export function fetchAdminSubscriptionTiers(): Promise<{ periodLabel: string; tiers: AdminSubscriptionTier[] }> {
+  return getJSON("/admin/subscription-tiers");
+}
+
+export function updateAdminSubscriptionTier(
+  id: string,
+  input: { amount?: number; benefits?: unknown[] }
+): Promise<AdminSubscriptionTier> {
+  return patchJSON(`/admin/subscription-tiers/${id}`, input);
+}
+
+export function fetchAdminLockerPricing(): Promise<{ periodLabel: string; basePrice: number }> {
+  return getJSON("/admin/locker-pricing");
+}
+
+export function updateAdminLockerPricing(basePrice: number): Promise<{ periodLabel: string; basePrice: number }> {
+  return patchJSON("/admin/locker-pricing", { basePrice });
+}
+
+export interface AdminAuditLogEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  actorId: string;
+  actorName: string;
+  ipAddress: string | null;
+  metadata: unknown;
+  createdAt: string;
+}
+
+export interface AdminAuditLogsPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  logs: AdminAuditLogEntry[];
+}
+
+export function fetchAdminAuditLogs(page: number, action?: string): Promise<AdminAuditLogsPage> {
+  const params = new URLSearchParams({ page: String(page) });
+  if (action) params.set("action", action);
+  return getJSON<AdminAuditLogsPage>(`/admin/audit-logs?${params.toString()}`);
+}

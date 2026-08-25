@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchAdminAuditLogs, ApiError, type AdminAuditLogEntry } from "../api";
+  import { fetchAdminAuditLogs, AdminApiError, type AdminAuditLogEntry } from "./adminApi";
 
   let logs = $state<AdminAuditLogEntry[]>([]);
   let total = $state(0);
@@ -19,7 +19,7 @@
         total = data.total;
       })
       .catch((err) => {
-        error = err instanceof ApiError ? err.message : "No se pudo cargar el registro de actividad.";
+        error = err instanceof AdminApiError ? err.message : "No se pudo cargar el registro de actividad.";
       })
       .finally(() => (loading = false));
   }

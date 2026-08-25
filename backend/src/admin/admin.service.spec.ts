@@ -93,13 +93,13 @@ describe("AdminService.updateSubscriptionTier", () => {
     prisma.subscriptionTier.findUnique.mockResolvedValue(existingTier);
     prisma.subscriptionTier.update.mockResolvedValue({ ...existingTier, amount: 24.99 });
 
-    const result = await service.updateSubscriptionTier("tier-1", { amount: 24.99 }, { actorId: "admin-1", ipAddress: "1.2.3.4" });
+    const result = await service.updateSubscriptionTier("tier-1", { amount: 24.99 }, { adminActorId: "admin-1", ipAddress: "1.2.3.4" });
 
     expect(result.amount).toBe(24.99);
     expect(prisma.subscriptionTier.update).toHaveBeenCalledWith({ where: { id: "tier-1" }, data: { amount: 24.99 } });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
-        actorId: "admin-1",
+        adminActorId: "admin-1",
         action: "admin.subscription_tier.updated",
         entityType: "SubscriptionTier",
         entityId: "tier-1",
@@ -114,7 +114,7 @@ describe("AdminService.updateSubscriptionTier", () => {
     const newBenefits = [{ type: "descuento_casillero", percent: 25 }, { type: "acceso_ps4", included: true }];
     prisma.subscriptionTier.update.mockResolvedValue({ ...existingTier, benefits: newBenefits });
 
-    await service.updateSubscriptionTier("tier-1", { benefits: newBenefits }, { actorId: "admin-1" });
+    await service.updateSubscriptionTier("tier-1", { benefits: newBenefits }, { adminActorId: "admin-1" });
 
     expect(prisma.subscriptionTier.update).toHaveBeenCalledWith({ where: { id: "tier-1" }, data: { benefits: newBenefits } });
   });
@@ -124,7 +124,7 @@ describe("AdminService.updateSubscriptionTier", () => {
     prisma.subscriptionTier.findUnique.mockResolvedValue(existingTier);
 
     await expect(
-      service.updateSubscriptionTier("tier-1", { benefits: [{ percent: 10 }] }, { actorId: "admin-1" })
+      service.updateSubscriptionTier("tier-1", { benefits: [{ percent: 10 }] }, { adminActorId: "admin-1" })
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.subscriptionTier.update).not.toHaveBeenCalled();
   });
@@ -133,20 +133,20 @@ describe("AdminService.updateSubscriptionTier", () => {
     const { service, prisma } = await buildService();
     prisma.subscriptionTier.findUnique.mockResolvedValue({ ...existingTier, periodId: "period-vieja" });
 
-    await expect(service.updateSubscriptionTier("tier-1", { amount: 1 }, { actorId: "admin-1" })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.updateSubscriptionTier("tier-1", { amount: 1 }, { adminActorId: "admin-1" })).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("Dado un tier inexistente, Cuando se intenta editar, Entonces lanza NotFoundException", async () => {
     const { service, prisma } = await buildService();
     prisma.subscriptionTier.findUnique.mockResolvedValue(null);
 
-    await expect(service.updateSubscriptionTier("no-existe", { amount: 1 }, { actorId: "admin-1" })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.updateSubscriptionTier("no-existe", { amount: 1 }, { adminActorId: "admin-1" })).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("Dado un DTO vacío (ni amount ni benefits), Cuando se actualiza, Entonces rechaza con BadRequestException", async () => {
     const { service } = await buildService();
 
-    await expect(service.updateSubscriptionTier("tier-1", {}, { actorId: "admin-1" })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updateSubscriptionTier("tier-1", {}, { adminActorId: "admin-1" })).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -163,7 +163,7 @@ describe("AdminService.getLockerPricing / updateLockerPricing", () => {
     const { service, prisma, audit } = await buildService();
     prisma.period.update.mockResolvedValue({ ...TEST_PERIOD, lockerBasePrice: 7.5 });
 
-    const result = await service.updateLockerPricing({ basePrice: 7.5 }, { actorId: "admin-1", ipAddress: "1.2.3.4" });
+    const result = await service.updateLockerPricing({ basePrice: 7.5 }, { adminActorId: "admin-1", ipAddress: "1.2.3.4" });
 
     expect(result.basePrice).toBe(7.5);
     expect(prisma.period.update).toHaveBeenCalledWith({ where: { id: TEST_PERIOD.id }, data: { lockerBasePrice: 7.5 } });
@@ -200,6 +200,32 @@ describe("AdminService.listAuditLogs", () => {
 
     expect(result.logs[0]).toEqual(
       expect.objectContaining({ action: "locker.rental.created", actorName: "Luis Guerrero", actorId: "user-1" })
+    );
+  });
+
+  it("Dado un evento generado desde el PANEL (adminActor, no actor — ver admin-auth), Cuando se lista, Entonces muestra el correo del admin en vez de reventar leyendo actor.fullName de null", async () => {
+    const { service, prisma } = await buildService();
+    prisma.auditLog.count.mockResolvedValue(1);
+    prisma.auditLog.findMany.mockResolvedValue([
+      {
+        id: "log-2",
+        action: "admin.locker_pricing.updated",
+        entityType: "Period",
+        entityId: "period-1",
+        actorId: null,
+        actor: null,
+        adminActorId: "admin-1",
+        adminActor: { email: "presidenta@aeis.app" },
+        ipAddress: "1.2.3.4",
+        metadata: { before: 6.5, after: 7.5 },
+        createdAt: new Date("2026-08-25T10:00:00Z"),
+      },
+    ]);
+
+    const result = await service.listAuditLogs({ page: 1, pageSize: 30 });
+
+    expect(result.logs[0]).toEqual(
+      expect.objectContaining({ actorId: "admin-1", actorName: "presidenta@aeis.app (admin)" })
     );
   });
 

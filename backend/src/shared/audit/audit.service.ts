@@ -17,14 +17,21 @@ import { PrismaService } from "../prisma/prisma.service";
 // la transacción falla, el registro de auditoría también se revierte, así
 // nunca queda un alquiler sin su rastro (o viceversa).
 
-export interface AuditEntry {
-  actorId: string;
+// Dos tipos de actor autenticado desde que existe el panel de
+// administración (AdminAccount, login propio correo+contraseña — ver
+// admin-auth.service.ts), separado a propósito de User/Logto. El tipo
+// unión obliga a pasar EXACTAMENTE uno de los dos en cada llamado — nunca
+// ninguno (mismo principio de "ningún dato desacoplado" que ya regía
+// actorId como NOT NULL), nunca los dos a la vez.
+type AuditActor = { actorId: string; adminActorId?: never } | { actorId?: never; adminActorId: string };
+
+export type AuditEntry = AuditActor & {
   action: string;
   entityType: string;
   entityId: string;
   ipAddress?: string;
   metadata?: Record<string, unknown>;
-}
+};
 
 type PrismaTx = Prisma.TransactionClient | PrismaClient;
 
@@ -36,6 +43,7 @@ export class AuditService {
     return tx.auditLog.create({
       data: {
         actorId: entry.actorId,
+        adminActorId: entry.adminActorId,
         action: entry.action,
         entityType: entry.entityType,
         entityId: entry.entityId,

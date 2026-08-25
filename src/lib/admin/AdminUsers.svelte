@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchAdminUsers, ApiError, type AdminUser } from "../api";
+  import { fetchAdminUsers, AdminApiError, type AdminUser } from "./adminApi";
 
   let users = $state<AdminUser[]>([]);
   let total = $state(0);
@@ -18,7 +18,7 @@
         total = data.total;
       })
       .catch((err) => {
-        error = err instanceof ApiError ? err.message : "No se pudo cargar la lista de estudiantes.";
+        error = err instanceof AdminApiError ? err.message : "No se pudo cargar la lista de estudiantes.";
       })
       .finally(() => (loading = false));
   }

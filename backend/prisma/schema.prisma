@@ -211,16 +211,46 @@ model Subscription {
   @@map("subscriptions")
 }
 
+// Cuenta del panel de administración (panel.aeis-app.online) — a
+// PROPÓSITO separada de User/Logto: el panel es una app aparte (solo por
+// Tailscale, ver Caddyfile), y el mismo correo real de un directivo
+// (ej. quien administra Y también es estudiante) no debe terminar
+// controlando ambas identidades con la misma sesión/token — se pidió
+// explícitamente que fuera un login propio, correo+contraseña, sin pasar
+// por Logto. Ver admin-auth.service.ts.
+model AdminAccount {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(PRESIDENTE) // solo PRESIDENTE/DIRECTOR tiene sentido acá — nunca ESTUDIANTE
+  createdAt    DateTime @default(now())
+
+  auditLogs AuditLog[] @relation("AuditAdminActor")
+
+  @@map("admin_accounts")
+}
+
+// actorId Y adminActorId son AMBOS nullable, pero AuditService.record()
+// (código de aplicación, ver audit.service.ts) exige por tipos que se pase
+// EXACTAMENTE uno de los dos — nunca los dos, nunca ninguno. Esto reemplaza
+// el "actorId NOT NULL" original ahora que existen dos tipos de actor
+// autenticado (User vía Logto, AdminAccount vía el panel propio) y Prisma
+// no soporta una FK polimórfica a una sola columna. El principio de
+// "ningún dato desacoplado" (ver encabezado de este archivo) se mantiene
+// igual: todo evento sigue apuntando a una cuenta real identificada, solo
+// que ahora puede ser cualquiera de las dos tablas de cuentas.
 model AuditLog {
-  id         String   @id @default(uuid())
-  actorId    String
-  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
-  action     String // ej. "locker.rental.created", "subscription.created"
-  entityType String // ej. "LockerRental"
-  entityId   String
-  ipAddress  String?
-  metadata   Json?
-  createdAt  DateTime @default(now())
+  id           String        @id @default(uuid())
+  actorId      String?
+  actor        User?         @relation("AuditActor", fields: [actorId], references: [id])
+  adminActorId String?
+  adminActor   AdminAccount? @relation("AuditAdminActor", fields: [adminActorId], references: [id])
+  action       String // ej. "locker.rental.created", "subscription.created"
+  entityType   String // ej. "LockerRental"
+  entityId     String
+  ipAddress    String?
+  metadata     Json?
+  createdAt    DateTime      @default(now())
 
   @@index([entityType, entityId])
   @@map("audit_logs")
