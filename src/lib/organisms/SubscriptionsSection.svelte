@@ -76,3 +76,123 @@
     onsubscribed={() => onsubscribed?.()}
   />
 {/if}
+
+<style>
+  .tier-list {
+    padding: 8px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .tier-card {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .tier-card:hover {
+      border-color: var(--sheet-accent);
+      transform: translateY(-1px);
+    }
+  }
+
+  .tier-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .tier-name {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 16px;
+    letter-spacing: 0.02em;
+    color: #eafff5;
+  }
+
+  .tier-price {
+    font-family: var(--font-heading);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--sheet-accent);
+    flex-shrink: 0;
+  }
+
+  .tier-benefits {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .tier-benefits li {
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: rgba(234, 255, 245, 0.75);
+    padding-left: 16px;
+    position: relative;
+  }
+  .tier-benefits li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--sheet-accent);
+    font-size: 11px;
+  }
+
+  .tier-benefit-base {
+    opacity: 0.75;
+    font-style: italic;
+  }
+
+  .tier-cta {
+    display: inline-block;
+    margin-top: 12px;
+    font-family: var(--font-heading, sans-serif);
+    font-size: 12.5px;
+    letter-spacing: 0.03em;
+    color: var(--sheet-accent);
+  }
+
+  .list-in {
+    opacity: 0;
+    animation: list-materialize 0.44s cubic-bezier(0.18, 0.9, 0.24, 1.06) forwards;
+    animation-delay: calc(var(--li, 0) * 45ms);
+  }
+
+  @keyframes list-materialize {
+    0% {
+      opacity: 0;
+      transform: translateY(12px) scale(0.97);
+      filter: brightness(0.55);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: brightness(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .list-in {
+      opacity: 1;
+      animation: none;
+      transform: none;
+      filter: none;
+    }
+  }
+</style>
+
