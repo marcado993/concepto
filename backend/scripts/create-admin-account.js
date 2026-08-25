@@ -1,18 +1,38 @@
 // Crea (o resetea la contraseña de) una cuenta del panel de administración
 // — completamente aparte de User/Logto, ver src/admin/admin-auth/. Se
-// corre a mano, UNA vez por cuenta nueva (o cuando alguien olvida su
-// contraseña), nunca desde la app.
+// corre a mano, dentro del contenedor del backend (para tener
+// DATABASE_URL real), nunca desde la app.
 //
-// Uso (dentro del contenedor del backend, para tener DATABASE_URL real):
-//   ADMIN_EMAIL="correo@real.com" ADMIN_PASSWORD="una-contraseña-de-verdad" node create-admin-account.js
-//   ADMIN_ROLE=DIRECTOR opcional (por defecto PRESIDENTE) — no cambia qué
-//   puede hacer en el panel hoy (ver admin.controller.ts: cualquier
-//   AdminAccount válida entra igual), solo queda registrado para más
-//   adelante si se diferencia.
+// Casos de uso (formato BDD, mismo estilo que los describe/it del resto
+// del backend — ver cualquier *.spec.ts):
 //
-// Es un upsert por correo: correrlo de nuevo con el MISMO correo y una
-// contraseña distinta actualiza esa cuenta — es el mecanismo para
-// "olvidé mi contraseña", no hace falta nada más.
+//   Escenario: primera cuenta de un correo nuevo
+//     Dado que ADMIN_EMAIL no tiene ninguna cuenta de administración todavía
+//     Cuando se corre este script pasando ADMIN_EMAIL y ADMIN_PASSWORD
+//       como VARIABLES DE ENTORNO del comando (nunca escritas en un
+//       archivo ni pegadas en este código — así un escáner de secretos
+//       como GitGuardian no confunde un ejemplo de uso con una contraseña
+//       real filtrada)
+//     Entonces se crea una cuenta nueva, con la contraseña cifrada con
+//       bcrypt antes de guardarse — nunca en texto plano
+//
+//   Escenario: alguien olvidó su contraseña
+//     Dado que ADMIN_EMAIL YA tiene una cuenta de administración
+//     Cuando se corre este script de nuevo con ese mismo correo y una
+//       contraseña distinta
+//     Entonces se actualiza la contraseña de esa cuenta — mismo camino
+//       que "olvidé mi contraseña", no hace falta nada más
+//
+//   Escenario: rol opcional
+//     Dado que no se pasa ADMIN_ROLE
+//     Cuando se crea o actualiza la cuenta
+//     Entonces queda como PRESIDENTE por defecto — hoy PRESIDENTE y
+//       DIRECTOR entran igual al panel (ver admin.controller.ts, cualquier
+//       AdminAccount válida entra), el rol solo queda registrado por si
+//       se diferencia más adelante
+//
+// Invocación real (dentro del contenedor):
+//   ADMIN_EMAIL=<tu-correo> ADMIN_PASSWORD=<contraseña-de-8+-caracteres> [ADMIN_ROLE=PRESIDENTE|DIRECTOR] node create-admin-account.js
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
 
@@ -22,7 +42,7 @@ async function main() {
   const role = process.env.ADMIN_ROLE || "PRESIDENTE";
 
   if (!email || !password) {
-    console.error('Uso: ADMIN_EMAIL="..." ADMIN_PASSWORD="..." [ADMIN_ROLE=PRESIDENTE|DIRECTOR] node create-admin-account.js');
+    console.error("Uso: ADMIN_EMAIL=<correo> ADMIN_PASSWORD=<contraseña> [ADMIN_ROLE=PRESIDENTE|DIRECTOR] node create-admin-account.js");
     process.exit(1);
   }
   if (password.length < 8) {
