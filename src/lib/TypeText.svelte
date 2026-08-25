@@ -3,7 +3,7 @@
     text: string;
     speed?: number;
     startDelay?: number;
-    tag?: "span" | "h1" | "h2" | "p";
+    tag?: "span" | "h1" | "h2" | "h3" | "p";
     class?: string;
   }
 
