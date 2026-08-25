@@ -134,6 +134,35 @@ describe("LockerService.rent", () => {
     expect(prisma.__tx.lockerRental.create).not.toHaveBeenCalled();
   });
 
+  it("Dado un estudiante con una reserva PENDING del MISMO casillero (salió del widget de PayPhone sin pagar), Cuando lo intenta de nuevo, Entonces retoma esa reserva en vez de bloquear ni crear una nueva", async () => {
+    prisma.lockerRental.findFirst.mockResolvedValue({
+      id: "rental-previo",
+      locker: { code: params.lockerCode },
+      payment: { status: "PENDING" },
+    });
+
+    const result = await service.rent(params);
+
+    expect(result).toEqual(
+      expect.objectContaining({ id: "rental-previo", locker: { code: params.lockerCode }, payment: { status: "PENDING" } })
+    );
+    // No crea un Payment/LockerRental nuevo — retoma el que ya existía.
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.__tx.payment.create).not.toHaveBeenCalled();
+    expect(prisma.__tx.lockerRental.create).not.toHaveBeenCalled();
+  });
+
+  it("Dado un estudiante con una reserva ya CONFIRMED del mismo casillero, Cuando lo intenta de nuevo, Entonces igual rechaza — retomar es solo para pagos PENDING, no para repetir uno ya pagado", async () => {
+    prisma.lockerRental.findFirst.mockResolvedValue({
+      id: "rental-previo",
+      locker: { code: params.lockerCode },
+      payment: { status: "CONFIRMED" },
+    });
+
+    await expect(service.rent(params)).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.__tx.lockerRental.create).not.toHaveBeenCalled();
+  });
+
   it("Dado un estudiante cuya reserva anterior venció (pago REJECTED, no cuenta como activa), Cuando alquila de nuevo, Entonces sí puede — el guard solo bloquea reservas PENDING/CONFIRMED", async () => {
     // findFirst filtra por status IN (PENDING, CONFIRMED); una REJECTED no
     // la devuelve, así que el mock default (null) representa este caso.

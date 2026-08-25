@@ -165,7 +165,15 @@ export class LockerService {
       where: { userId: params.userId, periodId, payment: { status: { in: ["PENDING", "CONFIRMED"] } } },
       include: { locker: true, payment: true },
     });
-    if (activeRental) {
+    // Mismo casillero que ya empezó a pagar (PayPhone no cobra síncrono —
+    // ver money-mutation.helper.ts — así que salir del widget sin terminar
+    // deja el pago en PENDING) → se retoma ESE pago más abajo en vez de
+    // bloquear. Bloquear aquí solo tiene sentido contra un casillero
+    // DISTINTO (o uno ya CONFIRMED) — hallazgo real de pentesting arriba en
+    // este mismo comentario histórico: sin el guard, un estudiante podía
+    // acaparar los 108 casilleros sin pagar. Retomar el mismo no reabre eso.
+    const retomaMismoCasillero = activeRental?.payment.status === "PENDING" && activeRental.locker.code === params.lockerCode;
+    if (activeRental && !retomaMismoCasillero) {
       const yaPagado = activeRental.payment.status === "CONFIRMED";
       throw new ConflictException(
         yaPagado
@@ -206,6 +214,13 @@ export class LockerService {
         throw new BadRequestException("Ese código único ya está registrado con otra cuenta — revísalo e intenta de nuevo");
       }
       throw err;
+    }
+
+    // Retomar: no crear un Payment/LockerRental nuevo — el frontend solo
+    // necesita el mismo id (clientTransactionId) para volver a renderizar
+    // el widget de PayPhone sobre el pago que ya estaba pendiente.
+    if (activeRental && retomaMismoCasillero) {
+      return activeRental;
     }
 
     return executeMoneyMutation<LockerRental>(
