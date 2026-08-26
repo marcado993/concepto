@@ -1,11 +1,47 @@
 import { Test } from "@nestjs/testing";
 import { ConfigService } from "@nestjs/config";
 import { ExperienceApiError } from "../logto-experience.client";
-import { SocialEmbeddedStrategy } from "./social-embedded.strategy";
+import { SocialEmbeddedStrategy, clasificarErrorIdentificacion } from "./social-embedded.strategy";
 import { LogtoOidcClient } from "../logto-oidc.client";
 import { LogtoExperienceClient } from "../logto-experience.client";
 import { AuthService } from "../auth.service";
 import { PrismaService } from "../../prisma/prisma.service";
+
+// Por PATRÓN, no por lista cerrada — hallazgo real: "identity_already_in_use"
+// no estaba en la lista original de códigos exactos, así que el login
+// fallaba en silencio. Estos casos incluyen códigos que Logto NUNCA ha
+// mandado hasta hoy (no están documentados en ningún lado) para probar que
+// el clasificador los reconoce igual, por el patrón del nombre.
+describe("clasificarErrorIdentificacion", () => {
+  it.each([
+    ["user.identity_already_exist", "ya_existe"],
+    ["user.identity_exist", "ya_existe"],
+    ["user.identity_already_in_use", "ya_existe"],
+    ["user.email_already_in_use", "ya_existe"],
+    // Nunca vistos en producción — variaciones plausibles del mismo patrón:
+    ["user.identity_already_registered", "ya_existe"],
+    ["user.username_already_in_use", "ya_existe"],
+    ["user.phone_already_in_use", "ya_existe"],
+  ])("Dado el código %s, Cuando se clasifica, Entonces es 'ya_existe'", (code, expected) => {
+    expect(clasificarErrorIdentificacion(code)).toBe(expected);
+  });
+
+  it.each([
+    ["user.identity_not_exist", "no_existe"],
+    ["user.user_not_exist", "no_existe"],
+    // Nunca visto en producción:
+    ["user.account_not_exist", "no_existe"],
+  ])("Dado el código %s, Cuando se clasifica, Entonces es 'no_existe'", (code, expected) => {
+    expect(clasificarErrorIdentificacion(code)).toBe(expected);
+  });
+
+  it.each([[undefined], ["user.something_completely_unrelated"], ["connector.general"]])(
+    "Dado un código sin patrón reconocible (%s), Cuando se clasifica, Entonces es 'desconocido' — nunca adivina",
+    (code) => {
+      expect(clasificarErrorIdentificacion(code)).toBe("desconocido");
+    }
+  );
+});
 
 function mockResponse() {
   return {

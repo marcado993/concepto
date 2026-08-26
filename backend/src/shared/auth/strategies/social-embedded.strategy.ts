@@ -22,6 +22,30 @@ const SOCIAL_CONNECTOR_ENV: Record<string, string> = {
   google: "LOGTO_GOOGLE_CONNECTOR_ID",
 };
 
+// Clasifica el errorCode de submitIdentification SIN depender de una lista
+// cerrada de strings exactos — hallazgo real: "identity_already_in_use" no
+// estaba en la lista original (solo "identity_already_exist"), así que el
+// login fallaba en silencio con cualquier código que Logto mandara y no
+// estuviera ahí, palabra por palabra. Logto no documenta el set completo de
+// códigos posibles con este detalle, así que una lista fija SIEMPRE va a
+// quedar corta tarde o temprano.
+//
+// En vez de eso: cualquier código que contenga "not_exist" es "no existe
+// todavía" (hay que registrar); cualquier código que contenga "already" o
+// "_in_use" es "ya existe" (hay que iniciar sesión). Cubre no solo los 5
+// códigos ya vistos en producción, sino cualquier variación futura con el
+// mismo patrón de nombres que Logto use — sin tener que volver a tocar este
+// archivo cada vez que aparezca una palabra nueva.
+export function clasificarErrorIdentificacion(errorCode: string | undefined): "ya_existe" | "no_existe" | "desconocido" {
+  if (!errorCode) return "desconocido";
+  const code = errorCode.toLowerCase();
+  // "not_exist" primero y con return propio — si no, "identity_not_exist"
+  // también haría match con el "_exist" de abajo y se clasificaría al revés.
+  if (code.includes("not_exist")) return "no_existe";
+  if (code.includes("already") || code.includes("_in_use") || code.includes("_exist")) return "ya_existe";
+  return "desconocido";
+}
+
 // Estado en vuelo entre los dos endpoints del flujo social. Viaja en una
 // cookie firmada de 5 minutos.
 export interface SocialPending {
@@ -206,23 +230,15 @@ export class SocialEmbeddedStrategy implements AuthStrategy {
         // seguir logueado en GitHub/Google, este segundo salto normalmente
         // es instantáneo (sin volver a pedir usuario/contraseña).
         //
-        // Register inicial → identity ya existe → reiniciar como SignIn:
-        //   "user.identity_already_exist" (cuenta vinculada a otro user)
-        //   "user.identity_exist" (ya tiene cuenta, solo entrar)
-        //   "user.identity_already_in_use" (el código REAL que manda Logto
-        //   hoy — confirmado en logs de producción)
-        // SignIn inicial → identidad nueva → reiniciar como Register:
-        //   "user.identity_not_exist" / "user.user_not_exist"
+        // Register inicial → identity ya existe (clasificarErrorIdentificacion
+        // arriba) → reiniciar como SignIn. SignIn inicial → identidad nueva
+        // → reiniciar como Register. Clasificación por PATRÓN, no por lista
+        // cerrada de códigos — ver el comentario grande junto a la función.
+        const clasificacion = clasificarErrorIdentificacion(identification.errorCode);
         const eventoOpuesto: "SignIn" | "Register" | null =
-          pending.interactionEvent === "Register" &&
-          (identification.errorCode === "user.identity_already_exist" ||
-            identification.errorCode === "user.identity_exist" ||
-            identification.errorCode === "user.identity_already_in_use" ||
-            identification.errorCode === "user.email_already_in_use")
+          pending.interactionEvent === "Register" && clasificacion === "ya_existe"
             ? "SignIn"
-            : pending.interactionEvent === "SignIn" &&
-                (identification.errorCode === "user.identity_not_exist" ||
-                  identification.errorCode === "user.user_not_exist")
+            : pending.interactionEvent === "SignIn" && clasificacion === "no_existe"
               ? "Register"
               : null;
 
