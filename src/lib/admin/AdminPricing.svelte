@@ -22,7 +22,9 @@
 
   interface BenefitFields {
     casilleroPercent: number;
+    casilleroOn: boolean;
     billarPercent: number;
+    billarOn: boolean;
     ps4: boolean;
     otros: unknown[];
   }
@@ -33,19 +35,25 @@
     const find = (type: string) => arr.find((b) => b && typeof b === "object" && (b as { type?: unknown }).type === type) as
       | Record<string, unknown>
       | undefined;
+    const casilleroPercent = Number(find(BENEFIT_TYPE_CASILLERO)?.percent ?? 0);
+    const billarPercent = Number(find(BENEFIT_TYPE_BILLAR)?.percent ?? 0);
     return {
-      casilleroPercent: Number(find(BENEFIT_TYPE_CASILLERO)?.percent ?? 0),
-      billarPercent: Number(find(BENEFIT_TYPE_BILLAR)?.percent ?? 0),
+      casilleroPercent,
+      casilleroOn: casilleroPercent > 0,
+      billarPercent,
+      billarOn: billarPercent > 0,
       ps4: find(BENEFIT_TYPE_PS4)?.included === true,
       otros: arr.filter((b) => !(b && typeof b === "object" && known.has((b as { type?: unknown }).type as string))),
     };
   }
 
+  // La casilla ES el beneficio (on/off); si está apagada, el % se manda en
+  // 0 sin importar qué número haya quedado en el input oculto detrás.
   function buildBenefits(fields: BenefitFields): unknown[] {
     return [
       ...fields.otros,
-      { type: BENEFIT_TYPE_CASILLERO, percent: fields.casilleroPercent },
-      { type: BENEFIT_TYPE_BILLAR, percent: fields.billarPercent },
+      { type: BENEFIT_TYPE_CASILLERO, percent: fields.casilleroOn ? fields.casilleroPercent : 0 },
+      { type: BENEFIT_TYPE_BILLAR, percent: fields.billarOn ? fields.billarPercent : 0 },
       ...(fields.ps4 ? [{ type: BENEFIT_TYPE_PS4, included: true }] : []),
     ];
   }
@@ -221,42 +229,69 @@
 
           {#if benefitDrafts[tier.id]}
             <span class="field-label benefits-label">Beneficios</span>
+            <!-- Estilo Google Forms: casilla a la izquierda + etiqueta, sin
+                 cajas ni bordes por fila. La casilla ES el beneficio
+                 (on/off); el % de abajo solo afina cuánto una vez activado —
+                 pedido explícito, más fácil de escanear de un vistazo que
+                 tres pares de label+input sueltos. -->
             <ul class="benefit-list">
               <li class="benefit-row">
-                <label for={`casillero-${tier.id}`}>Descuento en casillero</label>
-                <div class="benefit-control">
+                <label class="benefit-check" for={`casillero-${tier.id}`}>
                   <input
                     id={`casillero-${tier.id}`}
-                    class="amount-input-sm"
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="100"
-                    bind:value={benefitDrafts[tier.id].casilleroPercent}
+                    type="checkbox"
+                    bind:checked={benefitDrafts[tier.id].casilleroOn}
+                    onchange={() => {
+                      if (benefitDrafts[tier.id].casilleroOn && !benefitDrafts[tier.id].casilleroPercent) benefitDrafts[tier.id].casilleroPercent = 10;
+                    }}
                   />
-                  <span class="suffix">%</span>
-                </div>
+                  <span>Descuento en casillero</span>
+                </label>
+                {#if benefitDrafts[tier.id].casilleroOn}
+                  <div class="benefit-control">
+                    <input
+                      class="amount-input-sm"
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="100"
+                      bind:value={benefitDrafts[tier.id].casilleroPercent}
+                    />
+                    <span class="suffix">%</span>
+                  </div>
+                {/if}
               </li>
               <li class="benefit-row">
-                <label for={`billar-${tier.id}`}>Descuento en billar</label>
-                <div class="benefit-control">
+                <label class="benefit-check" for={`billar-${tier.id}`}>
                   <input
                     id={`billar-${tier.id}`}
-                    class="amount-input-sm"
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="100"
-                    bind:value={benefitDrafts[tier.id].billarPercent}
+                    type="checkbox"
+                    bind:checked={benefitDrafts[tier.id].billarOn}
+                    onchange={() => {
+                      if (benefitDrafts[tier.id].billarOn && !benefitDrafts[tier.id].billarPercent) benefitDrafts[tier.id].billarPercent = 10;
+                    }}
                   />
-                  <span class="suffix">%</span>
-                </div>
+                  <span>Descuento en billar</span>
+                </label>
+                {#if benefitDrafts[tier.id].billarOn}
+                  <div class="benefit-control">
+                    <input
+                      class="amount-input-sm"
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="100"
+                      bind:value={benefitDrafts[tier.id].billarPercent}
+                    />
+                    <span class="suffix">%</span>
+                  </div>
+                {/if}
               </li>
               <li class="benefit-row">
-                <label for={`ps4-${tier.id}`}>Acceso a PS4</label>
-                <div class="benefit-control">
+                <label class="benefit-check" for={`ps4-${tier.id}`}>
                   <input id={`ps4-${tier.id}`} type="checkbox" bind:checked={benefitDrafts[tier.id].ps4} />
-                </div>
+                  <span>Acceso a PS4</span>
+                </label>
               </li>
             </ul>
           {/if}
@@ -344,13 +379,15 @@
     margin-top: 16px;
   }
 
+  /* Estilo Google Forms: sin caja contenedora ni bordes por fila — solo la
+     casilla, la etiqueta, y espacio en blanco entre opciones. */
   .benefit-list {
     list-style: none;
-    margin: 0;
+    margin: 6px 0 0;
     padding: 0;
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .benefit-row {
@@ -358,16 +395,49 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 8px 10px;
+    padding: 6px 2px;
   }
 
-  .benefit-row + .benefit-row {
-    border-top: 1px solid var(--line-soft);
-  }
-
-  .benefit-row label {
-    font-size: 13px;
+  .benefit-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
     color: var(--ink-0);
+    cursor: pointer;
+  }
+
+  .benefit-check input[type="checkbox"] {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border: 1.5px solid var(--line-strong);
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    display: grid;
+    place-content: center;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+
+  .benefit-check input[type="checkbox"]::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    transform: scale(0);
+    transition: transform 0.1s ease;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+    background: #010805;
+  }
+
+  .benefit-check input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .benefit-check input[type="checkbox"]:checked::before {
+    transform: scale(1);
   }
 
   .benefit-control {
@@ -387,13 +457,6 @@
     font-size: 13px;
     width: 56px;
     text-align: right;
-  }
-
-  .benefit-control input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--accent);
-    cursor: pointer;
   }
 
   .tiers-grid {

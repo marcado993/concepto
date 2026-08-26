@@ -149,7 +149,11 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    background: var(--bg-void);
+    /* Mismo degradado radial que el marco de escritorio de la app
+       estudiantil (App.svelte, .phone-frame) — antes esto era un
+       --bg-void plano, así que el panel se sentía más "dashboard
+       genérico" que el resto de AEIS-APP. */
+    background: radial-gradient(120% 120% at 50% 0%, #10131d 0%, #04050a 70%);
     color: var(--ink-0);
     user-select: text;
   }
