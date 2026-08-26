@@ -66,11 +66,20 @@ export class AuthController {
 
   // ── Social embebido (GitHub / Google) ──────────────────────────────────────
 
+  // event/attempt: SOLO los usa el reinicio interno que hace
+  // SocialEmbeddedStrategy.callback() cuando la corazonada inicial de
+  // Register falló — nunca vienen de un botón real (ver el comentario
+  // grande en social-embedded.strategy.ts).
   @Public()
   @Throttle({ short: { limit: 5, ttl: 10_000 } })
   @Get("social/start")
-  async socialStart(@Query("connector") connector: string | undefined, @Res() res: Response) {
-    return this.social.start(connector, res);
+  async socialStart(
+    @Query("connector") connector: string | undefined,
+    @Query("event") event: string | undefined,
+    @Query("attempt") attempt: string | undefined,
+    @Res() res: Response
+  ) {
+    return this.social.start(connector, res, event, attempt);
   }
 
   @Public()

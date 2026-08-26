@@ -26,12 +26,23 @@ const SOCIAL_CONNECTOR_ENV: Record<string, string> = {
 // cookie firmada de 5 minutos.
 export interface SocialPending {
   connectorId: string;
+  // Nombre humano ("github"/"google") — a diferencia de connectorId (el ID
+  // interno de Logto), esto es lo que /auth/social/start recibe como
+  // ?connector=. Se guarda para poder RE-arrancar el flujo completo desde
+  // el callback si la corazonada del evento inicial falló (ver
+  // attempt/reiniciarConEvento abajo) sin que el navegador tenga que
+  // volver a mandarlo.
+  connectorName: string;
   redirectUri: string;
   interactionCookie: string;
   verificationId: string;
   // El evento con que arrancó la interacción — necesario en el callback
   // para saber si el reintento debe ir hacia Register o hacia SignIn.
   interactionEvent: "SignIn" | "Register";
+  // 1 = primer intento (arrancó adivinando Register). 2 = ya se reinició
+  // una vez con el evento correcto — si ESTE también falla, no hay tercer
+  // intento (evita un loop si Logto sigue rechazando por otro motivo).
+  attempt: 1 | 2;
   // codeVerifier/logtoState son de la interacción OIDC PROPIA con Logto
   // (para el intercambio final vía finishTokenExchange) — oauthState es un
   // valor DISTINTO, el anti-CSRF que viaja de ida y vuelta con GitHub/
@@ -69,11 +80,15 @@ export class SocialEmbeddedStrategy implements AuthStrategy {
   // conector no está listado ahí, bug real reportado en producción), habla
   // con la Experience API server-side y redirige AL NAVEGADOR directo a la
   // pantalla real de GitHub/Google — la UI de Logto nunca se llega a mostrar.
-  async start(connector: string | undefined, res: Response): Promise<void> {
+  // forcedEvent/attempt: SOLO los usa el reinicio interno desde callback()
+  // (ver más abajo) cuando la corazonada inicial de Register falló — nunca
+  // vienen de un link/botón real, así que un valor inválido simplemente
+  // cae al comportamiento normal (adivinar Register, intento 1).
+  async start(connector: string | undefined, res: Response, forcedEvent?: string, attemptRaw?: string): Promise<void> {
     const frontendOrigin = this.config.getOrThrow<string>("FRONTEND_ORIGIN").split(",")[0];
     const envKey = connector ? SOCIAL_CONNECTOR_ENV[connector] : undefined;
     const connectorId = envKey ? this.config.get<string>(envKey) : undefined;
-    if (!connectorId) {
+    if (!connectorId || !connector) {
       res.redirect(`${frontendOrigin}/?auth_error=connector_invalido`);
       return;
     }
@@ -94,11 +109,16 @@ export class SocialEmbeddedStrategy implements AuthStrategy {
 
     try {
       let cookie = await this.logtoExperience.startInteraction(authUrl);
-      // Se arranca como "Register" — el caso masivo son estudiantes
+      // Se arranca adivinando "Register" — el caso masivo son estudiantes
       // entrando por primera vez (mismo razonamiento que EmailOtpStrategy).
-      // Si el usuario ya tiene cuenta, submitIdentification devolverá
-      // "user.identity_already_exist" y el callback reintentará como SignIn.
-      const interactionEvent: "SignIn" | "Register" = "Register";
+      // Si el usuario ya tiene cuenta, submitIdentification lo va a decir
+      // (identity_already_in_use / ya_exist) y el callback REINICIA todo
+      // este flujo con forcedEvent="SignIn" — no se puede "seguir" con la
+      // misma verificación cambiando el evento (Logto la invalida, mismo
+      // comportamiento documentado para correo en logto-experience.client.ts,
+      // confirmado también acá con logs reales de producción).
+      const interactionEvent: "SignIn" | "Register" = forcedEvent === "SignIn" ? "SignIn" : "Register";
+      const attempt: 1 | 2 = attemptRaw === "2" ? 2 : 1;
       cookie = await this.logtoExperience.setInteractionEvent(cookie, interactionEvent);
       const {
         cookie: cookieWithUri,
@@ -108,10 +128,12 @@ export class SocialEmbeddedStrategy implements AuthStrategy {
 
       const pending: SocialPending = {
         connectorId,
+        connectorName: connector,
         redirectUri,
         interactionCookie: cookieWithUri,
         verificationId,
         interactionEvent,
+        attempt,
         codeVerifier,
         logtoState,
         oauthState,
@@ -168,23 +190,28 @@ export class SocialEmbeddedStrategy implements AuthStrategy {
         pending.redirectUri
       );
 
-      let identification = await this.logtoExperience.submitIdentification(verifiedCookie, pending.verificationId);
+      const identification = await this.logtoExperience.submitIdentification(verifiedCookie, pending.verificationId);
       const identificado = (status: number) => status === 204 || status === 201; // 201 = cuenta recién creada
 
       if (!identificado(identification.status)) {
-        // La corazonada del evento inicial falló — reintentamos con el
-        // opuesto. Para social la verificación NO se destruye al cambiar
-        // el evento (a diferencia del correo): la identidad ya fue probada
-        // por el proveedor y sigue ligada a la sesión.
+        // La corazonada del evento inicial falló. A diferencia de lo que
+        // este código asumía antes, la verificación de GitHub/Google NO
+        // sobrevive a un cambio de evento — Logto la invalida igual que con
+        // correo (confirmado con logs reales de producción: intentar
+        // setInteractionEvent + submitIdentification de nuevo acá mismo
+        // devolvía session.verification_session_not_found). No hay forma de
+        // "seguir" con esta verificación — hay que reiniciar TODO el flujo
+        // con el evento correcto, el equivalente social de "te mandamos un
+        // código nuevo" en el login por correo. Como el navegador suele
+        // seguir logueado en GitHub/Google, este segundo salto normalmente
+        // es instantáneo (sin volver a pedir usuario/contraseña).
         //
-        // Register inicial → identity ya existe → reintentar como SignIn:
+        // Register inicial → identity ya existe → reiniciar como SignIn:
         //   "user.identity_already_exist" (cuenta vinculada a otro user)
         //   "user.identity_exist" (ya tiene cuenta, solo entrar)
         //   "user.identity_already_in_use" (el código REAL que manda Logto
-        //   hoy — confirmado en logs de producción; faltaba acá y por eso
-        //   el reintento nunca se disparaba, el login solo fallaba con
-        //   "social_login_failed" sin decir por qué)
-        // SignIn inicial → identidad nueva → reintentar como Register:
+        //   hoy — confirmado en logs de producción)
+        // SignIn inicial → identidad nueva → reiniciar como Register:
         //   "user.identity_not_exist" / "user.user_not_exist"
         const eventoOpuesto: "SignIn" | "Register" | null =
           pending.interactionEvent === "Register" &&
@@ -199,18 +226,21 @@ export class SocialEmbeddedStrategy implements AuthStrategy {
               ? "Register"
               : null;
 
-        if (eventoOpuesto) {
+        // attempt < 2: nunca un tercer intento — si el reinicio con el
+        // evento correcto TAMBIÉN falla, algo más está mal y hay que
+        // mostrar el error en vez de mandar al estudiante a GitHub/Google
+        // en un loop.
+        if (eventoOpuesto && pending.attempt < 2) {
           this.logger.warn(
-            `callback(${pending.connectorId}) — evento ${pending.interactionEvent} no aplicaba (${identification.errorCode}); reintentando como ${eventoOpuesto}`
+            `callback(${pending.connectorId}) — evento ${pending.interactionEvent} no aplicaba (${identification.errorCode}); reiniciando el flujo completo como ${eventoOpuesto}`
           );
-          const retryCookie = await this.logtoExperience.setInteractionEvent(identification.cookie, eventoOpuesto);
-          identification = await this.logtoExperience.submitIdentification(retryCookie, pending.verificationId);
+          const apiOrigin = pending.redirectUri.replace(/\/auth\/social\/callback\/?$/, "");
+          res.redirect(`${apiOrigin}/auth/social/start?connector=${encodeURIComponent(pending.connectorName)}&event=${eventoOpuesto}&attempt=2`);
+          return;
         }
-      }
 
-      if (!identificado(identification.status)) {
         this.logger.error(
-          `callback(${pending.connectorId}) — identification falló: status=${identification.status} code=${identification.errorCode ?? "sin código"} evento=${pending.interactionEvent}`
+          `callback(${pending.connectorId}) — identification falló: status=${identification.status} code=${identification.errorCode ?? "sin código"} evento=${pending.interactionEvent} attempt=${pending.attempt}`
         );
         res.redirect(`${frontendOrigin}/?auth_error=social_login_failed`);
         return;

@@ -86,10 +86,12 @@ describe("SocialEmbeddedStrategy", () => {
   function socialCookieReq(overrides: Partial<Record<string, unknown>> = {}) {
     const pending = {
       connectorId: "gh-connector-1",
+      connectorName: "github",
       redirectUri: "https://api.aeis-app.online/auth/social/callback",
       interactionCookie: "_interaction=pending",
       verificationId: "verif-social-1",
       interactionEvent: "Register",  // ahora siempre arranca como Register
+      attempt: 1,
       codeVerifier: "verifier-social-1",
       logtoState: "logto-state-1",
       oauthState: "oauth-state-1",
@@ -219,14 +221,57 @@ describe("SocialEmbeddedStrategy", () => {
     expect(logtoExperience.verifySocial).not.toHaveBeenCalled();
   });
 
-  it("Dado un usuario existente (arrancó como Register pero identity_already_exist), Cuando callback() recibe el error, Entonces reintenta como SignIn sin pedir código nuevo", async () => {
-    const req = socialCookieReq({ interactionEvent: "Register" });
+  // Los 3 tests de acá abajo antes esperaban que callback() reintentara
+  // submitIdentification() SOBRE LA MISMA verificación tras cambiar el
+  // evento. Eso era una suposición incorrecta (nunca verificada contra el
+  // tenant real) — logs reales de producción probaron que Logto invalida
+  // la verificación al cambiar de evento para social IGUAL que para correo
+  // (session.verification_session_not_found). El comportamiento correcto,
+  // que estos tests verifican ahora, es reiniciar TODO el flujo redirigiendo
+  // a /auth/social/start con el evento correcto — nunca reusar la
+  // verificación vieja.
+
+  it("Dado un usuario existente (arrancó como Register pero identity_already_exist), Cuando callback() recibe el error, Entonces reinicia el flujo completo redirigiendo a /auth/social/start con event=SignIn — nunca reintenta la misma verificación", async () => {
+    const req = socialCookieReq({ interactionEvent: "Register", attempt: 1, connectorName: "google" });
     const res = mockResponse();
     logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
-    logtoExperience.submitIdentification
-      .mockResolvedValueOnce({ status: 422, errorCode: "user.identity_already_exist", cookie: "_interaction=identified" })
-      .mockResolvedValueOnce({ status: 204, cookie: "_interaction=signed-in" });
-    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=signin-event");
+    logtoExperience.submitIdentification.mockResolvedValueOnce({
+      status: 422,
+      errorCode: "user.identity_already_exist",
+      cookie: "_interaction=identified",
+    });
+
+    await strategy.callback("google-code-1", "oauth-state-1", undefined, req, res);
+
+    expect(logtoExperience.submitIdentification).toHaveBeenCalledTimes(1);
+    expect(logtoExperience.setInteractionEvent).not.toHaveBeenCalledWith("_interaction=identified", "SignIn");
+    expect(res.redirect).toHaveBeenCalledWith(
+      "https://api.aeis-app.online/auth/social/start?connector=google&event=SignIn&attempt=2"
+    );
+  });
+
+  it("Dado un usuario existente con el código REAL que manda Logto hoy (identity_already_in_use, no identity_already_exist), Cuando callback() recibe el error, Entonces igual reinicia el flujo hacia SignIn — bug real reportado en producción: este código faltaba y el login fallaba en silencio", async () => {
+    const req = socialCookieReq({ interactionEvent: "Register", attempt: 1, connectorName: "github" });
+    const res = mockResponse();
+    logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
+    logtoExperience.submitIdentification.mockResolvedValueOnce({
+      status: 422,
+      errorCode: "user.identity_already_in_use",
+      cookie: "_interaction=identified",
+    });
+
+    await strategy.callback("github-code-1", "oauth-state-1", undefined, req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      "https://api.aeis-app.online/auth/social/start?connector=github&event=SignIn&attempt=2"
+    );
+  });
+
+  it("Dado que el reinicio (attempt=2, event=SignIn) SÍ completa el login, Cuando /auth/social/callback recibe la segunda vuelta, Entonces termina con el access_token — sin volver a redirigir a start", async () => {
+    const req = socialCookieReq({ interactionEvent: "SignIn", attempt: 2, connectorName: "github" });
+    const res = mockResponse();
+    logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
+    logtoExperience.submitIdentification.mockResolvedValueOnce({ status: 204, cookie: "_interaction=signed-in" });
     logtoExperience.submitInteraction.mockResolvedValue({
       cookie: "_interaction=submitted",
       redirectTo: "https://tenant.logto.app/callback",
@@ -234,80 +279,62 @@ describe("SocialEmbeddedStrategy", () => {
     logtoExperience.completeAuthorization.mockResolvedValue({ code: "auth-code-2", state: "logto-state-1", iss: undefined });
     logto.exchangeCode.mockResolvedValue({
       access_token: "at-existing",
-      claims: () => ({ sub: "google|existing1", email: "existente@gmail.com", name: "Existente" }),
+      claims: () => ({ sub: "github|existing1", email: "existente@github.com", name: "Existente" }),
     });
 
-    await strategy.callback("google-code-1", "oauth-state-1", undefined, req, res);
+    await strategy.callback("github-code-2", "oauth-state-1", undefined, req, res);
 
-    expect(logtoExperience.setInteractionEvent).toHaveBeenCalledWith("_interaction=identified", "SignIn");
-    expect(logtoExperience.submitIdentification).toHaveBeenCalledTimes(2);
+    expect(logtoExperience.submitIdentification).toHaveBeenCalledTimes(1);
     expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/#access_token=at-existing");
   });
 
-  it("Dado un usuario existente con el código REAL que manda Logto hoy (identity_already_in_use, no identity_already_exist), Cuando callback() recibe el error, Entonces igual reintenta como SignIn — bug real reportado en producción: este código faltaba y el login fallaba en silencio", async () => {
-    const req = socialCookieReq({ interactionEvent: "Register" });
+  it("Dado que el reinicio (attempt=2) TAMBIÉN falla, Cuando callback() recibe el error, Entonces se rinde con auth_error=social_login_failed — nunca un tercer reinicio (evita un loop)", async () => {
+    const req = socialCookieReq({ interactionEvent: "SignIn", attempt: 2, connectorName: "github" });
     const res = mockResponse();
     logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
-    logtoExperience.submitIdentification
-      .mockResolvedValueOnce({ status: 422, errorCode: "user.identity_already_in_use", cookie: "_interaction=identified" })
-      .mockResolvedValueOnce({ status: 204, cookie: "_interaction=signed-in" });
-    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=signin-event");
-    logtoExperience.submitInteraction.mockResolvedValue({
-      cookie: "_interaction=submitted",
-      redirectTo: "https://tenant.logto.app/callback",
-    });
-    logtoExperience.completeAuthorization.mockResolvedValue({ code: "auth-code-3", state: "logto-state-1", iss: undefined });
-    logto.exchangeCode.mockResolvedValue({
-      access_token: "at-existing-2",
-      claims: () => ({ sub: "github|existing2", email: "existente2@github.com", name: "Existente Dos" }),
+    logtoExperience.submitIdentification.mockResolvedValueOnce({
+      status: 422,
+      errorCode: "user.identity_already_in_use",
+      cookie: "_interaction=identified",
     });
 
-    await strategy.callback("github-code-1", "oauth-state-1", undefined, req, res);
+    await strategy.callback("github-code-2", "oauth-state-1", undefined, req, res);
 
-    expect(logtoExperience.setInteractionEvent).toHaveBeenCalledWith("_interaction=identified", "SignIn");
-    expect(logtoExperience.submitIdentification).toHaveBeenCalledTimes(2);
-    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/#access_token=at-existing-2");
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=social_login_failed");
+    expect(res.redirect).not.toHaveBeenCalledWith(expect.stringContaining("/auth/social/start"));
   });
 
-  it("Dado un correo nuevo (primera vez con GitHub/Google), Cuando /auth/social/callback recibe user.user_not_exist, Entonces reintenta la MISMA verificación como registro — sin pedir un código nuevo, a diferencia del correo", async () => {
-    const req = socialCookieReq({ interactionEvent: "SignIn" });
+  it("Dado un correo nuevo (primera vez con GitHub/Google), Cuando /auth/social/callback recibe user.user_not_exist, Entonces reinicia el flujo completo hacia Register — nunca reintenta la misma verificación", async () => {
+    const req = socialCookieReq({ interactionEvent: "SignIn", attempt: 1, connectorName: "google" });
     const res = mockResponse();
     logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
-    logtoExperience.submitIdentification
-      .mockResolvedValueOnce({ status: 422, errorCode: "user.user_not_exist", cookie: "_interaction=identified" })
-      .mockResolvedValueOnce({ status: 204, cookie: "_interaction=registered" });
-    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=register-event");
-    logtoExperience.submitInteraction.mockResolvedValue({
-      cookie: "_interaction=submitted",
-      redirectTo: "https://tenant.logto.app/callback",
-    });
-    logtoExperience.completeAuthorization.mockResolvedValue({ code: "auth-code-2", state: "logto-state-1", iss: undefined });
-    logto.exchangeCode.mockResolvedValue({
-      access_token: "at-social-2",
-      claims: () => ({ sub: "google|social2", email: "nuevo@gmail.com", name: "Estudiante Nuevo" }),
+    logtoExperience.submitIdentification.mockResolvedValueOnce({
+      status: 422,
+      errorCode: "user.user_not_exist",
+      cookie: "_interaction=identified",
     });
 
     await strategy.callback("google-code-1", "oauth-state-1", undefined, req, res);
 
-    expect(logtoExperience.setInteractionEvent).toHaveBeenCalledWith("_interaction=identified", "Register");
-    expect(logtoExperience.submitIdentification).toHaveBeenCalledTimes(2);
-    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/#access_token=at-social-2");
+    expect(res.redirect).toHaveBeenCalledWith(
+      "https://api.aeis-app.online/auth/social/start?connector=google&event=Register&attempt=2"
+    );
   });
 
-  it("Dado que la identificación sigue fallando incluso tras el reintento, Cuando se llama callback(), Entonces redirige con auth_error=social_login_failed en vez de colgarse o tirar un 500", async () => {
+  it("Dado un errorCode que no coincide con ningún caso de reintento conocido, Cuando se llama callback(), Entonces redirige directo con auth_error=social_login_failed — sin reiniciar el flujo ni colgarse", async () => {
     const req = socialCookieReq();
     const res = mockResponse();
     logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
     logtoExperience.submitIdentification.mockResolvedValue({
       status: 422,
-      errorCode: "user.identity_already_exist",
+      errorCode: "user.some_other_unrelated_error",
       cookie: "_interaction=identified",
     });
-    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=signin-event");
 
     await strategy.callback("gh-code-1", "oauth-state-1", undefined, req, res);
 
     expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/?auth_error=social_login_failed");
+    expect(res.redirect).not.toHaveBeenCalledWith(expect.stringContaining("/auth/social/start"));
     expect(logtoExperience.submitInteraction).not.toHaveBeenCalled();
   });
 
