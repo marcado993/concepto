@@ -59,13 +59,26 @@
     // correo público/verificado) — ver auth.controller.ts.
     correo_no_disponible:
       "No pudimos obtener tu correo desde GitHub. Revisa que tu correo esté verificado y público en tu perfil de GitHub, o usa la opción de correo electrónico.",
+    // El resto del login social (GitHub/Google) — social-embedded.strategy.ts
+    // ya mandaba estos códigos por ?auth_error=..., pero como no estaban acá
+    // el estudiante solo veía "vuelve al login" sin ninguna explicación
+    // (bug real reportado: "pongo GitHub y regresa al login, se queda ahí").
+    connector_invalido: "Ese proveedor de login no está configurado — intenta con otra opción.",
+    social_session_expired: "Se venció la sesión de login (tardó más de 5 minutos) — intenta de nuevo.",
+    social_login_cancelled: "Cancelaste el login en GitHub/Google, o el proveedor no confirmó tu identidad — intenta de nuevo.",
+    social_login_failed: "No se pudo completar el login — intenta de nuevo en unos minutos, o usa la opción de correo electrónico.",
   };
+  // Motivo desconocido (nuevo código que no está arriba, o un error crudo
+  // que no debería llegar al cliente) — mejor un mensaje genérico visible
+  // que dejar que auth_error se ignore en silencio y el estudiante se
+  // quede sin ninguna pista de qué pasó.
+  const AUTH_ERROR_FALLBACK = "No se pudo iniciar sesión — intenta de nuevo, o usa la opción de correo electrónico.";
   let authError = $state<string | null>(null);
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("auth_error");
-    if (code && AUTH_ERROR_MESSAGES[code]) {
-      authError = AUTH_ERROR_MESSAGES[code];
+    if (code) {
+      authError = AUTH_ERROR_MESSAGES[code] ?? AUTH_ERROR_FALLBACK;
       history.replaceState(null, "", window.location.pathname + window.location.hash);
     }
   }
