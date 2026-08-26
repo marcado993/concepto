@@ -179,13 +179,18 @@ export class SocialEmbeddedStrategy implements AuthStrategy {
         //
         // Register inicial → identity ya existe → reintentar como SignIn:
         //   "user.identity_already_exist" (cuenta vinculada a otro user)
-        //   o "user.identity_exist" (ya tiene cuenta, solo entrar)
+        //   "user.identity_exist" (ya tiene cuenta, solo entrar)
+        //   "user.identity_already_in_use" (el código REAL que manda Logto
+        //   hoy — confirmado en logs de producción; faltaba acá y por eso
+        //   el reintento nunca se disparaba, el login solo fallaba con
+        //   "social_login_failed" sin decir por qué)
         // SignIn inicial → identidad nueva → reintentar como Register:
         //   "user.identity_not_exist" / "user.user_not_exist"
         const eventoOpuesto: "SignIn" | "Register" | null =
           pending.interactionEvent === "Register" &&
           (identification.errorCode === "user.identity_already_exist" ||
             identification.errorCode === "user.identity_exist" ||
+            identification.errorCode === "user.identity_already_in_use" ||
             identification.errorCode === "user.email_already_in_use")
             ? "SignIn"
             : pending.interactionEvent === "SignIn" &&

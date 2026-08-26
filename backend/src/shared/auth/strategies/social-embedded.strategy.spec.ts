@@ -244,6 +244,31 @@ describe("SocialEmbeddedStrategy", () => {
     expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/#access_token=at-existing");
   });
 
+  it("Dado un usuario existente con el código REAL que manda Logto hoy (identity_already_in_use, no identity_already_exist), Cuando callback() recibe el error, Entonces igual reintenta como SignIn — bug real reportado en producción: este código faltaba y el login fallaba en silencio", async () => {
+    const req = socialCookieReq({ interactionEvent: "Register" });
+    const res = mockResponse();
+    logtoExperience.verifySocial.mockResolvedValue("_interaction=verified-social");
+    logtoExperience.submitIdentification
+      .mockResolvedValueOnce({ status: 422, errorCode: "user.identity_already_in_use", cookie: "_interaction=identified" })
+      .mockResolvedValueOnce({ status: 204, cookie: "_interaction=signed-in" });
+    logtoExperience.setInteractionEvent.mockResolvedValueOnce("_interaction=signin-event");
+    logtoExperience.submitInteraction.mockResolvedValue({
+      cookie: "_interaction=submitted",
+      redirectTo: "https://tenant.logto.app/callback",
+    });
+    logtoExperience.completeAuthorization.mockResolvedValue({ code: "auth-code-3", state: "logto-state-1", iss: undefined });
+    logto.exchangeCode.mockResolvedValue({
+      access_token: "at-existing-2",
+      claims: () => ({ sub: "github|existing2", email: "existente2@github.com", name: "Existente Dos" }),
+    });
+
+    await strategy.callback("github-code-1", "oauth-state-1", undefined, req, res);
+
+    expect(logtoExperience.setInteractionEvent).toHaveBeenCalledWith("_interaction=identified", "SignIn");
+    expect(logtoExperience.submitIdentification).toHaveBeenCalledTimes(2);
+    expect(res.redirect).toHaveBeenCalledWith("https://aeis-app.vercel.app/#access_token=at-existing-2");
+  });
+
   it("Dado un correo nuevo (primera vez con GitHub/Google), Cuando /auth/social/callback recibe user.user_not_exist, Entonces reintenta la MISMA verificación como registro — sin pedir un código nuevo, a diferencia del correo", async () => {
     const req = socialCookieReq({ interactionEvent: "SignIn" });
     const res = mockResponse();
