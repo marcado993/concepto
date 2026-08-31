@@ -25,6 +25,6 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "maplibre-gl": "^6.1.0"
+    "maplibre-gl": "^6.5.0"
   }
 }
