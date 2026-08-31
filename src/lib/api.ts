@@ -322,12 +322,11 @@ export interface SubscriptionFromApi {
   createdAt: string;
 }
 
+// Aportaciones son informativas, sin pasarela real — el backend confirma
+// de una vez (ver subscription.service.ts::subscribe(), autoConfirm:true).
+// Nunca hay un paso de PayPhone que pedir acá, a diferencia de casilleros.
 export function subscribeToTier(input: SubscribeInput): Promise<SubscriptionFromApi> {
   return postJSON<SubscriptionFromApi>("/subscriptions", input);
-}
-
-export function fetchSubscriptionPayphoneConfig(): Promise<PayphonePublicConfig> {
-  return getJSON<PayphonePublicConfig>("/subscriptions/payphone/config");
 }
 
 // Rueda ("A") vs. lista accesible ("B") — feature flag editable desde el

@@ -1,7 +1,14 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, PaymentMethod } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
-import { PaymentMethod } from "../../locker/rental-calculator";
+
+// PaymentMethod viene del enum REAL de Prisma (PAYPHONE | TRANSFER |
+// INFORMATIVE), no del type acotado de rental-calculator.ts (ese es
+// específico de "cómo se le calcula el precio a un casillero", más
+// angosto a propósito — un casillero siempre es PAYPHONE, nunca
+// INFORMATIVE). Este helper es compartido por cualquier flujo de dinero
+// (o "flujo informativo" como aportaciones), así que necesita el enum
+// completo.
 
 // DRY: LockerService.rent y SubscriptionService.subscribe repetían, palabra
 // por palabra, el mismo esqueleto — abrir una transacción, crear el
@@ -38,6 +45,13 @@ export interface MoneyMutationParams<TEntity> {
   entityId: (entity: TEntity) => string;
   auditMetadata?: (entity: TEntity) => Record<string, unknown>;
   onConflict: () => never;
+  // Solo para flujos que NUNCA pasan por una pasarela real (ver
+  // SubscriptionService.subscribe() — aportaciones son informativas, sin
+  // cobro real en la app) — crea el Payment YA CONFIRMED, sin el paso
+  // intermedio PENDING que existe justo para esperar la confirmación de
+  // PayPhone. Nunca usar esto en un flujo que sí cobra de verdad (lockers):
+  // ahí el PENDING es lo que le da sentido a confirmPayphonePayment().
+  autoConfirm?: boolean;
 }
 
 export interface MoneyMutationDeps {
@@ -56,8 +70,8 @@ export async function executeMoneyMutation<TEntity>(
           userId: params.userId,
           method: params.method,
           amount: params.amount,
-          status: "PENDING",
-          confirmedAt: null,
+          status: params.autoConfirm ? "CONFIRMED" : "PENDING",
+          confirmedAt: params.autoConfirm ? new Date() : null,
         },
       });
 

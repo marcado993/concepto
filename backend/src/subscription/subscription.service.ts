@@ -1,8 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Subscription } from "@prisma/client";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
-import { PayphoneClient } from "../shared/payment/payphone.client";
 import { PeriodService } from "../shared/period/period.service";
 import { executeMoneyMutation } from "../shared/payment/money-mutation.helper";
 import { SubscriptionTierName } from "./dto/subscribe.dto";
@@ -25,7 +24,6 @@ export class SubscriptionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly payphone: PayphoneClient,
     private readonly period: PeriodService
   ) {}
 
@@ -87,17 +85,26 @@ export class SubscriptionService {
     // PENDING_FULL_NAME en auth.service.ts).
     await this.prisma.user.update({ where: { id: params.userId }, data: { fullName: params.fullName } });
 
+    // autoConfirm: true — aportaciones son informativas, sin pasarela real
+    // (decisión de negocio: a diferencia de casilleros, acá no hay un pago
+    // que de verdad se cobre dentro de la app). El Payment se crea
+    // CONFIRMED de una vez, sin el paso intermedio "esperando PayPhone" que
+    // sí existe en LockerService.rent(). Esto también hace que el
+    // descuento de aportante (SubscriptionBenefitsService) aplique de
+    // inmediato, no recién cuando alguien confirmara un pago que ya no
+    // existe.
     return executeMoneyMutation<Subscription>(
       { prisma: this.prisma, audit: this.audit },
       {
         userId: params.userId,
         amount,
-        method: "PAYPHONE",
+        method: "INFORMATIVE",
         ipAddress: params.ipAddress,
         auditAction: "subscription.created",
         auditEntityType: "Subscription",
         entityId: (subscription) => subscription.id,
         auditMetadata: () => ({ tierName: params.tierName }),
+        autoConfirm: true,
         // @@unique([userId, periodId]) en el schema: un aportante, un tier
         // activo por periodo — no "el primero que llega gana un descuento
         // extra por aportar dos veces".
@@ -110,89 +117,5 @@ export class SubscriptionService {
         },
       }
     );
-  }
-
-  // Confirmación de pago con PayPhone — mismo patrón que
-  // LockerService.confirmPayphonePayment(): siempre re-verifica contra la
-  // API real de PayPhone antes de marcar algo como pagado, nunca confía en
-  // que el navegador "diga" que volvió con esos query params.
-  async confirmPayphonePayment(subscriptionId: string, payphoneTransactionId: number, userId: string, ipAddress?: string) {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { id: subscriptionId },
-      include: { payment: true },
-    });
-    if (!subscription) throw new NotFoundException("Aportación no encontrada");
-    if (subscription.userId !== userId) throw new ForbiddenException("Esta aportación no te pertenece");
-    if (subscription.payment.method !== "PAYPHONE") {
-      throw new BadRequestException("Esta aportación no se paga con PayPhone");
-    }
-    if (subscription.payment.status !== "PENDING") {
-      throw new BadRequestException("Este pago ya fue procesado");
-    }
-
-    const amount = Number(subscription.payment.amount);
-    const expectedCents = Math.round(amount * 100);
-
-    let result;
-    try {
-      result = await this.payphone.confirm(payphoneTransactionId, subscriptionId);
-    } catch (err) {
-      await this.audit.record({
-        actorId: userId,
-        action: "subscription.payphone.rejected",
-        entityType: "Subscription",
-        entityId: subscription.id,
-        ipAddress,
-        metadata: { reason: "confirm_api_error", message: (err as Error).message },
-      });
-      throw new BadRequestException("No se pudo confirmar el pago con PayPhone — intenta de nuevo");
-    }
-
-    // clientTransactionId es el ancla real contra reutilizar UN pago
-    // aprobado para confirmar OTRA aportación distinta — sin esto, dos
-    // aportaciones con el mismo tier (mismo monto) bastan para que el
-    // mismo transactionId real "apruebe" ambas (mismo hallazgo que en
-    // locker.service.ts confirmPayphonePayment).
-    if (!result.approved || result.amountCents !== expectedCents || result.clientTransactionId !== subscriptionId) {
-      await this.audit.record({
-        actorId: userId,
-        action: "subscription.payphone.rejected",
-        entityType: "Subscription",
-        entityId: subscription.id,
-        ipAddress,
-        metadata: { reason: "no_aprobado_monto_no_coincide_o_clientTransactionId_no_coincide", expectedCents, got: result },
-      });
-      throw new BadRequestException("PayPhone no aprobó esta transacción");
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.payment.updateMany({
-        where: { id: subscription.paymentId, status: "PENDING" },
-        data: {
-          status: "CONFIRMED",
-          confirmedAt: new Date(),
-          providerRef: String(result.transactionId),
-        },
-      });
-      if (count === 0) {
-        throw new ConflictException("Este pago ya fue procesado por otra petición");
-      }
-      await this.audit.record(
-        {
-          actorId: userId,
-          action: "subscription.payphone.confirmed",
-          entityType: "Subscription",
-          entityId: subscription.id,
-          ipAddress,
-          metadata: { amount, providerRef: String(result.transactionId) },
-        },
-        tx
-      );
-      return { subscription };
-    });
-  }
-
-  getPayphoneConfig() {
-    return this.payphone.getPublicConfig();
   }
 }

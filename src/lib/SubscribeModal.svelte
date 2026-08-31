@@ -1,12 +1,13 @@
 <script lang="ts">
-  // Modal de aportación — 3 pasos: identidad → PayPhone → confirmación.
-  // PayPhone es el único método de pago (transferencia + comprobante por
-  // OCR se retiró).
-  import { fetchMe, subscribeToTier, fetchSubscriptionPayphoneConfig, ApiError, type MeResponse } from "./api";
-  import { loadPayphoneSdk } from "./payphoneSdk";
+  // Modal de aportación — 2 pasos: identidad → confirmación. Aportaciones
+  // son INFORMATIVAS, sin pasarela real (decisión de negocio) — a
+  // diferencia de casilleros, acá nunca se abre PayPhone; el backend
+  // confirma el "pago" de una vez (ver
+  // backend/src/subscription/subscription.service.ts::subscribe(),
+  // autoConfirm:true).
+  import { fetchMe, subscribeToTier, ApiError, type MeResponse } from "./api";
   import { isAuthenticated } from "./auth.svelte";
   import Login from "./Login.svelte";
-  import PayphoneLogo from "./PayphoneLogo.svelte";
 
   interface Props {
     tierName: string;
@@ -17,11 +18,10 @@
 
   let { tierName, tierAmount, onclose, onsubscribed }: Props = $props();
 
-  type Step = "identity" | "payphone" | "confirmed";
+  type Step = "identity" | "confirmed";
   let step = $state<Step>("identity");
 
   const priceLabel = $derived(`$${tierAmount}`);
-  const amountCents = $derived(Math.round(parseFloat(tierAmount) * 100));
 
   let me = $state<MeResponse | null>(null);
   let meError = $state(false);
@@ -47,68 +47,23 @@
   let showLogin = $state(false);
   let busy = $state(false);
   let errorMessage = $state<string | null>(null);
-  let subscriptionId = $state<string | null>(null);
 
-  // Igual que casilleros: se crea la aportación (PENDING) de una vez — el
-  // cobro real todavía no pasó, pasa en el widget del paso 2 (ver
-  // backend/src/subscription/subscription.service.ts confirmPayphonePayment).
+  // La aportación queda CONFIRMED de una vez del lado del backend — no hay
+  // un paso 2 de pago que esperar acá, a diferencia de casilleros.
   async function continueFromIdentity() {
     if (!fullNameValid) return;
     errorMessage = null;
     busy = true;
     try {
-      const subscription = await subscribeToTier({ tierName, fullName: fullName.trim() });
-      subscriptionId = subscription.id;
-      step = "payphone";
+      await subscribeToTier({ tierName, fullName: fullName.trim() });
+      step = "confirmed";
+      onsubscribed?.();
     } catch (err) {
-      errorMessage = err instanceof ApiError ? err.message : "No se pudo iniciar la aportación";
+      errorMessage = err instanceof ApiError ? err.message : "No se pudo registrar la aportación";
     } finally {
       busy = false;
     }
   }
-
-  let payphoneConfig = $state<{ configured: boolean; token: string; storeId: string } | null>(null);
-  let payphoneConfigError = $state(false);
-  let payphoneContainer = $state<HTMLDivElement | null>(null);
-  let payphoneWidgetStarted = $state(false);
-
-  $effect(() => {
-    if (step !== "payphone" || payphoneConfig || payphoneConfigError) return;
-    fetchSubscriptionPayphoneConfig()
-      .then((c) => (payphoneConfig = c))
-      .catch(() => (payphoneConfigError = true));
-  });
-
-  $effect(() => {
-    if (
-      step !== "payphone" ||
-      !payphoneConfig?.configured ||
-      !subscriptionId ||
-      !payphoneContainer ||
-      payphoneWidgetStarted
-    ) {
-      return;
-    }
-    payphoneWidgetStarted = true;
-    const containerId = payphoneContainer.id;
-    loadPayphoneSdk()
-      .then(() => {
-        new window.PPaymentButtonBox!({
-          token: payphoneConfig!.token,
-          storeId: payphoneConfig!.storeId,
-          clientTransactionId: subscriptionId!,
-          amount: amountCents,
-          amountWithoutTax: amountCents,
-          currency: "USD",
-          reference: `Aportación ${tierName}`,
-          lang: "es",
-        }).render(containerId);
-      })
-      .catch(() => {
-        errorMessage = "No se pudo cargar el widget de PayPhone — intenta de nuevo en un momento.";
-        payphoneWidgetStarted = false;
-      });
-  });
 
   function onScrimKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") onclose();
@@ -135,7 +90,7 @@
         <Login onclose={() => (showLogin = false)} />
       {/if}
     {:else if step === "identity"}
-      <div class="step-badge">Paso 1 de 3 · Identidad</div>
+      <div class="step-badge">Paso 1 de 2 · Identidad</div>
 
       {#if meError}
         <p class="modal-copy error">No se pudo cargar tu perfil — intenta de nuevo.</p>
@@ -162,46 +117,18 @@
         <div class="identity-card">
           <div class="identity-row"><span>Tier</span><strong>{tierName} — {priceLabel}</strong></div>
         </div>
-
-        <div class="price-row">
-          <span class="price-label">
-            Pago con <PayphoneLogo height={13} />
-          </span>
-          <span class="price-amount">{priceLabel}</span>
-        </div>
+        <p class="modal-copy hint">
+          Esto registra tu aportación como {tierName} — es informativo, no se procesa ningún cobro dentro de la app.
+        </p>
 
         {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
 
         <button class="cta" disabled={busy || !fullNameValid} onclick={continueFromIdentity}>
-          {busy ? "Un momento…" : "Continuar"}
+          {busy ? "Un momento…" : "Confirmar aportación"}
         </button>
       {/if}
-    {:else if step === "payphone"}
-      <div class="step-badge">Paso 2 de 3 · Pago con PayPhone</div>
-      {#if payphoneConfigError}
-        <p class="modal-copy error">
-          No se pudo cargar la configuración de PayPhone — intenta de nuevo en un momento.
-        </p>
-      {:else if !payphoneConfig}
-        <p class="modal-copy">Cargando PayPhone…</p>
-      {:else if !payphoneConfig.configured}
-        <p class="modal-copy error">
-          PayPhone todavía no está conectado (faltan credenciales de comercio) — vuelve a intentar en
-          un momento.
-        </p>
-      {:else}
-        <div class="payphone-brand">
-          <PayphoneLogo height={20} />
-        </div>
-        <p class="modal-copy">
-          Vas a pagar {priceLabel} con PayPhone por tu aportación {tierName}. Se abrirá el formulario
-          seguro de PayPhone — al terminar, vuelves aquí y confirmamos el pago automáticamente.
-        </p>
-        {#if errorMessage}<p class="modal-copy error">{errorMessage}</p>{/if}
-        <div id="pp-sub-button-{tierName}" bind:this={payphoneContainer} class="payphone-widget"></div>
-      {/if}
     {:else if step === "confirmed"}
-      <div class="step-badge">Paso 3 de 3 · Listo</div>
+      <div class="step-badge">Paso 2 de 2 · Listo</div>
       <p class="modal-copy success">¡Aportación {tierName} confirmada!</p>
       <button class="cta" onclick={onclose}>Cerrar</button>
     {/if}
@@ -233,10 +160,7 @@
 
   .modal {
     position: relative;
-    /* Más ancho que el resto de pasos a propósito — el formulario real de
-       PayPhone (tarjeta, fecha, CVV, "De Una") se ve apretado y obliga a
-       más scroll a 380px; con 440px sus propios campos entran cómodos. */
-    width: min(440px, 100%);
+    width: min(400px, 100%);
     max-height: 86vh;
     overflow-y: auto;
     background: linear-gradient(180deg, rgba(20, 26, 40, 0.96), rgba(6, 9, 16, 0.98));
@@ -293,6 +217,10 @@
   }
   .modal-copy.success {
     color: var(--accent, #21e0a0);
+  }
+  .modal-copy.hint {
+    font-size: 12px;
+    color: rgba(238, 244, 251, 0.6);
   }
 
   .identity-card {
@@ -384,44 +312,6 @@
     color: #ff8a8a;
   }
 
-  .price-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 11px 14px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #eef4fb;
-    font-size: 13px;
-    margin-bottom: 16px;
-  }
-  .price-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .price-label :global(svg) {
-    color: #eef4fb;
-    opacity: 0.9;
-  }
-  .price-amount {
-    font-weight: 700;
-    color: var(--accent, #21e0a0);
-  }
-
-  /* Logo real de PayPhone antes de abrir su widget — confirma de un
-     vistazo con QUIÉN se está por pagar, antes de que aparezca el
-     formulario blanco aislado por PCI (ver comentario de .payphone-widget
-     más abajo). */
-  .payphone-brand {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 10px;
-    color: #eef4fb;
-    opacity: 0.92;
-  }
-
   .cta {
     width: 100%;
     padding: 12px 16px;
@@ -449,18 +339,5 @@
   .cta:disabled {
     opacity: 0.55;
     cursor: not-allowed;
-  }
-
-  /* Marco propio alrededor del widget — PayPhone renderiza su formulario
-     en BLANCO por dentro (no se puede re-estilar: vive aislado por
-     cumplimiento PCI) y quedaba flotando directo contra el fondo oscuro
-     del modal, con bordes duros. Este marco redondeado y con borde suave
-     hace que la transición se sienta integrada, no un recorte pegado. */
-  .payphone-widget {
-    min-height: 52px;
-    border-radius: 16px;
-    overflow: hidden;
-    background: #f4f6fb;
-    border: 1px solid rgba(255, 255, 255, 0.12);
   }
 </style>

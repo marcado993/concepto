@@ -1,19 +1,17 @@
 import { Test } from "@nestjs/testing";
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { AlreadySubscribedError, SubscriptionService } from "./subscription.service";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
-import { PayphoneClient } from "../shared/payment/payphone.client";
 import { PeriodService } from "../shared/period/period.service";
 
-function buildService(overrides: { prisma?: any; audit?: any; payphone?: any; period?: any }) {
+function buildService(overrides: { prisma?: any; audit?: any; period?: any }) {
   return Test.createTestingModule({
     providers: [
       SubscriptionService,
       { provide: PrismaService, useValue: overrides.prisma ?? {} },
       { provide: AuditService, useValue: overrides.audit ?? { record: jest.fn().mockResolvedValue({}) } },
-      { provide: PayphoneClient, useValue: overrides.payphone ?? { confirm: jest.fn(), getPublicConfig: jest.fn() } },
       {
         provide: PeriodService,
         useValue: overrides.period ?? { getCurrentPeriodId: jest.fn().mockResolvedValue("period-1") },
@@ -58,11 +56,18 @@ describe("SubscriptionService.subscribe", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("Dado un tier vigente, Cuando se aporta, Entonces usa EXACTAMENTE el monto configurado del tier, no un valor fijo en código, y el pago queda como PAYPHONE (único método)", async () => {
+  // Aportaciones son informativas — sin pasarela real (decisión de negocio,
+  // ver el comentario grande en subscription.service.ts). A diferencia de
+  // lockers, el Payment se crea YA CONFIRMED, method INFORMATIVE — nunca
+  // queda un estado intermedio "esperando PayPhone" porque no hay PayPhone
+  // en este flujo.
+  it("Dado un tier vigente, Cuando se aporta, Entonces usa EXACTAMENTE el monto configurado del tier y el pago queda CONFIRMED de una vez, method INFORMATIVE (sin pasarela)", async () => {
     await service.subscribe(params);
 
     expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ amount: 19.99, method: "PAYPHONE", status: "PENDING" }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ amount: 19.99, method: "INFORMATIVE", status: "CONFIRMED", confirmedAt: expect.any(Date) }),
+      })
     );
   });
 
@@ -122,97 +127,26 @@ describe("SubscriptionService.listTiers / getMine", () => {
     await expect(service.getMine("user-1")).resolves.toBeNull();
   });
 
-  // "TRANSFER" acá es lectura de un dato HISTÓRICO — esta aportación se
-  // hubiera creado antes de que se retirara transferencia como método; el
-  // enum de la base de datos sigue reconociendo ese valor a propósito, para
-  // no perder el historial real (ver rental-calculator.ts y schema.prisma).
-  it("Dado un estudiante con aportación PENDING creada cuando transferencia todavía existía, Cuando consulta la suya, Entonces expone el estado y método históricos tal cual quedaron guardados", async () => {
+  // "TRANSFER"/"PAYPHONE" acá son lectura de datos HISTÓRICOS — esta
+  // aportación se hubiera creado antes de que se retirara la pasarela real
+  // de aportaciones (ver el comentario grande en subscription.service.ts).
+  // El enum de la base de datos sigue reconociendo esos valores a
+  // propósito, para no perder el historial real de lo que de verdad pasó
+  // en su momento (ver schema.prisma).
+  it("Dado un estudiante con aportación creada cuando PayPhone todavía aplicaba a aportaciones, Cuando consulta la suya, Entonces expone el estado y método históricos tal cual quedaron guardados", async () => {
     const prisma = {
       subscription: {
         findUnique: jest.fn().mockResolvedValue({
           id: "sub-1",
           tier: { name: "Bronce" },
-          payment: { amount: new Prisma.Decimal(7.99), method: "TRANSFER", status: "PENDING" },
+          payment: { amount: new Prisma.Decimal(7.99), method: "PAYPHONE", status: "CONFIRMED" },
         }),
       },
     };
     const service = await buildService({ prisma });
 
     await expect(service.getMine("user-1")).resolves.toEqual(
-      expect.objectContaining({ tierName: "Bronce", paymentStatus: "PENDING", method: "TRANSFER" })
-    );
-  });
-});
-
-describe("SubscriptionService.confirmPayphonePayment", () => {
-  const pendingSub = {
-    id: "sub-1",
-    userId: "user-1",
-    paymentId: "payment-1",
-    payment: { id: "payment-1", method: "PAYPHONE", status: "PENDING", amount: 20.39 },
-  };
-
-  function build(payphoneOverrides: any = {}) {
-    const tx = { payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
-    const prisma = {
-      subscription: { findUnique: jest.fn().mockResolvedValue(pendingSub) },
-      $transaction: jest.fn((cb: any) => cb(tx)),
-      __tx: tx,
-    };
-    const payphone = { confirm: jest.fn(), getPublicConfig: jest.fn(), ...payphoneOverrides };
-    const audit = { record: jest.fn().mockResolvedValue({}) };
-    return buildService({ prisma, payphone, audit }).then((service) => ({ service, prisma, payphone, audit }));
-  }
-
-  it("Dado que PayPhone no aprueba la transacción, Cuando se confirma, Entonces rechaza sin tocar el pago", async () => {
-    const { service, prisma, payphone } = await build({
-      confirm: jest.fn().mockResolvedValue({
-        approved: false,
-        transactionId: 1,
-        clientTransactionId: "sub-1",
-        amountCents: 2039,
-        raw: {},
-      }),
-    });
-
-    await expect(service.confirmPayphonePayment("sub-1", 1, "user-1")).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(payphone.confirm).toHaveBeenCalledWith(1, "sub-1");
-  });
-
-  // Mismo hallazgo de seguridad que locker.service.spec.ts: un pago real
-  // aprobado no debería poder confirmar una aportación distinta a la que
-  // de verdad se pagó, aunque el monto coincida (tiers tienen precio fijo).
-  it("Dado que PayPhone aprueba una transacción real pero para OTRA aportación distinta (clientTransactionId no coincide), Cuando se confirma, Entonces rechaza sin tocar el pago", async () => {
-    const { service, prisma } = await build({
-      confirm: jest.fn().mockResolvedValue({
-        approved: true,
-        transactionId: 1,
-        clientTransactionId: "sub-de-otra-aportacion",
-        amountCents: 2039,
-        raw: {},
-      }),
-    });
-
-    await expect(service.confirmPayphonePayment("sub-1", 1, "user-1")).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-
-  it("Dado que PayPhone aprueba con el monto correcto, Cuando se confirma, Entonces el pago pasa a CONFIRMED", async () => {
-    const { service, prisma } = await build({
-      confirm: jest.fn().mockResolvedValue({
-        approved: true,
-        transactionId: 1,
-        clientTransactionId: "sub-1",
-        amountCents: 2039,
-        raw: {},
-      }),
-    });
-
-    await service.confirmPayphonePayment("sub-1", 1, "user-1");
-
-    expect(prisma.__tx.payment.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "CONFIRMED", providerRef: "1" }) })
+      expect.objectContaining({ tierName: "Bronce", paymentStatus: "CONFIRMED", method: "PAYPHONE" })
     );
   });
 });

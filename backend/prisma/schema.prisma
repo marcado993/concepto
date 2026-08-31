@@ -32,6 +32,10 @@ enum LockerStatus {
 enum PaymentMethod {
   PAYPHONE
   TRANSFER
+  // Aportaciones — informativas, sin pasarela real (decisión de negocio,
+  // ver SubscriptionService.subscribe()). El Payment se crea CONFIRMED de
+  // una vez, nunca pasa por PayPhone ni ningún otro proveedor.
+  INFORMATIVE
 }
 
 enum PaymentStatus {
