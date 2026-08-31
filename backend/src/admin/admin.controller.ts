@@ -1,13 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { Request } from "express";
 import { Public } from "../shared/auth/public.decorator";
 import { AdminJwtAuthGuard } from "./admin-auth/admin-jwt-auth.guard";
 import { AdminService } from "./admin.service";
+import { DangerZoneService } from "./danger-zone.service";
 import { ListUsersQueryDto } from "./dto/list-users.dto";
 import { ListAuditLogsQueryDto } from "./dto/list-audit-logs.dto";
 import { UpdateSubscriptionTierDto } from "./dto/update-subscription-tier.dto";
 import { UpdateLockerPricingDto } from "./dto/update-locker-pricing.dto";
 import { UpdateUiVariantDto } from "./dto/update-ui-variant.dto";
+import { ConfirmWipeTestDataDto, ConfirmFreeLockersDto } from "./dto/confirm-danger-action.dto";
 
 type AuthedRequest = Request & { user: { id: string } };
 
@@ -22,7 +24,10 @@ type AuthedRequest = Request & { user: { id: string } };
 @Public()
 @UseGuards(AdminJwtAuthGuard)
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly dangerZone: DangerZoneService
+  ) {}
 
   @Get("overview")
   getOverview() {
@@ -71,5 +76,24 @@ export class AdminController {
   @Patch("ui-variant")
   updateUiVariant(@Body() dto: UpdateUiVariantDto, @Req() req: AuthedRequest) {
     return this.admin.updateUiVariant(dto, { adminActorId: req.user.id, ipAddress: req.ip });
+  }
+
+  // Zona de riesgo — ver danger-zone.service.ts para el alcance exacto y
+  // por qué cada tabla está incluida/excluida. Cada acción mutante exige
+  // una frase de confirmación literal en el body (ConfirmWipeTestDataDto/
+  // ConfirmFreeLockersDto) — un simple POST sin cuerpo no alcanza.
+  @Get("danger-zone/preview")
+  previewDangerZone() {
+    return this.dangerZone.previewWipe();
+  }
+
+  @Post("danger-zone/wipe-test-data")
+  wipeTestData(@Body() _dto: ConfirmWipeTestDataDto, @Req() req: AuthedRequest) {
+    return this.dangerZone.wipeTestData({ adminActorId: req.user.id, ipAddress: req.ip });
+  }
+
+  @Post("danger-zone/free-lockers")
+  freeLockers(@Body() _dto: ConfirmFreeLockersDto, @Req() req: AuthedRequest) {
+    return this.dangerZone.freeLockers({ adminActorId: req.user.id, ipAddress: req.ip });
   }
 }

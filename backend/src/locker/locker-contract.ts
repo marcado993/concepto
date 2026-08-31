@@ -32,7 +32,7 @@ export function titleCase(value: string): string {
 // America/Guayaquil (UTC-5) la corre un día atrás (medianoche UTC del 28 =
 // 7pm del 27 en Guayaquil). Se formatea en UTC para que el día mostrado sea
 // el mismo que el que decide PeriodService/el resto de la app.
-function formatCalendarDate(date: Date): string {
+export function formatCalendarDate(date: Date): string {
   return date.toLocaleDateString("es-EC", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 

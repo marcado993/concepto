@@ -10,6 +10,7 @@ import { executeMoneyMutation } from "../shared/payment/money-mutation.helper";
 import { calculateLockerPrice } from "./rental-calculator";
 import { MailService } from "../shared/mail/mail.service";
 import { lockerContractHtml, lockerContractSubject } from "./locker-contract";
+import { lockerContractPdf } from "./locker-contract-pdf";
 
 export class LockerUnavailableError extends ConflictException {
   constructor(lockerCode: string) {
@@ -429,11 +430,13 @@ export class LockerService {
     };
 
     try {
+      const pdf = await lockerContractPdf(contractData);
       await this.mail.send({
         to: user.email,
         cc: CONTRACT_CC_EMAIL,
         subject: lockerContractSubject(contractData),
         html: lockerContractHtml(contractData),
+        attachments: [{ filename: `contrato-casillero-${locker.code}.pdf`, content: pdf }],
       });
       await this.audit.record({
         actorId: userId,

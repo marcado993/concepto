@@ -28,7 +28,13 @@ export class MailService {
     return this.client;
   }
 
-  async send(params: { to: string; subject: string; html: string; cc?: string | string[] }): Promise<void> {
+  async send(params: {
+    to: string;
+    subject: string;
+    html: string;
+    cc?: string | string[];
+    attachments?: { filename: string; content: Buffer }[];
+  }): Promise<void> {
     const from = this.config.getOrThrow<string>("MAIL_FROM");
     const { error } = await this.getClient().emails.send({
       from,
@@ -36,6 +42,7 @@ export class MailService {
       subject: params.subject,
       html: params.html,
       ...(params.cc ? { cc: params.cc } : {}),
+      ...(params.attachments ? { attachments: params.attachments } : {}),
     });
     if (error) {
       // Nunca se propaga el detalle crudo de Resend más allá de este log —

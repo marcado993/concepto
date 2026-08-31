@@ -18,8 +18,8 @@ export class AdminAuthController {
   @Public()
   @Throttle({ short: { limit: 5, ttl: 10_000 }, medium: { limit: 8, ttl: 300_000 } })
   @Post("login")
-  login(@Body() dto: AdminLoginDto) {
-    return this.adminAuth.login(dto.email, dto.password);
+  login(@Body() dto: AdminLoginDto, @Req() req: Request) {
+    return this.adminAuth.login(dto.email, dto.password, req.ip);
   }
 
   // Identidad de quien está en sesión en el panel — AdminApp.svelte lo usa

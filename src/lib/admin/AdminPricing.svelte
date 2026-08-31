@@ -181,16 +181,28 @@
   }
 </script>
 
-<section class="block">
-  <h2>Precio del casillero</h2>
-  <p class="hint">Se aplica al semestre activo{lockerPeriodLabel ? ` (${lockerPeriodLabel})` : ""}. Rango permitido: $5.50 – $9.00.</p>
+<section class="mb-9 max-w-[720px]">
+  <h2 class="mb-1 font-heading text-lg tracking-[0.03em]">Precio del casillero</h2>
+  <p class="mb-3.5 text-[13px] leading-relaxed text-ink-1">
+    Se aplica al semestre activo{lockerPeriodLabel ? ` (${lockerPeriodLabel})` : ""}. Rango permitido: $5.50 – $9.00.
+  </p>
 
   {#if lockerLoading}
-    <div class="row"><span class="admin-skeleton skeleton-input"></span><span class="admin-skeleton skeleton-btn"></span></div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="admin-skeleton block h-[38px] w-[120px]"></span>
+      <span class="admin-skeleton block h-[38px] w-[88px] rounded-full"></span>
+    </div>
   {:else}
-    <div class="row">
-      <span class="prefix">$</span>
-      <input class="amount-input" type="number" step="0.01" min="5.5" max="9" bind:value={lockerInput} />
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-ink-1">$</span>
+      <input
+        class="w-[120px] rounded-lg border border-line-strong bg-panel px-2.5 py-2 font-[inherit] text-[13.5px] text-ink-0 outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+        type="number"
+        step="0.01"
+        min="5.5"
+        max="9"
+        bind:value={lockerInput}
+      />
       <button class="admin-btn admin-btn-primary" disabled={lockerSaving} onclick={saveLockerPrice}>
         {lockerSaving ? "Guardando…" : "Guardar"}
       </button>
@@ -198,47 +210,59 @@
         <span class="admin-saved-tag">Guardado</span>
       {/if}
     </div>
-    {#if lockerError}<p class="admin-error">{lockerError}</p>{/if}
-    {#if lockerBasePrice !== null}<p class="admin-muted small">Precio actual: ${lockerBasePrice.toFixed(2)}</p>{/if}
+    {#if lockerError}<p class="admin-error mt-2">{lockerError}</p>{/if}
+    {#if lockerBasePrice !== null}<p class="admin-muted mt-2">Precio actual: ${lockerBasePrice.toFixed(2)}</p>{/if}
   {/if}
 </section>
 
-<section class="block">
-  <h2>Aportaciones — precio y beneficios</h2>
-  <p class="hint">Tiers del semestre activo{tiersPeriodLabel ? ` (${tiersPeriodLabel})` : ""}. Cambia el monto y los descuentos, y toca Guardar.</p>
+<section class="mb-9 max-w-[720px]">
+  <h2 class="mb-1 font-heading text-lg tracking-[0.03em]">Aportaciones — precio y beneficios</h2>
+  <p class="mb-3.5 text-[13px] leading-relaxed text-ink-1">
+    Tiers del semestre activo{tiersPeriodLabel ? ` (${tiersPeriodLabel})` : ""}. Cambia el monto y los descuentos, y toca Guardar.
+  </p>
 
   {#if tiersLoading}
-    <div class="tiers-grid">
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
       {#each { length: 3 } as _}
-        <div class="tier-card"><span class="admin-skeleton skeleton-card"></span></div>
+        <div class="rounded-2xl border border-line-soft bg-panel/60 p-4 backdrop-blur-xl">
+          <span class="admin-skeleton block h-40 w-full"></span>
+        </div>
       {/each}
     </div>
   {:else if tiersError}
     <p class="admin-error">{tiersError}</p>
   {:else}
-    <div class="tiers-grid">
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
       {#each tiers as tier (tier.id)}
-        <div class="tier-card">
-          <h3>{tier.name}</h3>
+        <div class="rounded-2xl border border-line-soft bg-panel/60 p-4 backdrop-blur-xl">
+          <h3 class="mb-2.5 font-heading text-[15px] tracking-[0.03em] text-accent">{tier.name}</h3>
 
-          <label class="field-label" for={`amt-${tier.id}`}>Monto (USD)</label>
-          <div class="row">
-            <span class="prefix">$</span>
-            <input id={`amt-${tier.id}`} class="amount-input" type="number" step="0.01" min="0.01" bind:value={amountDrafts[tier.id]} />
+          <label class="mt-3.5 mb-1.5 block text-xs text-ink-1" for={`amt-${tier.id}`}>Monto (USD)</label>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-ink-1">$</span>
+            <input
+              id={`amt-${tier.id}`}
+              class="w-[120px] rounded-lg border border-line-strong bg-panel px-2.5 py-2 font-[inherit] text-[13.5px] text-ink-0 outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              type="number"
+              step="0.01"
+              min="0.01"
+              bind:value={amountDrafts[tier.id]}
+            />
           </div>
 
           {#if benefitDrafts[tier.id]}
-            <span class="field-label benefits-label">Beneficios</span>
+            <span class="mt-4 mb-1.5 block text-xs text-ink-1">Beneficios</span>
             <!-- Estilo Google Forms: casilla a la izquierda + etiqueta, sin
                  cajas ni bordes por fila. La casilla ES el beneficio
                  (on/off); el % de abajo solo afina cuánto una vez activado —
                  pedido explícito, más fácil de escanear de un vistazo que
                  tres pares de label+input sueltos. -->
-            <ul class="benefit-list">
-              <li class="benefit-row">
-                <label class="benefit-check" for={`casillero-${tier.id}`}>
+            <ul class="mt-1.5 flex list-none flex-col gap-0.5 p-0">
+              <li class="flex items-center justify-between gap-2.5 py-1.5">
+                <label class="checkbox-row" for={`casillero-${tier.id}`}>
                   <input
                     id={`casillero-${tier.id}`}
+                    class="admin-checkbox"
                     type="checkbox"
                     bind:checked={benefitDrafts[tier.id].casilleroOn}
                     onchange={() => {
@@ -248,23 +272,24 @@
                   <span>Descuento en casillero</span>
                 </label>
                 {#if benefitDrafts[tier.id].casilleroOn}
-                  <div class="benefit-control">
+                  <div class="flex flex-shrink-0 items-center gap-1.5">
                     <input
-                      class="amount-input-sm"
+                      class="w-14 rounded-lg border border-line-strong bg-panel-2 px-1.5 py-1 text-right font-[inherit] text-[13px] text-ink-0 outline-none focus:border-accent"
                       type="number"
                       step="1"
                       min="1"
                       max="100"
                       bind:value={benefitDrafts[tier.id].casilleroPercent}
                     />
-                    <span class="suffix">%</span>
+                    <span class="text-ink-1">%</span>
                   </div>
                 {/if}
               </li>
-              <li class="benefit-row">
-                <label class="benefit-check" for={`billar-${tier.id}`}>
+              <li class="flex items-center justify-between gap-2.5 py-1.5">
+                <label class="checkbox-row" for={`billar-${tier.id}`}>
                   <input
                     id={`billar-${tier.id}`}
+                    class="admin-checkbox"
                     type="checkbox"
                     bind:checked={benefitDrafts[tier.id].billarOn}
                     onchange={() => {
@@ -274,35 +299,35 @@
                   <span>Descuento en billar</span>
                 </label>
                 {#if benefitDrafts[tier.id].billarOn}
-                  <div class="benefit-control">
+                  <div class="flex flex-shrink-0 items-center gap-1.5">
                     <input
-                      class="amount-input-sm"
+                      class="w-14 rounded-lg border border-line-strong bg-panel-2 px-1.5 py-1 text-right font-[inherit] text-[13px] text-ink-0 outline-none focus:border-accent"
                       type="number"
                       step="1"
                       min="1"
                       max="100"
                       bind:value={benefitDrafts[tier.id].billarPercent}
                     />
-                    <span class="suffix">%</span>
+                    <span class="text-ink-1">%</span>
                   </div>
                 {/if}
               </li>
-              <li class="benefit-row">
-                <label class="benefit-check" for={`ps4-${tier.id}`}>
-                  <input id={`ps4-${tier.id}`} type="checkbox" bind:checked={benefitDrafts[tier.id].ps4} />
+              <li class="flex items-center justify-between gap-2.5 py-1.5">
+                <label class="checkbox-row" for={`ps4-${tier.id}`}>
+                  <input id={`ps4-${tier.id}`} class="admin-checkbox" type="checkbox" bind:checked={benefitDrafts[tier.id].ps4} />
                   <span>Acceso a PS4</span>
                 </label>
               </li>
             </ul>
           {/if}
 
-          <div class="row save-row">
+          <div class="mt-4 flex flex-wrap items-center gap-2">
             <button class="admin-btn admin-btn-primary" disabled={tierSaving[tier.id]} onclick={() => saveTier(tier)}>
               {tierSaving[tier.id] ? "Guardando…" : "Guardar"}
             </button>
             {#if tierIsSaved(tier.id)}<span class="admin-saved-tag">Guardado</span>{/if}
           </div>
-          {#if tierError[tier.id]}<p class="admin-error">{tierError[tier.id]}</p>{/if}
+          {#if tierError[tier.id]}<p class="admin-error mt-2">{tierError[tier.id]}</p>{/if}
         </div>
       {/each}
     </div>
@@ -310,95 +335,11 @@
 </section>
 
 <style>
-  .block {
-    max-width: 720px;
-    margin-bottom: 36px;
-  }
-
-  h2 {
-    font-family: var(--font-heading);
-    font-size: 18px;
-    letter-spacing: 0.03em;
-    margin: 0 0 4px;
-  }
-
-  h3 {
-    font-family: var(--font-heading);
-    font-size: 15px;
-    letter-spacing: 0.03em;
-    margin: 0 0 10px;
-    color: var(--accent);
-  }
-
-  .hint {
-    margin: 0 0 14px;
-    font-size: 13px;
-    color: var(--ink-1);
-    line-height: 1.5;
-  }
-
-  .small {
-    margin-top: 8px;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .save-row {
-    margin-top: 16px;
-  }
-
-  .prefix,
-  .suffix {
-    color: var(--ink-1);
-  }
-
-  .amount-input {
-    background: var(--bg-panel);
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-sm);
-    color: var(--ink-0);
-    font-family: inherit;
-    padding: 8px 10px;
-    font-size: 13.5px;
-    width: 120px;
-  }
-
-  .field-label {
-    display: block;
-    font-size: 12px;
-    color: var(--ink-1);
-    margin: 14px 0 6px;
-  }
-
-  .benefits-label {
-    margin-top: 16px;
-  }
-
-  /* Estilo Google Forms: sin caja contenedora ni bordes por fila — solo la
-     casilla, la etiqueta, y espacio en blanco entre opciones. */
-  .benefit-list {
-    list-style: none;
-    margin: 6px 0 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .benefit-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 6px 2px;
-  }
-
-  .benefit-check {
+  /* Único trozo que se queda como CSS a mano — el checkmark dibujado con
+     clip-path en :checked::before no tiene un equivalente directo y limpio
+     en utilidades de Tailwind. Todo lo demás de este archivo (layout,
+     espaciado, color) sí es Tailwind. */
+  .checkbox-row {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -407,7 +348,7 @@
     cursor: pointer;
   }
 
-  .benefit-check input[type="checkbox"] {
+  .admin-checkbox {
     appearance: none;
     width: 18px;
     height: 18px;
@@ -418,10 +359,12 @@
     cursor: pointer;
     display: grid;
     place-content: center;
-    transition: border-color 0.12s ease, background 0.12s ease;
+    transition:
+      border-color 0.12s ease,
+      background 0.12s ease;
   }
 
-  .benefit-check input[type="checkbox"]::before {
+  .admin-checkbox::before {
     content: "";
     width: 10px;
     height: 10px;
@@ -431,63 +374,12 @@
     background: #010805;
   }
 
-  .benefit-check input[type="checkbox"]:checked {
+  .admin-checkbox:checked {
     background: var(--accent);
     border-color: var(--accent);
   }
 
-  .benefit-check input[type="checkbox"]:checked::before {
+  .admin-checkbox:checked::before {
     transform: scale(1);
-  }
-
-  .benefit-control {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-
-  .amount-input-sm {
-    background: var(--bg-panel-2);
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-sm);
-    color: var(--ink-0);
-    font-family: inherit;
-    padding: 5px 7px;
-    font-size: 13px;
-    width: 56px;
-    text-align: right;
-  }
-
-  .tiers-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 16px;
-  }
-
-  .tier-card {
-    background: var(--bg-panel);
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-md);
-    padding: 16px;
-  }
-
-  .skeleton-input {
-    display: block;
-    width: 120px;
-    height: 34px;
-  }
-
-  .skeleton-btn {
-    display: block;
-    width: 88px;
-    height: 34px;
-    border-radius: 999px;
-  }
-
-  .skeleton-card {
-    display: block;
-    width: 100%;
-    height: 160px;
   }
 </style>

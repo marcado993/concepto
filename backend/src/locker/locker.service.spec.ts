@@ -419,6 +419,18 @@ describe("LockerService.confirmPayphonePayment", () => {
     expect(call.html).toContain("A07");
   });
 
+  it("Dado un pago aprobado, Cuando se confirma, Entonces adjunta el contrato como PDF real (no solo el HTML del cuerpo)", async () => {
+    approvePayphone();
+
+    await service.confirmPayphonePayment("rental-1", 999, "user-1");
+
+    const call = mail.send.mock.calls[0][0];
+    expect(call.attachments).toHaveLength(1);
+    expect(call.attachments[0].filename).toBe("contrato-casillero-A07.pdf");
+    expect(Buffer.isBuffer(call.attachments[0].content)).toBe(true);
+    expect(call.attachments[0].content.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+  });
+
   it("Dado un pago aprobado, Cuando se manda el contrato con éxito, Entonces audita locker.contract.sent", async () => {
     approvePayphone();
 

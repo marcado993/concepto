@@ -38,7 +38,18 @@ async function bootstrap() {
   // Cabeceras de seguridad (X-Frame-Options, X-Content-Type-Options,
   // etc.) — una sola línea, cubre una clase entera de hallazgos que de
   // otro modo habría que configurar a mano cabecera por cabecera.
-  app.use(helmet());
+  //
+  // hsts.preload explícito en true — helmet ya manda includeSubDomains
+  // por defecto, pero preload:false por defecto. Sin preload, un
+  // estudiante que entra por PRIMERA VEZ (nunca visitó el sitio antes,
+  // el navegador todavía no sabe que debe forzar HTTPS) sigue expuesto un
+  // instante a un downgrade a HTTP plano antes del redirect — justo el
+  // escenario real en un WiFi de campus compartido. Con preload:true la
+  // cabecera queda lista para someter el dominio a la lista de precarga
+  // de los navegadores (hstspreload.org) — eso sí es un paso manual
+  // aparte, agregar la cabecera es la condición previa, no la garantiza
+  // sola.
+  app.use(helmet({ hsts: { maxAge: 31536000, includeSubDomains: true, preload: true } }));
 
   // Firma la cookie que guarda el code_verifier/state de PKCE entre
   // /auth/login y /auth/callback — sin esto, cualquiera podría fabricar

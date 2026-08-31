@@ -1,5 +1,6 @@
 import { mount } from "svelte";
 import "./app.css";
+import "./lib/admin/admin-tailwind.css";
 import "./lib/admin/admin-shared.css";
 import AdminApp from "./lib/admin/AdminApp.svelte";
 

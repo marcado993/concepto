@@ -1,5 +1,6 @@
 import { IsIn, IsString, Matches, MinLength } from "class-validator";
 import { FULL_NAME_PATTERN, FULL_NAME_MESSAGE } from "../../shared/validation/full-name.pattern";
+import { IsCedulaEcuatoriana } from "../../shared/validation/cedula-ecuatoriana.pattern";
 
 // Formato real del código único institucional de la EPN (confirmado con
 // datos reales del cliente, no inventado): 9 dígitos, sin letras ni
@@ -41,7 +42,10 @@ export class RentLockerDto {
 
   // Cédula ecuatoriana — 10 dígitos, sin guiones ni espacios (el frontend
   // los limpia antes de mandar). Se guarda en User (ver locker.service.ts)
-  // para no volver a pedirla el siguiente semestre.
+  // para no volver a pedirla el siguiente semestre. Validación real (no
+  // solo "10 dígitos"): provincia 01-24, tercer dígito de persona natural
+  // (0-5) y checksum módulo 10 del Registro Civil — ver
+  // shared/validation/cedula-ecuatoriana.pattern.ts.
   //
   // A PROPÓSITO nunca se completa con el "document"/"phoneNumber" que
   // devuelve PayPhone tras el pago (se evaluó y se descartó): eso es del
@@ -49,7 +53,7 @@ export class RentLockerDto {
   // con la tarjeta de un familiar. Usar ese dato pondría a la persona
   // equivocada en el contrato del casillero. Siempre lo escribe el propio
   // estudiante.
-  @Matches(/^\d{10}$/, { message: "La cédula debe tener 10 dígitos" })
+  @IsCedulaEcuatoriana()
   cedula!: string;
 
   // Celular ecuatoriano — 10 dígitos empezando en 0 (ej. 0991234567).

@@ -38,8 +38,10 @@
 </script>
 
 <section>
-  <h2>Estudiantes registrados</h2>
-  <p class="hint">{total} en total — nunca se muestra el identificador interno de Logto, solo lo que ya ve el propio estudiante en su perfil.</p>
+  <h2 class="mb-1 font-heading text-lg tracking-[0.03em]">Estudiantes registrados</h2>
+  <p class="mb-3.5 text-[13px] text-ink-1">
+    {total} en total — nunca se muestra el identificador interno de Logto, solo lo que ya ve el propio estudiante en su perfil.
+  </p>
 
   <form class="admin-search-row" onsubmit={onSearchSubmit}>
     <input class="admin-search-input" type="search" placeholder="Buscar por nombre, correo o código único…" bind:value={search} />
@@ -47,9 +49,9 @@
   </form>
 
   {#if loading}
-    <div class="table-wrap skeleton-table">
+    <div class="flex flex-col gap-px rounded-2xl border border-line-soft bg-panel/40 p-2 backdrop-blur-xl">
       {#each { length: 6 } as _}
-        <span class="admin-skeleton skeleton-row"></span>
+        <span class="admin-skeleton h-[34px]"></span>
       {/each}
     </div>
   {:else if error}
@@ -63,29 +65,37 @@
       <p>{search.trim() ? `No hay estudiantes que coincidan con "${search.trim()}".` : "Todavía no hay ningún estudiante registrado."}</p>
     </div>
   {:else}
-    <div class="table-wrap">
-      <table>
+    <div class="overflow-x-auto rounded-2xl border border-line-soft bg-panel/40 backdrop-blur-xl">
+      <table class="w-full border-collapse text-[13px]">
         <thead>
           <tr>
-            <th>Nombre</th>
-            <th>Correo</th>
-            <th>Código único</th>
-            <th>Cédula</th>
-            <th>Celular</th>
-            <th>Rol</th>
-            <th>Registrado</th>
+            <th class="border-b border-line-soft px-3.5 py-2.5 text-left text-xs font-semibold tracking-[0.04em] text-ink-1 uppercase">Nombre</th>
+            <th class="border-b border-line-soft px-3.5 py-2.5 text-left text-xs font-semibold tracking-[0.04em] text-ink-1 uppercase">Correo</th>
+            <th class="border-b border-line-soft px-3.5 py-2.5 text-left text-xs font-semibold tracking-[0.04em] text-ink-1 uppercase">Código único</th>
+            <th class="border-b border-line-soft px-3.5 py-2.5 text-left text-xs font-semibold tracking-[0.04em] text-ink-1 uppercase">Cédula</th>
+            <th class="border-b border-line-soft px-3.5 py-2.5 text-left text-xs font-semibold tracking-[0.04em] text-ink-1 uppercase">Celular</th>
+            <th class="border-b border-line-soft px-3.5 py-2.5 text-left text-xs font-semibold tracking-[0.04em] text-ink-1 uppercase">Rol</th>
+            <th class="border-b border-line-soft px-3.5 py-2.5 text-left text-xs font-semibold tracking-[0.04em] text-ink-1 uppercase">Registrado</th>
           </tr>
         </thead>
         <tbody>
           {#each users as u (u.id)}
-            <tr>
-              <td>{u.fullName}</td>
-              <td>{u.email ?? "—"}</td>
-              <td>{u.uniqueCode.startsWith("PENDIENTE-") ? "—" : u.uniqueCode}</td>
-              <td>{u.cedula ?? "—"}</td>
-              <td>{u.phone ?? "—"}</td>
-              <td><span class="role-pill" class:elevated={u.role !== "ESTUDIANTE"}>{u.role}</span></td>
-              <td>{fmtDate(u.createdAt)}</td>
+            <tr class="odd:bg-transparent even:bg-white/[0.02] hover:bg-white/[0.04]">
+              <td class="px-3.5 py-2.5 whitespace-nowrap">{u.fullName}</td>
+              <td class="px-3.5 py-2.5 whitespace-nowrap">{u.email ?? "—"}</td>
+              <td class="px-3.5 py-2.5 whitespace-nowrap">{u.uniqueCode.startsWith("PENDIENTE-") ? "—" : u.uniqueCode}</td>
+              <td class="px-3.5 py-2.5 whitespace-nowrap">{u.cedula ?? "—"}</td>
+              <td class="px-3.5 py-2.5 whitespace-nowrap">{u.phone ?? "—"}</td>
+              <td class="px-3.5 py-2.5 whitespace-nowrap">
+                <span
+                  class="inline-block rounded-full px-2.5 py-0.5 text-[11.5px] {u.role !== 'ESTUDIANTE'
+                    ? 'border border-accent-dim bg-accent-ghost text-accent'
+                    : 'bg-white/[0.06] text-ink-1'}"
+                >
+                  {u.role}
+                </span>
+              </td>
+              <td class="px-3.5 py-2.5 whitespace-nowrap">{fmtDate(u.createdAt)}</td>
             </tr>
           {/each}
         </tbody>
@@ -99,77 +109,3 @@
     </div>
   {/if}
 </section>
-
-<style>
-  h2 {
-    font-family: var(--font-heading);
-    font-size: 18px;
-    letter-spacing: 0.03em;
-    margin: 0 0 4px;
-  }
-
-  .hint {
-    margin: 0 0 14px;
-    font-size: 13px;
-    color: var(--ink-1);
-  }
-
-  .table-wrap {
-    overflow-x: auto;
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-md);
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-
-  th,
-  td {
-    text-align: left;
-    padding: 10px 14px;
-    white-space: nowrap;
-  }
-
-  thead th {
-    background: var(--bg-panel);
-    color: var(--ink-1);
-    font-weight: 600;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    border-bottom: 1px solid var(--line-soft);
-  }
-
-  tbody tr:nth-child(even) {
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .role-pill {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    font-size: 11.5px;
-    color: var(--ink-1);
-  }
-
-  .role-pill.elevated {
-    background: var(--accent-ghost);
-    color: var(--accent);
-    border: 1px solid var(--accent-dim);
-  }
-
-  .skeleton-table {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 8px;
-  }
-
-  .skeleton-row {
-    height: 34px;
-  }
-</style>

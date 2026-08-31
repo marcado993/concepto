@@ -56,6 +56,21 @@ async function patchJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function postJSON<T>(path: string, body: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminAuthHeader() },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new AdminApiError(networkErrorMessage());
+  }
+  if (!res.ok) throw new AdminApiError(await friendlyErrorMessage(res, path), res.status);
+  return res.json() as Promise<T>;
+}
+
 export interface AdminMe {
   email: string;
   role: string;
@@ -180,4 +195,43 @@ export function fetchAdminUiVariant(): Promise<{ variant: UiVariant }> {
 
 export function updateAdminUiVariant(variant: UiVariant): Promise<{ variant: UiVariant }> {
   return patchJSON("/admin/ui-variant", { variant });
+}
+
+// Zona de riesgo — reemplaza los scripts .ps1 manuales que antes había que
+// pedir por chat cada vez (wipe-all-to-zero.ps1 / free-stuck-lockers.ps1).
+// Mismo alcance exacto que esos scripts, ver backend/src/admin/danger-zone.service.ts.
+export interface DangerZonePreview {
+  aeisApp: {
+    users: number;
+    payments: number;
+    lockerRentals: number;
+    subscriptions: number;
+    ventures: number;
+    studentAuditLogs: number;
+    lockersNotAvailable: number;
+  };
+  logtoDefaultTenantUsers: number | null;
+  logtoError: string | null;
+}
+
+export function fetchDangerZonePreview(): Promise<DangerZonePreview> {
+  return getJSON<DangerZonePreview>("/admin/danger-zone/preview");
+}
+
+export interface WipeTestDataResult {
+  wiped: DangerZonePreview["aeisApp"];
+  logtoDeleted: number | null;
+  logtoError: string | null;
+}
+
+// El body EXACTO "BORRAR DATOS DE PRUEBA" / "LIBERAR CASILLEROS" lo valida
+// otra vez el backend (ConfirmWipeTestDataDto/ConfirmFreeLockersDto) — acá
+// solo se manda lo que el admin escribió, la UI ya lo hace escribir la
+// frase completa antes de habilitar el botón (ver AdminDangerZone.svelte).
+export function wipeTestData(confirm: string): Promise<WipeTestDataResult> {
+  return postJSON("/admin/danger-zone/wipe-test-data", { confirm });
+}
+
+export function freeLockers(confirm: string): Promise<{ freed: number }> {
+  return postJSON("/admin/danger-zone/free-lockers", { confirm });
 }

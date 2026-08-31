@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../../shared/prisma/prisma.service";
+import { AlertService } from "../../shared/monitoring/alert.service";
 
 export interface AdminLoginResult {
   accessToken: string;
@@ -28,10 +29,18 @@ const DUMMY_HASH = bcrypt.hashSync("nunca-es-una-cuenta-real", 10);
 export class AdminAuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwt: JwtService
+    private readonly jwt: JwtService,
+    private readonly alert: AlertService
   ) {}
 
-  async login(email: string, password: string): Promise<AdminLoginResult> {
+  // ipAddress es SOLO para la alerta de abajo — nunca cambia si el login
+  // en sí se acepta o se rechaza (eso sigue dependiendo únicamente de
+  // email/password). "en caso de que pase algo": un intento fallido contra
+  // este endpoint es justo la señal temprana de un ataque de fuerza bruta
+  // contra el panel — el @Throttle del controller ya limita CUÁNTOS
+  // intentos caben, esto avisa en tiempo real de que están pasando, sin
+  // esperar a que alguien mire el AuditLog después.
+  async login(email: string, password: string, ipAddress?: string): Promise<AdminLoginResult> {
     const account = await this.prisma.adminAccount.findUnique({ where: { email: email.toLowerCase().trim() } });
 
     const valid = await bcrypt.compare(password, account?.passwordHash ?? DUMMY_HASH);
@@ -39,6 +48,13 @@ export class AdminAuthService {
     // mensaje distinto ("ese correo no existe") le confirma a quien intenta
     // entrar qué correos SÍ tienen cuenta admin (enumeración).
     if (!account || !valid) {
+      // No await — una alerta que tarda o falla en mandarse nunca debe
+      // retrasar ni tumbar la respuesta 401 real (mismo principio que el
+      // correo del contrato en locker.service.ts).
+      void this.alert.send(
+        `Login fallido en el panel de administración — correo intentado: ${email}${ipAddress ? `, IP: ${ipAddress}` : ""}`,
+        "warning"
+      );
       throw new UnauthorizedException("Correo o contraseña incorrectos");
     }
 

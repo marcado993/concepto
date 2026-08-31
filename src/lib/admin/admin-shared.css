@@ -52,6 +52,20 @@
   color: var(--accent);
 }
 
+/* Variante roja — SOLO para acciones destructivas reales (borrar datos de
+   prueba, liberar casilleros) en AdminDangerZone.svelte. A propósito un
+   color distinto al --accent verde de todo lo demás: un botón que borra
+   datos no debería verse igual que uno que guarda un precio. */
+.admin-btn-danger {
+  background: linear-gradient(165deg, #ff5c5c 0%, #b3312f 100%);
+  color: #200404;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15) inset;
+}
+
+.admin-btn-danger:hover:not(:disabled) {
+  box-shadow: 0 0 0 3px rgba(255, 92, 92, 0.25);
+}
+
 /* Buscador/filtro — mismo patrón de input+botón en Usuarios y Actividad. */
 .admin-search-row {
   display: flex;

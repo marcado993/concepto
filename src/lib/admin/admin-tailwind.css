@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* Mapea los tokens de marca que ya existen en app.css (--bg-void, --accent,
+   etc.) a variables de tema de Tailwind v4 — así se generan clases reales
+   (bg-panel, text-accent, rounded-md...) en vez de tener que escribir
+   bg-[var(--bg-panel)] en cada componente. Los VALORES viven en un solo
+   lugar (app.css, compartido con la app de estudiantes) — esto solo les da
+   nombre para Tailwind, nunca los redefine. rounded-lg/md/sm pisan a
+   propósito la escala por defecto de Tailwind para que coincidan con los
+   radios reales de marca, no los genéricos de Tailwind. */
+@theme {
+  --color-void: var(--bg-void);
+  --color-panel: var(--bg-panel);
+  --color-panel-2: var(--bg-panel-2);
+  --color-line-soft: var(--line-soft);
+  --color-line-strong: var(--line-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-glow: var(--accent-glow);
+  --color-accent-ghost: var(--accent-ghost);
+
+  --color-ink-0: var(--ink-0);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+
+  --color-danger: #ff5c5c;
+  --color-danger-dim: #b3312f;
+  --color-danger-ghost: rgba(255, 92, 92, 0.12);
+
+  --radius-lg: var(--radius-lg);
+  --radius-md: var(--radius-md);
+  --radius-sm: var(--radius-sm);
+
+  --font-display: var(--font-display);
+  --font-heading: var(--font-heading);
+}

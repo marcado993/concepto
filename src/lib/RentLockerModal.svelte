@@ -79,14 +79,50 @@
   // nombres y un apellido (mismo criterio que el backend, ver
   // FULL_NAME_PATTERN en rent-locker.dto.ts).
   const FULL_NAME_RE = /^\S+(\s+\S+)+$/;
-  const CEDULA_RE = /^\d{10}$/;
+  const CEDULA_DIGITS_RE = /^\d{10}$/;
   const PHONE_RE = /^0\d{9}$/;
   const UNIQUE_CODE_RE = /^2\d{3}[12]\d{4}$/;
+
+  // Cédula ecuatoriana — no cualquier combinación de 10 dígitos es una
+  // cédula real: el Registro Civil arma el décimo dígito con un checksum
+  // módulo 10 sobre los primeros 9 (mismo algoritmo que valida el backend,
+  // ver backend/src/shared/validation/cedula-ecuatoriana.pattern.ts). Antes
+  // solo se chequeaban "10 dígitos" acá — aceptaba cualquier número de 10
+  // dígitos escrito mal sin avisar, hasta que alguien lo mirara a mano en
+  // el contrato firmado.
+  function esCedulaEcuatorianaValida(value: string): boolean {
+    if (!CEDULA_DIGITS_RE.test(value)) return false;
+    const provincia = Number(value.slice(0, 2));
+    if (provincia < 1 || provincia > 24) return false;
+    // Tercer dígito: 0-5 para personas naturales. 6/9 son formatos de RUC.
+    const tercerDigito = Number(value[2]);
+    if (tercerDigito > 5) return false;
+    const coeficientes = [2, 1, 2, 1, 2, 1, 2, 1, 2];
+    let suma = 0;
+    for (let i = 0; i < 9; i++) {
+      let valor = Number(value[i]) * coeficientes[i];
+      if (valor > 9) valor -= 9;
+      suma += valor;
+    }
+    const digitoVerificador = suma % 10 === 0 ? 0 : 10 - (suma % 10);
+    return digitoVerificador === Number(value[9]);
+  }
+
   const fullNameValid = $derived(FULL_NAME_RE.test(fullName.trim()));
-  const cedulaValid = $derived(CEDULA_RE.test(cedula.trim()));
+  const cedulaHasTenDigits = $derived(CEDULA_DIGITS_RE.test(cedula.trim()));
+  const cedulaValid = $derived(esCedulaEcuatorianaValida(cedula.trim()));
   const phoneValid = $derived(PHONE_RE.test(phone.trim()));
   const uniqueCodeValid = $derived(UNIQUE_CODE_RE.test(uniqueCode.trim()));
   let acceptedTerms = $state(false);
+
+  // Un campo se marca en rojo con "Falta llenar este campo" recién después
+  // de que el estudiante lo tocó y lo dejó vacío (blur) — no todos de
+  // entrada al abrir el modal, que se vería como un formulario roto antes
+  // de que nadie escriba nada.
+  let touchedFullName = $state(false);
+  let touchedUniqueCode = $state(false);
+  let touchedCedula = $state(false);
+  let touchedPhone = $state(false);
 
   const identityValid = $derived(fullNameValid && cedulaValid && phoneValid && uniqueCodeValid && acceptedTerms);
 
@@ -266,15 +302,18 @@
           <input
             id="rl-full-name"
             class="field-input"
-            class:invalid={fullName.length > 0 && !fullNameValid}
+            class:invalid={(fullName.length > 0 && !fullNameValid) || (fullName.length === 0 && touchedFullName)}
             class:valid={fullNameValid}
             type="text"
             placeholder="Pon tus nombres, ej. Luis Andrés Guerrero"
             bind:value={fullName}
+            onblur={() => (touchedFullName = true)}
           />
           {#if fullNameValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
         </div>
-        {#if fullName.length > 0 && !fullNameValid}
+        {#if fullName.length === 0 && touchedFullName}
+          <p class="field-hint error">Falta llenar este campo</p>
+        {:else if fullName.length > 0 && !fullNameValid}
           <p class="field-hint error">Te falta el apellido — escribe tu nombre completo</p>
         {/if}
 
@@ -283,16 +322,19 @@
           <input
             id="rl-unique-code"
             class="field-input"
-            class:invalid={uniqueCode.length > 0 && !uniqueCodeValid}
+            class:invalid={(uniqueCode.length > 0 && !uniqueCodeValid) || (uniqueCode.length === 0 && touchedUniqueCode)}
             class:valid={uniqueCodeValid}
             type="text"
             inputmode="numeric"
             placeholder="Ej. 202120100"
             bind:value={uniqueCode}
+            onblur={() => (touchedUniqueCode = true)}
           />
           {#if uniqueCodeValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
         </div>
-        {#if uniqueCode.length > 0 && !uniqueCodeValid}
+        {#if uniqueCode.length === 0 && touchedUniqueCode}
+          <p class="field-hint error">Falta llenar este campo</p>
+        {:else if uniqueCode.length > 0 && !uniqueCodeValid}
           <p class="field-hint error">9 dígitos: año + periodo (1 o 2) + secuencial — ej. 202120100</p>
         {/if}
 
@@ -301,18 +343,23 @@
           <input
             id="rl-cedula"
             class="field-input"
-            class:invalid={cedula.length > 0 && !cedulaValid}
+            class:invalid={(cedula.length > 0 && !cedulaValid) || (cedula.length === 0 && touchedCedula)}
             class:valid={cedulaValid}
             type="text"
             inputmode="numeric"
             maxlength="10"
             placeholder="Los 10 dígitos, sin guiones"
             bind:value={cedula}
+            onblur={() => (touchedCedula = true)}
           />
           {#if cedulaValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
         </div>
-        {#if cedula.length > 0 && !cedulaValid}
+        {#if cedula.length === 0 && touchedCedula}
+          <p class="field-hint error">Falta llenar este campo</p>
+        {:else if cedula.length > 0 && !cedulaHasTenDigits}
           <p class="field-hint error">Te faltan dígitos — la cédula tiene 10 en total</p>
+        {:else if cedula.length > 0 && !cedulaValid}
+          <p class="field-hint error">Esa cédula no existe — revisa que esté bien escrita</p>
         {/if}
 
         <label class="field-label" for="rl-phone">Celular</label>
@@ -320,17 +367,20 @@
           <input
             id="rl-phone"
             class="field-input"
-            class:invalid={phone.length > 0 && !phoneValid}
+            class:invalid={(phone.length > 0 && !phoneValid) || (phone.length === 0 && touchedPhone)}
             class:valid={phoneValid}
             type="text"
             inputmode="numeric"
             maxlength="10"
             placeholder="Ej. 0991234567"
             bind:value={phone}
+            onblur={() => (touchedPhone = true)}
           />
           {#if phoneValid}<span class="field-check" aria-hidden="true">✓</span>{/if}
         </div>
-        {#if phone.length > 0 && !phoneValid}
+        {#if phone.length === 0 && touchedPhone}
+          <p class="field-hint error">Falta llenar este campo</p>
+        {:else if phone.length > 0 && !phoneValid}
           <p class="field-hint error">Empieza en 0 y tiene 10 dígitos, ej. 0991234567</p>
         {/if}
 

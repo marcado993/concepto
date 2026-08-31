@@ -1,18 +1,22 @@
 import { IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength } from "class-validator";
+import { NO_PAYLOAD_TEXT_PATTERN, NO_PAYLOAD_TEXT_MESSAGE } from "../../shared/validation/no-payload-text.pattern";
 
 export class CreateVentureDto {
   @IsString()
   @MinLength(2)
   @MaxLength(80)
+  @Matches(NO_PAYLOAD_TEXT_PATTERN, { message: NO_PAYLOAD_TEXT_MESSAGE })
   name!: string;
 
   @IsString()
   @MinLength(10)
   @MaxLength(500)
+  @Matches(NO_PAYLOAD_TEXT_PATTERN, { message: NO_PAYLOAD_TEXT_MESSAGE })
   description!: string;
 
   @IsString()
   @MaxLength(40)
+  @Matches(NO_PAYLOAD_TEXT_PATTERN, { message: NO_PAYLOAD_TEXT_MESSAGE })
   category!: string;
 
   @IsOptional()

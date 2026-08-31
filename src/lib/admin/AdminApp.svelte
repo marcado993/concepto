@@ -14,6 +14,7 @@
   import AdminUsers from "./AdminUsers.svelte";
   import AdminAuditLog from "./AdminAuditLog.svelte";
   import AdminNavigation from "./AdminNavigation.svelte";
+  import AdminDangerZone from "./AdminDangerZone.svelte";
   import { isAdminAuthenticated, adminLogout } from "./adminAuth.svelte";
   import { fetchAdminMe, AdminApiError, type AdminMe } from "./adminApi";
 
@@ -33,7 +34,7 @@
       });
   });
 
-  type Tab = "resumen" | "precios" | "usuarios" | "actividad" | "navegacion";
+  type Tab = "resumen" | "precios" | "usuarios" | "actividad" | "navegacion" | "peligro";
   let tab = $state<Tab>("resumen");
 
   // Menú lateral en vez de pestañas horizontales — con solo 5 secciones ya
@@ -47,6 +48,7 @@
     { id: "usuarios", label: "Usuarios", icon: "users" },
     { id: "actividad", label: "Actividad", icon: "clock" },
     { id: "navegacion", label: "Navegación", icon: "compass" },
+    { id: "peligro", label: "Zona de riesgo", icon: "warning" },
   ];
 </script>
 
@@ -72,6 +74,12 @@
       <circle cx="10" cy="10" r="7.25" />
       <path d="M10 5.5V10l3 2" />
     </svg>
+  {:else if name === "warning"}
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M10 3.2 17.5 16.5H2.5L10 3.2Z" />
+      <path d="M10 8.2v3.6" />
+      <circle cx="10" cy="14.3" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
   {:else}
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
       <circle cx="10" cy="10" r="7.25" />
@@ -80,40 +88,79 @@
   {/if}
 {/snippet}
 
+{#snippet initials(email: string)}
+  {email.slice(0, 2).toUpperCase()}
+{/snippet}
+
 {#if !authed}
   <AdminLogin />
 {:else if meError}
-  <div class="gate">
+  <div class="flex h-dvh flex-col items-center justify-center gap-3 bg-void px-6 text-center text-ink-1">
     <p>{meError}</p>
   </div>
 {:else if !me}
-  <div class="gate">
+  <div class="flex h-dvh flex-col items-center justify-center gap-3 bg-void px-6 text-center text-ink-1">
     <p>Verificando acceso…</p>
   </div>
 {:else}
-  <div class="admin-shell">
-    <header class="admin-header">
-      <div class="brand">
-        <span class="brand-dot"></span>
+  <div class="relative flex h-dvh w-full flex-col overflow-hidden text-ink-0 select-text">
+    <!-- Fondo — mismo lenguaje que el marco de escritorio de la app de
+         estudiantes (degradado radial), fijo detrás de todo lo demás. -->
+    <div
+      class="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(120%_120%_at_50%_0%,#10131d_0%,#04050a_70%)]"
+    ></div>
+
+    <header
+      class="sticky top-0 z-20 flex flex-shrink-0 items-center justify-between gap-3 border-b border-line-soft/70 bg-void/60 px-4 py-3 backdrop-blur-xl sm:px-6"
+    >
+      <div class="flex items-center gap-2.5 font-heading text-sm tracking-[0.08em]">
+        <span class="size-2 rounded-full bg-accent shadow-[0_0_10px_var(--color-accent-glow)]"></span>
         <span>AEIS · Administración</span>
       </div>
-      <div class="header-right">
-        <span class="whoami">{me.email}</span>
+      <div class="flex items-center gap-3">
+        <span class="hidden text-sm text-ink-1 sm:inline">{me.email}</span>
+        <span
+          class="flex size-8 items-center justify-center rounded-full border border-line-strong bg-panel font-heading text-[11px] tracking-wide text-accent"
+          title={me.email}
+        >
+          {@render initials(me.email)}
+        </span>
         <button class="admin-btn admin-btn-ghost" onclick={() => adminLogout()}>Cerrar sesión</button>
       </div>
     </header>
 
-    <div class="admin-body">
-      <nav class="admin-sidebar" aria-label="Secciones del dashboard">
+    <div class="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:flex-row sm:gap-4 sm:p-4">
+      <nav
+        class="flex flex-shrink-0 gap-1 overflow-x-auto rounded-2xl border border-line-soft/70 bg-panel/40 p-2 backdrop-blur-xl sm:w-56 sm:flex-col sm:gap-1 sm:overflow-visible sm:p-3"
+        aria-label="Secciones del dashboard"
+      >
         {#each NAV_ITEMS as item (item.id)}
-          <button class="nav-item" class:active={tab === item.id} onclick={() => (tab = item.id)}>
-            <span class="nav-icon">{@render icon(item.icon)}</span>
-            <span class="nav-label">{item.label}</span>
+          {@const active = tab === item.id}
+          {@const isDanger = item.id === "peligro"}
+          <button
+            class="flex flex-shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13.5px] whitespace-nowrap text-ink-1 transition-colors sm:whitespace-normal
+              {active && !isDanger ? 'bg-accent-ghost text-accent' : ''}
+              {active && isDanger ? 'bg-danger-ghost text-[#ff8a8a]' : ''}
+              {!active && isDanger ? 'text-[#d98787]' : ''}
+              {!active ? 'hover:bg-white/5 hover:text-ink-0' : ''}"
+            onclick={() => (tab = item.id)}
+          >
+            <span
+              class="flex size-7 flex-shrink-0 items-center justify-center rounded-lg
+                {active && !isDanger ? 'bg-accent/15 text-accent' : ''}
+                {active && isDanger ? 'bg-danger/15 text-[#ff8a8a]' : ''}
+                {!active ? 'text-current' : ''}"
+            >
+              <span class="size-[18px] [&>svg]:h-full [&>svg]:w-full">{@render icon(item.icon)}</span>
+            </span>
+            <span class="overflow-hidden text-ellipsis">{item.label}</span>
           </button>
         {/each}
       </nav>
 
-      <main class="admin-content">
+      <main
+        class="min-w-0 flex-1 overflow-y-auto rounded-2xl border border-line-soft/70 bg-panel/20 p-4 backdrop-blur-xl sm:p-7"
+      >
         {#if tab === "resumen"}
           <AdminOverview />
         {:else if tab === "precios"}
@@ -122,173 +169,12 @@
           <AdminUsers />
         {:else if tab === "actividad"}
           <AdminAuditLog />
-        {:else}
+        {:else if tab === "navegacion"}
           <AdminNavigation />
+        {:else}
+          <AdminDangerZone />
         {/if}
       </main>
     </div>
   </div>
 {/if}
-
-<style>
-  .gate {
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    background: var(--bg-void);
-    color: var(--ink-1);
-    text-align: center;
-    padding: 24px;
-  }
-
-  .admin-shell {
-    height: 100dvh;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    /* Mismo degradado radial que el marco de escritorio de la app
-       estudiantil (App.svelte, .phone-frame) — antes esto era un
-       --bg-void plano, así que el panel se sentía más "dashboard
-       genérico" que el resto de AEIS-APP. */
-    background: radial-gradient(120% 120% at 50% 0%, #10131d 0%, #04050a 70%);
-    color: var(--ink-0);
-    user-select: text;
-  }
-
-  .admin-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--line-soft);
-    flex-shrink: 0;
-  }
-
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-family: var(--font-heading);
-    letter-spacing: 0.08em;
-    font-size: 14px;
-  }
-
-  .brand-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 10px var(--accent-glow);
-  }
-
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .whoami {
-    font-size: 13px;
-    color: var(--ink-1);
-  }
-
-  .admin-body {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-  }
-
-  .admin-sidebar {
-    flex-shrink: 0;
-    width: 208px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 16px 12px;
-    border-right: 1px solid var(--line-soft);
-    overflow-y: auto;
-  }
-
-  .nav-item {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    color: var(--ink-1);
-    font-size: 13.5px;
-    text-align: left;
-    cursor: pointer;
-    border-left: 2px solid transparent;
-  }
-
-  .nav-item:hover {
-    color: var(--ink-0);
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  .nav-item.active {
-    color: var(--accent);
-    background: var(--accent-ghost);
-    border-left-color: var(--accent);
-  }
-
-  .nav-icon {
-    display: flex;
-    flex-shrink: 0;
-    width: 18px;
-    height: 18px;
-  }
-
-  .nav-icon :global(svg) {
-    width: 100%;
-    height: 100%;
-  }
-
-  .nav-label {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .admin-content {
-    flex: 1;
-    min-width: 0;
-    overflow-y: auto;
-    padding: 28px 32px;
-  }
-
-  @media (max-width: 720px) {
-    .admin-body {
-      flex-direction: column;
-    }
-
-    .admin-sidebar {
-      width: 100%;
-      flex-direction: row;
-      overflow-x: auto;
-      border-right: none;
-      border-bottom: 1px solid var(--line-soft);
-      padding: 8px 12px;
-    }
-
-    .nav-item {
-      flex-shrink: 0;
-      border-left: none;
-      border-bottom: 2px solid transparent;
-      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-    }
-
-    .nav-item.active {
-      border-bottom-color: var(--accent);
-    }
-
-    .admin-content {
-      padding: 16px;
-    }
-  }
-</style>

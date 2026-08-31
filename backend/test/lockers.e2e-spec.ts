@@ -71,7 +71,11 @@ const EXPECTED_LOCKER_AMOUNT_CENTS = 650;
 // literal ahí causaría un choque real de unicidad y ya no probaría la
 // carrera del casillero).
 function validRentBody(lockerCode: string, uniqueCode = "209900001") {
-  return { lockerCode, fullName: "Estudiante E2E", cedula: "1723456789", phone: "0991234567", uniqueCode, acceptedTerms: true };
+  // "1710034065" es una cédula real (pasa el checksum del Registro Civil,
+  // ver shared/validation/cedula-ecuatoriana.pattern.ts) — "1723456789"
+  // (usada antes) tiene 10 dígitos pero no pasa el checksum, así que dejó
+  // de servir como fixture en cuanto RentLockerDto empezó a validarlo.
+  return { lockerCode, fullName: "Estudiante E2E", cedula: "1710034065", phone: "0991234567", uniqueCode, acceptedTerms: true };
 }
 
 describe("Lockers (e2e) — caja negra contra Postgres real", () => {

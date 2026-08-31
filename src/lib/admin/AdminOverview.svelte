@@ -47,52 +47,66 @@
   );
 </script>
 
-<section class="block">
-  <h2>Resumen del semestre{data ? ` · ${data.periodLabel}` : ""}</h2>
-  <p class="hint">Solo cuenta pagos ya confirmados por PayPhone — nunca reservas pendientes.</p>
+<section class="mb-9 max-w-[900px]">
+  <h2 class="mb-1 font-heading text-lg tracking-[0.03em]">
+    Resumen del semestre{data ? ` · ${data.periodLabel}` : ""}
+  </h2>
+  <p class="mb-3.5 text-[13px] leading-relaxed text-ink-1">Solo cuenta pagos ya confirmados por PayPhone — nunca reservas pendientes.</p>
 
   {#if loading}
-    <div class="hero-row">
-      <span class="admin-skeleton skeleton-hero"></span>
-      <span class="admin-skeleton skeleton-hero"></span>
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-4">
+      <span class="admin-skeleton h-[110px]"></span>
+      <span class="admin-skeleton h-[110px]"></span>
     </div>
   {:else if error}
     <p class="admin-error">{error}</p>
   {:else if data}
-    <div class="hero-row">
-      <div class="hero-card">
-        <span class="hero-label">Ingresos confirmados (total)</span>
-        <span class="hero-number">{money(data.totalRevenueConfirmed)}</span>
-        <span class="hero-sub">Casilleros {money(data.lockers.revenueConfirmed)} · Aportaciones {money(data.subscriptions.revenueConfirmed)}</span>
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-4">
+      <div class="relative overflow-hidden rounded-2xl border border-line-soft bg-panel/60 p-5 backdrop-blur-xl">
+        <div class="pointer-events-none absolute -top-10 -right-10 size-32 rounded-full bg-accent/10 blur-3xl"></div>
+        <span class="relative text-[12.5px] text-ink-1">Ingresos confirmados (total)</span>
+        <div class="relative font-heading text-[34px] tracking-[0.01em] text-ink-0 tabular-nums">
+          {money(data.totalRevenueConfirmed)}
+        </div>
+        <span class="relative flex flex-wrap items-center gap-1.5 text-xs text-ink-1">
+          Casilleros {money(data.lockers.revenueConfirmed)} · Aportaciones {money(data.subscriptions.revenueConfirmed)}
+        </span>
       </div>
 
-      <div class="hero-card">
-        <span class="hero-label">Ocupación de casilleros</span>
-        <span class="hero-number">{occupiedCount}<span class="hero-of">/{data.lockers.total}</span></span>
-        <div class="occ-bar" role="img" aria-label={`${occupiedCount} de ${data.lockers.total} casilleros ocupados o reservados`}>
-          <span class="occ-fill occ-rented" style={`width: ${(data.lockers.rented / data.lockers.total) * 100}%`}></span>
+      <div class="relative overflow-hidden rounded-2xl border border-line-soft bg-panel/60 p-5 backdrop-blur-xl">
+        <span class="text-[12.5px] text-ink-1">Ocupación de casilleros</span>
+        <div class="font-heading text-[34px] tracking-[0.01em] text-ink-0 tabular-nums">
+          {occupiedCount}<span class="text-xl text-ink-1">/{data.lockers.total}</span>
+        </div>
+        <div
+          class="relative my-1 h-2 overflow-hidden rounded-full bg-line-soft"
+          role="img"
+          aria-label={`${occupiedCount} de ${data.lockers.total} casilleros ocupados o reservados`}
+        >
+          <span class="absolute top-0 left-0 h-full bg-accent" style={`width: ${(data.lockers.rented / data.lockers.total) * 100}%`}
+          ></span>
           <span
-            class="occ-fill occ-reserved"
+            class="absolute top-0 h-full bg-[#f2c94c]"
             style={`width: ${(data.lockers.reserved / data.lockers.total) * 100}%; left: ${(data.lockers.rented / data.lockers.total) * 100}%`}
           ></span>
         </div>
-        <span class="hero-sub">
-          <i class="dot dot-rented"></i>{data.lockers.rented} alquilados
-          <i class="dot dot-reserved"></i>{data.lockers.reserved} reservados
-          <i class="dot dot-available"></i>{data.lockers.available} libres
+        <span class="flex flex-wrap items-center gap-1.5 text-xs text-ink-1">
+          <i class="inline-block size-2 rounded-full bg-accent"></i>{data.lockers.rented} alquilados
+          <i class="ml-1.5 inline-block size-2 rounded-full bg-[#f2c94c]"></i>{data.lockers.reserved} reservados
+          <i class="ml-1.5 inline-block size-2 rounded-full bg-ink-2"></i>{data.lockers.available} libres
         </span>
       </div>
     </div>
 
     {#if data.subscriptions.tiers.length > 0}
-      <h3 class="section-title">Aportaciones por tier</h3>
-      <div class="tiers-grid">
+      <h3 class="mt-6 mb-3 font-heading text-sm tracking-[0.04em] text-ink-1 uppercase">Aportaciones por tier</h3>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3.5">
         {#each data.subscriptions.tiers as tier (tier.id)}
-          <div class="stat-card">
-            <span class="stat-name">{tier.name}</span>
-            <span class="stat-number">{tier.subscriberCount}</span>
-            <span class="stat-sub">aportantes · {money(tier.amount)} c/u</span>
-            <span class="stat-sub accent">{money(tier.revenueConfirmed)} confirmado</span>
+          <div class="flex flex-col gap-1 rounded-2xl border border-line-soft bg-panel/60 p-4 backdrop-blur-xl">
+            <span class="text-[12.5px] text-ink-1">{tier.name}</span>
+            <span class="font-heading text-2xl text-ink-0 tabular-nums">{tier.subscriberCount}</span>
+            <span class="text-xs text-ink-1">aportantes · {money(tier.amount)} c/u</span>
+            <span class="text-xs text-accent">{money(tier.revenueConfirmed)} confirmado</span>
           </div>
         {/each}
       </div>
@@ -101,31 +115,40 @@
 </section>
 
 {#if data}
-  <section class="block">
-    <h2>Simulador — ¿cuánto se ganaría con este precio?</h2>
-    <p class="hint">Proyección, no dato real: multiplica el precio que escribas por la ocupación actual y por la capacidad total ({data.lockers.total} casilleros).</p>
+  <section class="mb-9 max-w-[900px]">
+    <h2 class="mb-1 font-heading text-lg tracking-[0.03em]">Simulador — ¿cuánto se ganaría con este precio?</h2>
+    <p class="mb-3.5 text-[13px] leading-relaxed text-ink-1">
+      Proyección, no dato real: multiplica el precio que escribas por la ocupación actual y por la capacidad total ({data.lockers
+        .total} casilleros).
+    </p>
 
-    <div class="row">
-      <span class="prefix">$</span>
-      <input class="amount-input" type="number" step="0.01" min="0" bind:value={simInput} />
-      <span class="suffix">por casillero</span>
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <span class="text-[13px] text-ink-1">$</span>
+      <input
+        class="w-[120px] rounded-lg border border-line-strong bg-panel px-2.5 py-2 font-[inherit] text-[13.5px] text-ink-0 outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+        type="number"
+        step="0.01"
+        min="0"
+        bind:value={simInput}
+      />
+      <span class="text-[13px] text-ink-1">por casillero</span>
     </div>
 
     {#if simPrice !== null}
-      <div class="sim-grid">
-        <div class="stat-card proj">
-          <span class="stat-name">Con la ocupación de hoy ({occupiedCount} casilleros)</span>
-          <span class="stat-number">{money(simAtCurrentOccupancy ?? 0)}</span>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3.5">
+        <div class="flex flex-col gap-1 rounded-2xl border border-dashed border-line-strong bg-panel/60 p-4 backdrop-blur-xl">
+          <span class="text-[12.5px] text-ink-1">Con la ocupación de hoy ({occupiedCount} casilleros)</span>
+          <span class="font-heading text-2xl text-ink-0 tabular-nums">{money(simAtCurrentOccupancy ?? 0)}</span>
           {#if simDeltaVsActual !== null}
-            <span class="stat-sub" class:positive={simDeltaVsActual >= 0} class:negative={simDeltaVsActual < 0}>
+            <span class="text-xs {simDeltaVsActual >= 0 ? 'text-accent' : 'text-[#ffb4b4]'}">
               {simDeltaVsActual >= 0 ? "+" : ""}{money(simDeltaVsActual)} vs. lo ya confirmado en casilleros
             </span>
           {/if}
         </div>
-        <div class="stat-card proj">
-          <span class="stat-name">Si se llenaran los {data.lockers.total} casilleros</span>
-          <span class="stat-number">{money(simAtFullCapacity ?? 0)}</span>
-          <span class="stat-sub">capacidad completa, escenario optimista</span>
+        <div class="flex flex-col gap-1 rounded-2xl border border-dashed border-line-strong bg-panel/60 p-4 backdrop-blur-xl">
+          <span class="text-[12.5px] text-ink-1">Si se llenaran los {data.lockers.total} casilleros</span>
+          <span class="font-heading text-2xl text-ink-0 tabular-nums">{money(simAtFullCapacity ?? 0)}</span>
+          <span class="text-xs text-ink-1">capacidad completa, escenario optimista</span>
         </div>
       </div>
     {:else}
@@ -133,204 +156,3 @@
     {/if}
   </section>
 {/if}
-
-<style>
-  .block {
-    max-width: 900px;
-    margin-bottom: 36px;
-  }
-
-  h2 {
-    font-family: var(--font-heading);
-    font-size: 18px;
-    letter-spacing: 0.03em;
-    margin: 0 0 4px;
-  }
-
-  .section-title {
-    font-family: var(--font-heading);
-    font-size: 14px;
-    letter-spacing: 0.04em;
-    color: var(--ink-1);
-    margin: 24px 0 12px;
-    text-transform: uppercase;
-  }
-
-  .hint {
-    margin: 0 0 14px;
-    font-size: 13px;
-    color: var(--ink-1);
-    line-height: 1.5;
-  }
-
-  .skeleton-hero {
-    height: 106px;
-  }
-
-  .hero-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 16px;
-  }
-
-  .hero-card {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    background: var(--bg-panel);
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-md);
-    padding: 20px;
-  }
-
-  .hero-label {
-    font-size: 12.5px;
-    color: var(--ink-1);
-  }
-
-  .hero-number {
-    font-family: var(--font-heading);
-    font-size: 34px;
-    letter-spacing: 0.01em;
-    color: var(--ink-0);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .hero-of {
-    font-size: 20px;
-    color: var(--ink-1);
-  }
-
-  .hero-sub {
-    font-size: 12px;
-    color: var(--ink-1);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-left: 6px;
-  }
-
-  .dot:first-child {
-    margin-left: 0;
-  }
-
-  .dot-rented {
-    background: var(--accent);
-  }
-
-  .dot-reserved {
-    background: #f2c94c;
-  }
-
-  .dot-available {
-    background: var(--ink-2);
-  }
-
-  .occ-bar {
-    position: relative;
-    height: 8px;
-    border-radius: 999px;
-    background: var(--line-soft);
-    overflow: hidden;
-    margin: 4px 0 2px;
-  }
-
-  .occ-fill {
-    position: absolute;
-    top: 0;
-    height: 100%;
-  }
-
-  .occ-rented {
-    left: 0;
-    background: var(--accent);
-  }
-
-  .occ-reserved {
-    background: #f2c94c;
-  }
-
-  .tiers-grid,
-  .sim-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 14px;
-  }
-
-  .stat-card {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    background: var(--bg-panel);
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-md);
-    padding: 16px;
-  }
-
-  .stat-card.proj {
-    border-style: dashed;
-    border-color: var(--line-strong);
-  }
-
-  .stat-name {
-    font-size: 12.5px;
-    color: var(--ink-1);
-  }
-
-  .stat-number {
-    font-family: var(--font-heading);
-    font-size: 24px;
-    color: var(--ink-0);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .stat-sub {
-    font-size: 12px;
-    color: var(--ink-1);
-  }
-
-  .stat-sub.accent {
-    color: var(--accent);
-  }
-
-  .stat-sub.positive {
-    color: var(--accent);
-  }
-
-  .stat-sub.negative {
-    color: #ffb4b4;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 16px;
-  }
-
-  .prefix,
-  .suffix {
-    color: var(--ink-1);
-    font-size: 13px;
-  }
-
-  .amount-input {
-    background: var(--bg-panel);
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-sm);
-    color: var(--ink-0);
-    font-family: inherit;
-    padding: 8px 10px;
-    font-size: 13.5px;
-    width: 120px;
-  }
-</style>
