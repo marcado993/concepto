@@ -41,6 +41,8 @@ from __future__ import annotations
 import logging
 import math
 import os
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from typing import Any
@@ -76,6 +78,47 @@ class ScrapeRequest(BaseModel):
     sources: list[str] | None = None
 
 
+# ---------------------------------------------------------------------
+# Estado de la corrida.
+#
+# La recoleccion es ASINCRONA y no una peticion larga, por un fallo real:
+# antes /scrape hacia todo el trabajo y recien entonces respondia, lo que
+# significaba sostener una conexion HTTP unos 15 minutos. El `fetch` de
+# Node (undici) corta a los 300 s por su `headersTimeout`, y ese limite no
+# se puede subir desde las opciones estandar de fetch — la corrida moria
+# siempre a los 5.0 minutos exactos, con un "fetch failed" que no decia
+# nada. Subir timeouts solo habria movido el problema: una conexion abierta
+# 15 minutos es fragil de todas formas (proxies, reinicios, red del
+# compose).
+#
+# Ahora POST /scrape arranca y responde al instante; el backend consulta
+# GET /scrape/result cada tanto. Cada peticion HTTP dura milisegundos.
+#
+# Estado a nivel de modulo y no en una base: uvicorn corre con UN worker a
+# proposito (ver el CMD del Dockerfile), asi que hay un solo proceso y esto
+# alcanza. Guardar una corrida en Postgres solo para releerla dos minutos
+# despues seria complejidad sin nada a cambio.
+# ---------------------------------------------------------------------
+_estado_lock = threading.Lock()
+_estado: dict[str, Any] = {"status": "idle", "started_at": None, "finished_at": None, "result": None}
+
+
+def _correr_en_hilo(fuentes: list[str], desconocidas: list[str]) -> None:
+    """Cuerpo de la corrida. Nunca lanza: los fallos quedan en el estado."""
+    try:
+        resultado = _recolectar_todo(fuentes, desconocidas)
+        with _estado_lock:
+            _estado.update(status="done", finished_at=time.time(), result=resultado)
+    except Exception as exc:  # noqa: BLE001 — el hilo no puede propagar nada
+        log.exception("corrida fallo entera")
+        with _estado_lock:
+            _estado.update(
+                status="error",
+                finished_at=time.time(),
+                result={"jobs": [], "errors": [f"corrida fallo: {type(exc).__name__}: {exc}"], "stats": {}},
+            )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -93,21 +136,67 @@ def sources() -> dict[str, Any]:
 
 @app.post("/scrape")
 def scrape(req: ScrapeRequest | None = None) -> dict[str, Any]:
-    """Corre las fuentes y devuelve las vacantes juntas.
+    """Arranca una corrida y responde AL INSTANTE.
 
-    Siempre 200: los fallos por-fuente van en `errors`, no en el codigo de
-    estado. El backend ya sabe tolerar fuentes caidas (ver
-    collectFromSources), y devolver 500 por un portal roto tiraria tambien
-    las fuentes que si funcionaron.
+    No devuelve las vacantes: para eso esta GET /scrape/result. Ver la nota
+    grande del estado, arriba, para por que la recoleccion dejo de ser una
+    peticion larga.
+
+    Si ya hay una corrida en curso NO se arranca otra y se responde
+    "running": dos corridas simultaneas duplicarian el trabajo y, peor,
+    el consumo de cuota contra los portales — que es justo lo que provoca
+    que bloqueen la IP del VPS.
     """
     cfg = Config()
-
     pedidas = (req.sources if req and req.sources else None) or cfg.fuentes
     # Se filtra contra las fuentes configuradas para que un cuerpo con una
-    # fuente inventada no explote — devuelve vacio y lo dice en `errors`.
+    # fuente inventada no explote — se reporta en `errors` del resultado.
     activas = [f for f in pedidas if f in cfg.fuentes]
     desconocidas = [f for f in pedidas if f not in cfg.fuentes]
 
+    with _estado_lock:
+        if _estado["status"] == "running":
+            return {"status": "running", "started_at": _estado["started_at"]}
+        _estado.update(status="running", started_at=time.time(), finished_at=None, result=None)
+
+    hilo = threading.Thread(target=_correr_en_hilo, args=(activas, desconocidas), daemon=True)
+    hilo.start()
+    log.info("corrida arrancada con fuentes: %s", activas)
+    return {"status": "started", "sources": activas}
+
+
+@app.get("/scrape/result")
+def scrape_result() -> dict[str, Any]:
+    """Estado de la corrida y, si termino, las vacantes.
+
+    El resultado NO se borra al leerlo: el backend puede reintentar la
+    lectura si se le corta la red sin perder 15 minutos de scraping.
+    """
+    with _estado_lock:
+        estado = dict(_estado)
+
+    salida: dict[str, Any] = {
+        "status": estado["status"],
+        "started_at": estado["started_at"],
+        "finished_at": estado["finished_at"],
+    }
+    if estado["status"] in ("done", "error") and estado["result"]:
+        salida.update(estado["result"])
+    else:
+        # Forma estable pase lo que pase: el backend siempre puede leer
+        # `jobs` sin comprobar antes si existe.
+        salida.update({"jobs": [], "errors": [], "stats": {}})
+    return salida
+
+
+def _recolectar_todo(activas: list[str], desconocidas: list[str]) -> dict[str, Any]:
+    """Corre las fuentes en paralelo y arma el resultado.
+
+    Cada fuente se aisla: si Multitrabajos cambia el DOM o LinkedIn devuelve
+    429, las demas igual entregan. Un portal roto no puede tirar la corrida
+    entera, porque eso dejaria el listado sin actualizar para todos.
+    """
+    cfg = Config()
     jobs: list[Job] = []
     errors: list[str] = [f"fuente desconocida: {f}" for f in desconocidas]
     stats: dict[str, int] = {}
@@ -125,6 +214,7 @@ def scrape(req: ScrapeRequest | None = None) -> dict[str, Any]:
                 errors.append(f"{fuente}: {type(exc).__name__}: {exc}")
                 log.warning("fuente %s fallo: %s", fuente, exc)
 
+    log.info("corrida terminada: %d ofertas, %d errores", len(jobs), len(errors))
     return {"jobs": [_serializar(j) for j in jobs], "errors": errors, "stats": stats}
 
 
