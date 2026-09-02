@@ -56,19 +56,25 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # Bolsa de empleo: dónde vive el scraper de JobSpy. Es el nombre del
-      # servicio del compose, no una URL pública — el contenedor no es
-      # alcanzable desde fuera de esta red. Si se quita esta variable, el
-      # módulo de empleos sigue funcionando solo con las APIs públicas
-      # (ver JobSpySource: la fuente se desactiva sola).
+      # Bolsa de empleo: dónde viven los scrapers (Bolsa EPN, Indeed,
+      # LinkedIn, Multitrabajos, Computrabajo). Es el nombre del servicio
+      # del compose, no una URL pública — el contenedor no es alcanzable
+      # desde fuera de esta red. Si se quita esta variable, el módulo de
+      # empleos sigue funcionando solo con las APIs públicas
+      # (ver ScraperSource: la fuente se desactiva sola).
       JOBS_SCRAPER_URL: http://jobs-scraper:8000
     expose:
       - "3000"
     # Tampoco publica "ports:" al host — solo Caddy le habla, por la red
     # interna del compose. Nadie externo llega a :3000 directamente.
 
-  # Scraper de ofertas de empleo (JobSpy, Python). Alimenta el módulo de
-  # bolsa de empleo que reemplazó a Emprendimientos en el menú de la app.
+  # Scrapers de ofertas de empleo (Python). Alimenta el módulo de bolsa de
+  # empleo que reemplazó a Emprendimientos en el menú de la app.
+  #
+  # Cinco fuentes: la Bolsa EPN, Multitrabajos y Computrabajo con scrapers
+  # propios sobre Playwright (ninguna tiene API pública, y son justo las que
+  # publican pasantías para estudiantes de la EPN), más Indeed Ecuador y
+  # LinkedIn vía JobSpy. Portado del worker Panchito GPT.
   #
   # Igual que postgres: SIN "ports:". Solo el backend le habla, por la red
   # interna. Un scraper es de las últimas piezas que conviene exponer a
@@ -81,19 +87,20 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
-    # Límite de memoria explícito: pandas puede inflarse con un lote grande
-    # de resultados, y este VPS tiene 12 GB compartidos entre Postgres,
-    # Logto, el backend y Caddy. Es preferible que el scraper muera solo y
-    # se reinicie a que el OOM killer del kernel elija a Postgres.
-    mem_limit: 768m
+    # Límite de memoria explícito: corre hasta dos Chromium a la vez
+    # (Playwright) más pandas, y este VPS tiene 12 GB compartidos entre
+    # Postgres, Logto, el backend y Caddy. Es preferible que el scraper
+    # muera solo y se reinicie a que el OOM killer del kernel elija a
+    # Postgres.
+    mem_limit: 1536m
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 30s
       timeout: 5s
       retries: 3
-      # start_period generoso: la primera importación de jobspy arrastra
-      # pandas y tarda varios segundos; sin esto el contenedor entraba en
-      # bucle de reinicios antes de terminar de arrancar.
+      # start_period generoso: la primera importación arrastra pandas y
+      # Playwright, y tarda varios segundos; sin esto el contenedor entraba
+      # en bucle de reinicios antes de terminar de arrancar.
       start_period: 40s
 
   # Logto self-hosted (docs/dominio/02-necesidades-stakeholders.md §4.5,

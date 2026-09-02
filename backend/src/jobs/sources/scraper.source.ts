@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { JobSource, SOURCE_TIMEOUT_MS } from "./job-source";
+import { JobSource } from "./job-source";
 import { parseDate, stripHtml, truncate, RawJob } from "../normalize/normalize";
 
 // Puente hacia el microservicio de scraping (jobs-scraper/, Python).
@@ -27,6 +27,9 @@ import { parseDate, stripHtml, truncate, RawJob } from "../normalize/normalize";
 
 /** Nombres tal como los reporta el servicio Python. */
 export const SCRAPER_SOURCES = ["epn", "indeed", "linkedin", "multitrabajos", "computrabajo"] as const;
+
+/** Ver la nota junto a su uso en fetchJobs() para el porque de 40 min. */
+export const SCRAPER_TIMEOUT_MS = 40 * 60_000;
 
 interface ScraperRow {
   source?: unknown;
@@ -140,11 +143,19 @@ export class ScraperSource implements JobSource {
 
     const res = await fetch(`${base.replace(/\/$/, "")}/scrape`, {
       method: "POST",
-      // Timeout MUCHO mas largo que el resto de fuentes: una corrida
-      // completa levanta Chromium contra tres portales, con pausas de
-      // cortesia entre paginas para no gatillar el rate limiting. Pasa de
-      // los 10 minutos y eso es lo esperado, no un cuelgue.
-      signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS * 60),
+      // Timeout MUCHO mas largo que el resto de fuentes, y explicito en vez
+      // de un multiplo del de las APIs: son cosas distintas.
+      //
+      // Medido contra los portales reales: la Bolsa EPN sola tarda ~6 min
+      // (11 terminos x 4 paginas, con pausas de 3-8 s entre paginas para no
+      // parecer una rafaga), y la corrida completa de las cinco fuentes
+      // ronda 12-14 min con dos en paralelo. LinkedIn es la mas variable
+      // porque pide la descripcion de CADA vacante aparte.
+      //
+      // 40 minutos deja margen para un dia lento sin quedarse colgado para
+      // siempre. Que se agote significa que algo esta mal de verdad, no que
+      // los portales anduvieran despacio.
+      signal: AbortSignal.timeout(SCRAPER_TIMEOUT_MS),
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({}),
     });
