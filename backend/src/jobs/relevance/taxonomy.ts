@@ -94,6 +94,25 @@ export const DOMAIN_TERMS: readonly string[] = [
   "soporte tecnico", "help desk", "mesa de ayuda", "service desk",
   "analista de sistemas", "ingeniero de sistemas", "ingeniera de sistemas",
   "ingeniero en sistemas", "ingeniera en sistemas", "tecnologias de la informacion",
+  // "tecnologia"/"tecnologias" a secas SI entran: "Trainee de Tecnologia" y
+  // "Pasante de Tecnologia" son titulos reales y frecuentes en Ecuador, y
+  // sin esto el motor los detectaba como pasantia, les daba 71 puntos y aun
+  // asi los descartaba por no encontrar ni una senal del area. Lo comercial
+  // ("Vendedor de tecnologia", "Asesor comercial de tecnologia") ya lo
+  // frena el ruido del titulo, que castiga mucho mas de lo que suma esto.
+  "tecnologia", "tecnologias",
+  // "ti" NUNCA va suelto: en espanol es un pronombre ("un plan pensado para
+  // ti") y aparece en cualquier descripcion de beneficios. Solo calificado
+  // por el rol que lo acompana.
+  "trainee ti", "pasante ti", "practicante ti", "analista ti", "soporte ti",
+  "coordinador ti", "coordinadora ti", "jefe de ti", "gerente de ti",
+  "area de ti", "departamento de ti", "auxiliar ti", "asistente ti",
+  // "desarrollo" tampoco va suelto: "desarrollo organizacional",
+  // "desarrollo comercial" y "desarrollo humano" son puestos de RRHH y
+  // ventas muy comunes aca. Van las formas que si son inequivocas.
+  "desarrollo de software", "desarrollo web", "desarrollo movil",
+  "desarrollo de aplicaciones", "desarrollo de sistemas", "desarrollo backend",
+  "desarrollo frontend", "desarrollo full stack",
   // "servidores" a secas tampoco: "servidor publico" / "servidores
   // publicos" es como se llama a los funcionarios del Estado en Ecuador, y
   // toda convocatoria publica lo usa. Va solo calificado (arriba ya esta
@@ -148,6 +167,12 @@ export const NOISE_TERMS: readonly string[] = [
   // menciona algún stack de pasada.
   "pat tester", "mot tester", "redes sociales", "community manager",
   "produce clerk", "delivery driver", "kitchen porter", "store manager",
+  // Puestos de RRHH y ventas que llevan "desarrollo" o "tecnologia" en el
+  // titulo. Se agregan junto con esos terminos: sin ellos, ampliar el
+  // vocabulario habria dejado entrar justo estos.
+  "desarrollo organizacional", "desarrollo humano", "desarrollo comercial",
+  "desarrollo social", "desarrollo de negocio", "desarrollo de negocios",
+  "desarrollo de mercado", "desarrollo de proveedores",
 ];
 
 /**

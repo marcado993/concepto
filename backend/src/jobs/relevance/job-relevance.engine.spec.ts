@@ -275,6 +275,49 @@ describe("assessJob — cobertura de TODAS las areas de Sistemas", () => {
     expect(assessJob(job({ title, description }), NOW).relevant).toBe(true);
   });
 
+  // Caso reportado: el motor SI los detectaba como pasantia y les daba 71
+  // puntos, pero los descartaba igual porque "tecnologia", "TI" y
+  // "desarrollo" no estaban en el vocabulario — solo estaba
+  // "tecnologias de la informacion". Son titulos frecuentes en Ecuador.
+  it.each([
+    ["Trainee de Tecnologia"],
+    ["Pasante de Tecnologia"],
+    ["Intern de Tecnologia"],
+    ["Practicante de Tecnologia"],
+    ["Trainee TI"],
+    ["Pasante TI"],
+    ["Analista TI"],
+    ["Trainee de Desarrollo de Software"],
+  ])("Dado el titulo real '%s', Cuando se evalua, Entonces SI entra", (title) => {
+    const r = assessJob(job({ title, description: "Programa de formacion." }), NOW);
+
+    expect(r.relevant).toBe(true);
+  });
+
+  // La contraparte del cambio de arriba: "desarrollo" y "tecnologia" sueltos
+  // son tambien la mitad de varios puestos de RRHH y ventas muy comunes en
+  // Ecuador. Ampliar el vocabulario sin esto los habria dejado entrar.
+  it.each([
+    ["Trainee de Desarrollo Organizacional"],
+    ["Pasante de Desarrollo Humano"],
+    ["Analista de Desarrollo Comercial"],
+    ["Vendedor de Tecnologia"],
+    ["Asesor Comercial de Tecnologia"],
+  ])("Dado el titulo de RRHH/ventas '%s', Cuando se evalua, Entonces sigue cayendo", (title) => {
+    expect(assessJob(job({ title, description: "Programa de formacion." }), NOW).relevant).toBe(false);
+  });
+
+  // "ti" NUNCA suelto: en espanol es un pronombre y aparece en cualquier
+  // descripcion de beneficios.
+  it("Dado 'para ti' en la descripcion de una vacante ajena, Cuando se evalua, Entonces NO se cuela por el pronombre", () => {
+    const r = assessJob(
+      job({ title: "Auxiliar de Bodega", description: "Un plan de carrera pensado para ti." }),
+      NOW
+    );
+
+    expect(r.relevant).toBe(false);
+  });
+
   it("Dada una pasantia de ciencia de datos en Quito, Cuando se evalua, Entonces puntua alto y es INTERNSHIP", () => {
     const r = assessJob(
       job({
