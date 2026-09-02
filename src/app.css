@@ -42,7 +42,14 @@ body {
   padding: 0;
   height: 100%;
   background: var(--bg-void);
-  overscroll-behavior: none;
+  /* Solo el eje X, NO los dos.
+     Antes era `overscroll-behavior: none` a secas, y eso apagaba también el
+     "deslizar hacia abajo para recargar" de Android/iOS — un gesto que la
+     gente usa por reflejo y que, al no responder, hace parecer que la app
+     se colgó. Bloquear el eje horizontal sigue teniendo sentido (evita el
+     rebote lateral y que un arrastre en la grilla de casilleros dispare el
+     "atrás" del navegador); el vertical no había motivo para apagarlo. */
+  overscroll-behavior-x: none;
 }
 
 body {

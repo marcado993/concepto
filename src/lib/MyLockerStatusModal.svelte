@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { portal } from "./portal";
   // Vista de solo lectura para "ya tengo un casillero" — pedido real: en
   // vez de que el estudiante busque el suyo entre hasta 108, la grilla lo
   // distingue y lo deja tocar para ver esto directamente. A diferencia de
@@ -17,7 +18,7 @@
   }
 </script>
 
-<div class="scrim" onclick={onclose} onkeydown={onScrimKeydown} role="button" tabindex="-1" aria-label="Cerrar">
+<div class="scrim" use:portal onclick={onclose} onkeydown={onScrimKeydown} role="button" tabindex="-1" aria-label="Cerrar">
   <div
     class="modal"
     onclick={(e) => e.stopPropagation()}
@@ -45,6 +46,10 @@
 
 <style>
   .scrim {
+    /* Con la pagina permitiendo "deslizar para recargar", un tiron
+       hacia abajo mientras se llena el formulario la recargaria y se
+       perderia lo escrito. `contain` corta esa cadena. */
+    overscroll-behavior: contain;
     position: fixed;
     inset: 0;
     z-index: 60;

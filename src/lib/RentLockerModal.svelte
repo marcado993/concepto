@@ -16,6 +16,7 @@
   import PayphoneLogo from "./PayphoneLogo.svelte";
   import { scale } from "svelte/transition";
 
+  import { portal } from "./portal";
   interface Props {
     lockerCode: string;
     onclose: () => void;
@@ -246,6 +247,7 @@
 
 <div
   class="scrim"
+  use:portal
   onclick={onclose}
   onkeydown={onScrimKeydown}
   role="button"
@@ -451,6 +453,10 @@
 
 <style>
   .scrim {
+    /* Con la pagina permitiendo "deslizar para recargar", un tiron
+       hacia abajo mientras se llena el formulario la recargaria y se
+       perderia lo escrito. `contain` corta esa cadena. */
+    overscroll-behavior: contain;
     position: fixed;
     inset: 0;
     z-index: 60;

@@ -9,6 +9,7 @@
   import { isAuthenticated } from "./auth.svelte";
   import Login from "./Login.svelte";
 
+  import { portal } from "./portal";
   interface Props {
     tierName: string;
     tierAmount: string;
@@ -70,7 +71,7 @@
   }
 </script>
 
-<div class="scrim" onclick={onclose} onkeydown={onScrimKeydown} role="button" tabindex="-1" aria-label="Cerrar">
+<div class="scrim" use:portal onclick={onclose} onkeydown={onScrimKeydown} role="button" tabindex="-1" aria-label="Cerrar">
   <div
     class="modal"
     onclick={(e) => e.stopPropagation()}
@@ -137,6 +138,10 @@
 
 <style>
   .scrim {
+    /* Con la pagina permitiendo "deslizar para recargar", un tiron
+       hacia abajo mientras se llena el formulario la recargaria y se
+       perderia lo escrito. `contain` corta esa cadena. */
+    overscroll-behavior: contain;
     position: fixed;
     inset: 0;
     z-index: 60;

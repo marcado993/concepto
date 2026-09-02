@@ -199,7 +199,12 @@
 </div>
 
 <style>
+  /* El mapa se arrastra con el dedo en todas las direcciones. Ahora que
+     la pagina permite "deslizar para recargar", un arrastre hacia abajo
+     sobre el mapa la recargaria a media exploracion. `contain` deja el
+     gesto dentro del mapa. */
   .map-shell {
+    overscroll-behavior: contain;
     position: relative;
     width: 100%;
     height: 100%;
