@@ -1,4 +1,4 @@
-import { IsIn, IsString, Matches, MinLength } from "class-validator";
+import { IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 import { FULL_NAME_PATTERN, FULL_NAME_MESSAGE } from "../../shared/validation/full-name.pattern";
 import { IsCedulaEcuatoriana } from "../../shared/validation/cedula-ecuatoriana.pattern";
 
@@ -70,4 +70,17 @@ export class RentLockerDto {
   // locker.service.ts).
   @IsIn([true], { message: "Debes aceptar los términos y condiciones" })
   acceptedTerms!: boolean;
+
+  /**
+   * Código promocional, opcional.
+   *
+   * Se acepta con guiones o sin ellos y en cualquier caja: el servicio lo
+   * normaliza (ver PromoCodeService.normalizar). El largo máximo cubre el
+   * formato "AEIS-XXXX-XXXX" con holgura para espacios pegados del
+   * portapapeles.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  promoCode?: string;
 }

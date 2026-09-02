@@ -16,6 +16,7 @@
   import AdminNavigation from "./AdminNavigation.svelte";
   import AdminDangerZone from "./AdminDangerZone.svelte";
   import AdminJobs from "./AdminJobs.svelte";
+  import AdminPromoCodes from "./AdminPromoCodes.svelte";
   import { isAdminAuthenticated, adminLogout } from "./adminAuth.svelte";
   import { fetchAdminMe, AdminApiError, type AdminMe } from "./adminApi";
 
@@ -35,7 +36,7 @@
       });
   });
 
-  type Tab = "resumen" | "precios" | "usuarios" | "empleos" | "actividad" | "navegacion" | "peligro";
+  type Tab = "resumen" | "precios" | "promos" | "usuarios" | "empleos" | "actividad" | "navegacion" | "peligro";
   let tab = $state<Tab>("resumen");
 
   // Menú lateral en vez de pestañas horizontales — con solo 5 secciones ya
@@ -46,6 +47,7 @@
   const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
     { id: "resumen", label: "Resumen", icon: "chart" },
     { id: "precios", label: "Precios", icon: "tag" },
+    { id: "promos", label: "Códigos", icon: "ticket" },
     { id: "usuarios", label: "Usuarios", icon: "users" },
     { id: "empleos", label: "Empleos", icon: "briefcase" },
     { id: "actividad", label: "Actividad", icon: "clock" },
@@ -70,6 +72,11 @@
       <path d="M2.5 17c0-3 2.2-5 5-5s5 2 5 5" />
       <circle cx="14.5" cy="7" r="2" />
       <path d="M13 12.2c1.9.5 3.5 2.2 3.5 4.8" />
+    </svg>
+  {:else if name === "ticket"}
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M3 7.5V6a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v1.5a2 2 0 0 0 0 5V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-1.5a2 2 0 0 0 0-5Z" />
+      <path d="M12 5.5v9" stroke-dasharray="1.5 2" />
     </svg>
   {:else if name === "briefcase"}
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
@@ -173,6 +180,8 @@
           <AdminOverview />
         {:else if tab === "precios"}
           <AdminPricing />
+        {:else if tab === "promos"}
+          <AdminPromoCodes />
         {:else if tab === "usuarios"}
           <AdminUsers />
         {:else if tab === "empleos"}

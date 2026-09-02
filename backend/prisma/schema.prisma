@@ -36,6 +36,12 @@ enum PaymentMethod {
   // ver SubscriptionService.subscribe()). El Payment se crea CONFIRMED de
   // una vez, nunca pasa por PayPhone ni ningún otro proveedor.
   INFORMATIVE
+  // Casillero cubierto al 100% por un código promocional. Es un método
+  // aparte y no INFORMATIVE a propósito: acá SÍ hubo un alquiler real que
+  // AEIS entregó, solo que cobrado $0. Tenerlo separado permite responder
+  // "cuántos casilleros regalamos este semestre" con una consulta, en vez
+  // de cruzar pagos con códigos para deducirlo.
+  PROMO
 }
 
 enum PaymentStatus {
@@ -77,8 +83,9 @@ model User {
   payments      Payment[]
   rentals       LockerRental[]
   subscriptions Subscription[]
-  auditLogs     AuditLog[] @relation("AuditActor")
+  auditLogs     AuditLog[]     @relation("AuditActor")
   ventures      Venture[]
+  promoCodes    PromoCode[]    @relation("PromoRedeemer")
 
   @@map("users")
 }
@@ -96,26 +103,26 @@ enum VentureStatus {
 // tal cual). El número de WhatsApp no se expone crudo al público — el
 // controller arma el link wa.me server-side (VentureController).
 model Venture {
-  id              String        @id @default(uuid())
-  ownerId         String
-  owner           User          @relation(fields: [ownerId], references: [id])
-  name            String
-  description     String
-  category        String
-  photoUrl        String?
-  whatsappNumber  String
-  status          VentureStatus @default(PENDING)
-  createdAt       DateTime      @default(now())
+  id             String        @id @default(uuid())
+  ownerId        String
+  owner          User          @relation(fields: [ownerId], references: [id])
+  name           String
+  description    String
+  category       String
+  photoUrl       String?
+  whatsappNumber String
+  status         VentureStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
 
   @@index([status])
   @@map("ventures")
 }
 
 model Period {
-  id        String   @id @default(uuid())
-  label     String   @unique // ej. "2026-A"
-  startsAt  DateTime
-  endsAt    DateTime
+  id              String   @id @default(uuid())
+  label           String   @unique // ej. "2026-A"
+  startsAt        DateTime
+  endsAt          DateTime
   // Precio base del casillero para ESTE periodo — antes era la constante
   // DEFAULT_LOCKER_BASE_PRICE ($6.50) escrita a mano en locker.service.ts,
   // sin forma de que la directiva la cambiara sin un redeploy. El sponsor
@@ -126,9 +133,9 @@ model Period {
   // representa "las condiciones económicas de este periodo".
   lockerBasePrice Decimal  @default(6.50) @db.Decimal(10, 2)
 
-  rentals            LockerRental[]
-  subscriptionTiers  SubscriptionTier[]
-  subscriptions      Subscription[]
+  rentals           LockerRental[]
+  subscriptionTiers SubscriptionTier[]
+  subscriptions     Subscription[]
 
   @@map("periods")
 }
@@ -174,6 +181,10 @@ model LockerRental {
   payment   Payment  @relation(fields: [paymentId], references: [id])
   createdAt DateTime @default(now())
 
+  // El código promocional que cubrió (total o parcialmente) este alquiler,
+  // si hubo uno.
+  promoCode PromoCode?
+
   // Un mismo casillero no puede tener dos alquileres activos en el mismo
   // periodo — es la restricción de base de datos detrás del escenario BDD
   // "condición de carrera" de 05-metodologia-devsecops-pipeline.md §2.
@@ -182,11 +193,11 @@ model LockerRental {
 }
 
 model SubscriptionTier {
-  id       String   @id @default(uuid())
+  id       String  @id @default(uuid())
   periodId String
-  period   Period   @relation(fields: [periodId], references: [id])
+  period   Period  @relation(fields: [periodId], references: [id])
   name     String // "Bronce" | "Platino" | "Pantera" — ver nota de montos abajo
-  amount   Decimal  @db.Decimal(10, 2)
+  amount   Decimal @db.Decimal(10, 2)
   benefits Json // estructura libre: [{ "type": "descuento_casillero", "value": 0 }, ...]
 
   subscriptions Subscription[]
@@ -199,17 +210,17 @@ model SubscriptionTier {
 }
 
 model Subscription {
-  id        String              @id @default(uuid())
+  id        String             @id @default(uuid())
   userId    String
-  user      User                @relation(fields: [userId], references: [id])
+  user      User               @relation(fields: [userId], references: [id])
   tierId    String
-  tier      SubscriptionTier    @relation(fields: [tierId], references: [id])
+  tier      SubscriptionTier   @relation(fields: [tierId], references: [id])
   periodId  String
-  period    Period              @relation(fields: [periodId], references: [id])
-  paymentId String              @unique
-  payment   Payment             @relation(fields: [paymentId], references: [id])
-  status    SubscriptionStatus  @default(ACTIVE)
-  createdAt DateTime            @default(now())
+  period    Period             @relation(fields: [periodId], references: [id])
+  paymentId String             @unique
+  payment   Payment            @relation(fields: [paymentId], references: [id])
+  status    SubscriptionStatus @default(ACTIVE)
+  createdAt DateTime           @default(now())
 
   @@unique([userId, periodId]) // un aportante tiene un solo tier activo por periodo
   @@map("subscriptions")
@@ -229,7 +240,8 @@ model AdminAccount {
   role         Role     @default(PRESIDENTE) // solo PRESIDENTE/DIRECTOR tiene sentido acá — nunca ESTUDIANTE
   createdAt    DateTime @default(now())
 
-  auditLogs AuditLog[] @relation("AuditAdminActor")
+  auditLogs        AuditLog[]  @relation("AuditAdminActor")
+  promoCodesIssued PromoCode[] @relation("PromoIssuer")
 
   @@map("admin_accounts")
 }
@@ -323,9 +335,9 @@ model JobOffer {
   // ingest — el dedupe en memoria solo cubre un lote.
   fingerprint String @unique
 
-  source   String // "epn" | "indeed" | "multitrabajos" | "computrabajo" | ...
-  sourceId String
-  url      String
+  source      String // "epn" | "indeed" | "multitrabajos" | "computrabajo" | ...
+  sourceId    String
+  url         String
   // Logo de la empresa. Reconocer un logo es mas rapido que leer un nombre
   // al escanear decenas de ofertas. Null cuando la fuente no lo publica o
   // sirve un placeholder generico — ahi la UI cae a la inicial.
@@ -351,7 +363,7 @@ model JobOffer {
   relevance Int
   // Por que obtuvo ese puntaje. Se guarda para poder depurar el ranking en
   // produccion sin tener que reproducir la ingesta entera.
-  reasons String[]
+  reasons   String[]
 
   postedAt    DateTime?
   firstSeenAt DateTime  @default(now())
@@ -359,11 +371,61 @@ model JobOffer {
   // aparecer en las fuentes, este campo se queda quieto y el barrido de
   // archivado la marca inactiva — asi el listado no muestra vacantes que ya
   // se bajaron.
-  lastSeenAt DateTime
-  active     Boolean  @default(true)
+  lastSeenAt  DateTime
+  active      Boolean   @default(true)
 
   @@index([active, relevance])
   @@index([active, kind])
   @@index([source])
   @@map("job_offers")
+}
+
+// ---------------------------------------------------------------------
+// Códigos promocionales de casillero.
+//
+// Reemplazan al descuento automático por tier de aportación. El motivo es
+// de alcance, no técnico: las aportaciones NO se cobran dentro de la app
+// (ver SubscriptionService.subscribe(), method INFORMATIVE), así que la app
+// no puede saber quién aportó de verdad. Mantener un descuento automático
+// basado en esa tabla era prometer un beneficio sobre un dato que la app no
+// está en posición de confirmar.
+//
+// Ahora la directiva genera los códigos desde el panel y los reparte por su
+// cuenta a quien de verdad aportó. La app solo responde una pregunta bien
+// acotada: "¿este código es válido y cuánto descuenta?".
+//
+// NO hay llave foránea al aportante: el código se genera ANTES de saber
+// quién lo va a usar, y quien lo canjea puede no ser la misma persona a la
+// que se lo entregaron (un aportante puede pasárselo a un compañero, y eso
+// está bien). `note` guarda a quién se le dio, como texto libre.
+// ---------------------------------------------------------------------
+model PromoCode {
+  id              String @id @default(uuid())
+  // Formato "AEIS-XXXX-XXXX" — ver PromoCodeService.generarCodigo() para
+  // por qué el alfabeto excluye caracteres ambiguos.
+  code            String @unique
+  discountPercent Int // 1..100. 100 = casillero gratis.
+
+  // A quién se le entregó, en texto libre ("Luis Guerrero", "rifa de
+  // bienvenida", un correo). Es para que la directiva sepa qué entregó a
+  // quién — la app no lo usa para decidir nada.
+  note String?
+
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  createdByAdminId String
+  createdByAdmin   AdminAccount @relation("PromoIssuer", fields: [createdByAdminId], references: [id])
+
+  // Canje. Los tres campos se llenan juntos o ninguno.
+  redeemedAt       DateTime?
+  redeemedByUserId String?
+  redeemedByUser   User?         @relation("PromoRedeemer", fields: [redeemedByUserId], references: [id])
+  // Qué alquiler lo consumió. UNIQUE: un alquiler no puede acumular dos
+  // códigos y un código no puede cubrir dos alquileres.
+  redeemedRentalId String?       @unique
+  redeemedRental   LockerRental? @relation(fields: [redeemedRentalId], references: [id])
+
+  @@index([redeemedAt])
+  @@map("promo_codes")
 }

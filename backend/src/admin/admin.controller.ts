@@ -5,6 +5,8 @@ import { AdminJwtAuthGuard } from "./admin-auth/admin-jwt-auth.guard";
 import { AdminService } from "./admin.service";
 import { DangerZoneService } from "./danger-zone.service";
 import { JobIngestService } from "../jobs/job-ingest.service";
+import { PromoCodeService } from "../promo/promo-code.service";
+import { CreatePromoCodesDto } from "../promo/dto/create-promo-codes.dto";
 import { ListUsersQueryDto } from "./dto/list-users.dto";
 import { ListAuditLogsQueryDto } from "./dto/list-audit-logs.dto";
 import { UpdateSubscriptionTierDto } from "./dto/update-subscription-tier.dto";
@@ -28,7 +30,8 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly dangerZone: DangerZoneService,
-    private readonly jobIngest: JobIngestService
+    private readonly jobIngest: JobIngestService,
+    private readonly promoCodes: PromoCodeService
   ) {}
 
   @Get("overview")
@@ -115,5 +118,44 @@ export class AdminController {
   @Post("jobs/ingest")
   ingestJobs() {
     return this.jobIngest.ingest();
+  }
+
+  // ---------------------------------------------------------------
+  // Códigos promocionales de casillero.
+  //
+  // Reemplazan al descuento automático por tier de aportación: como las
+  // aportaciones no se cobran dentro de la app, la app no puede confirmar
+  // quién aportó de verdad. La directiva genera los códigos acá y los
+  // reparte por su cuenta (ver el comentario del modelo PromoCode).
+  // ---------------------------------------------------------------
+
+  /** Lista completa con su estado (disponible / canjeado / vencido). */
+  @Get("promo-codes")
+  listPromoCodes() {
+    return this.promoCodes.listar();
+  }
+
+  @Get("promo-codes/summary")
+  promoCodesSummary() {
+    return this.promoCodes.resumen();
+  }
+
+  /**
+   * Genera un lote y lo devuelve en claro, listo para copiar y repartir.
+   *
+   * Los códigos valen dinero (uno del 100% es un casillero gratis), así que
+   * la creación queda auditada con quién la autorizó, cuántos y de cuánto
+   * — ver PromoCodeService.crearLote.
+   */
+  @Post("promo-codes")
+  createPromoCodes(@Body() dto: CreatePromoCodesDto, @Req() req: AuthedRequest) {
+    return this.promoCodes.crearLote({
+      cantidad: dto.cantidad,
+      discountPercent: dto.discountPercent,
+      note: dto.note,
+      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+      adminActorId: req.user.id,
+      ipAddress: req.ip,
+    });
   }
 }

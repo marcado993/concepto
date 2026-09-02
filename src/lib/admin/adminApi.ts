@@ -282,3 +282,47 @@ export interface AdminJobsSnapshot {
 export function fetchAdminJobsSnapshot(): Promise<AdminJobsSnapshot> {
   return getJSON<AdminJobsSnapshot>("/jobs?limit=12&sort=relevance");
 }
+
+// ---------------------------------------------------------------------
+// Codigos promocionales de casillero.
+//
+// Reemplazan al descuento automatico por tier de aportacion: como las
+// aportaciones no se cobran dentro de la app, esta no puede confirmar quien
+// aporto de verdad. La directiva genera los codigos aca y los reparte por
+// su cuenta a quien corresponda.
+// ---------------------------------------------------------------------
+
+export interface PromoCodePublic {
+  id: string;
+  code: string;
+  discountPercent: number;
+  /** A quien se le entrego — texto libre que escribe la directiva. */
+  note: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  redeemedAt: string | null;
+  /** Nombre de quien lo canjeo, si ya se uso. */
+  redeemedBy: string | null;
+  /** Estado ya resuelto por el backend — la UI no lo deriva de tres campos. */
+  status: "disponible" | "canjeado" | "vencido";
+}
+
+export function fetchPromoCodes(): Promise<PromoCodePublic[]> {
+  return getJSON<PromoCodePublic[]>("/admin/promo-codes");
+}
+
+export function fetchPromoCodesSummary(): Promise<{ total: number; disponibles: number; canjeados: number }> {
+  return getJSON<{ total: number; disponibles: number; canjeados: number }>("/admin/promo-codes/summary");
+}
+
+export interface CreatePromoCodesInput {
+  cantidad: number;
+  discountPercent: number;
+  note?: string;
+  expiresAt?: string;
+}
+
+/** Devuelve los codigos en claro, listos para copiar y repartir. */
+export function createPromoCodes(input: CreatePromoCodesInput): Promise<PromoCodePublic[]> {
+  return postJSON<PromoCodePublic[]>("/admin/promo-codes", input);
+}

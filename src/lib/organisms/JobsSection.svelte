@@ -20,13 +20,16 @@
   let activeTag = $state<string>("");
 
   /**
-   * Ventana de antigüedad. Arranca en 30 días.
+   * Ventana de antigüedad. Arranca en 1 SEMANA.
    *
-   * No arranca en "Todo" a propósito: una vacante de hace dos meses casi
-   * siempre ya está cerrada, y mezclarla con las de esta semana hace perder
-   * el tiempo a quien postula. 30 días es el punto donde todavía queda
-   * volumen y casi todo sigue vivo; quien quiera ver solo lo fresco tiene
-   * "3 días" a un toque.
+   * Arrancaba en 30 días y se bajó por cómo funcionan de verdad estos
+   * procesos: pasada la primera semana la convocatoria normalmente ya se
+   * cerró, aunque el aviso siga publicado — nadie baja una vacante llena.
+   * Abrir en un mes llenaba la primera pantalla de ofertas a las que ya no
+   * se puede postular, que es peor que mostrar menos.
+   *
+   * Las otras ventanas siguen a un toque para quien quiera rastrear más
+   * atrás; simplemente dejan de ser lo primero que ve.
    */
   const AGE_OPTIONS: { label: string; days: number | null }[] = [
     { label: "3 días", days: 3 },
@@ -34,7 +37,21 @@
     { label: "1 mes", days: 30 },
     { label: "Todo", days: null },
   ];
-  let maxAgeDays = $state<number | null>(30);
+  let maxAgeDays = $state<number | null>(7);
+
+  /**
+   * Días bajo los cuales una oferta se marca como "reciente".
+   *
+   * 3 días y no 1: los portales publican por lotes y muchas vacantes
+   * aparecen fechadas "ayer" o "hace 2 días" el mismo día que salen. Con
+   * un umbral de 24 h el distintivo casi nunca se veía.
+   */
+  const RECIENTE_DIAS = 3;
+
+  function esReciente(iso: string | null): boolean {
+    if (!iso) return false;
+    return Date.now() - new Date(iso).getTime() <= RECIENTE_DIAS * 86_400_000;
+  }
 
   /** La tarjeta abierta. null = todas plegadas. */
   let expandedId = $state<string | null>(null);
@@ -274,6 +291,11 @@
                 {#if job.kind === "INTERNSHIP"}<span class="job-flag">Pasantía</span>{/if}
                 <span class="job-chip mode-{job.workMode.toLowerCase()}">{MODE_LABELS[job.workMode]}</span>
                 {#if job.salary}<span class="job-chip salary">{job.salary}</span>{/if}
+                {#if esReciente(job.postedAt)}
+                  <span class="job-fresh" title="Publicada hace {RECIENTE_DIAS} días o menos">
+                    <span class="job-fresh-dot" aria-hidden="true"></span>Reciente
+                  </span>
+                {/if}
                 {#if job.postedAt}<span class="job-when">{relativeDate(job.postedAt)}</span>{/if}
               </span>
             </span>
@@ -608,6 +630,63 @@
   .job-when {
     font-size: 10px;
     color: rgba(234, 255, 245, 0.4);
+  }
+
+  /* "Reciente" — la señal que mas importa al escanear, porque separa lo que
+     sigue abierto de lo que probablemente ya se cerro. Verde y con punto,
+     no solo texto: a 10 px entre otros cuatro chips grises, el texto solo
+     se pierde. */
+  .job-fresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px 2px 6px;
+    border-radius: 999px;
+    color: #7df0c6;
+    background: rgba(33, 224, 160, 0.14);
+    border: 1px solid rgba(33, 224, 160, 0.3);
+  }
+
+  .job-fresh-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #21e0a0;
+    animation: fresh-pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes fresh-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 rgba(33, 224, 160, 0.5);
+    }
+    50% {
+      opacity: 0.65;
+      box-shadow: 0 0 0 3px rgba(33, 224, 160, 0);
+    }
+  }
+
+  /* El latido es un adorno, no informacion: quien pide menos movimiento ve
+     el mismo punto quieto y no pierde nada. */
+  @media (prefers-reduced-motion: reduce) {
+    .job-fresh-dot {
+      animation: none;
+    }
+  }
+
+  /* Al pasar el cursor por la tarjeta, el distintivo se realza — el efecto
+     que se pidio, atado a la tarjeta entera y no al chip, porque el chip
+     mide 60 px y apuntarle seria mas trabajo que leerlo. */
+  @media (hover: hover) and (pointer: fine) {
+    .job-card:hover .job-fresh {
+      background: rgba(33, 224, 160, 0.24);
+      border-color: rgba(33, 224, 160, 0.55);
+    }
   }
 
   /* tabular-nums: sin esto los números bailan de ancho y la columna deja de

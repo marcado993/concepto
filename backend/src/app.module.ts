@@ -11,6 +11,7 @@ import { HealthModule } from "./shared/health/health.module";
 import { MonitoringModule } from "./shared/monitoring/monitoring.module";
 import { VentureModule } from "./venture/venture.module";
 import { JobsModule } from "./jobs/jobs.module";
+import { PromoModule } from "./promo/promo.module";
 import { AdminModule } from "./admin/admin.module";
 import { SettingsModule } from "./shared/settings/settings.module";
 
@@ -31,6 +32,7 @@ import { SettingsModule } from "./shared/settings/settings.module";
     // datos siguen vivos para poder revertirlo sin migracion.
     VentureModule,
     JobsModule,
+    PromoModule,
     AdminModule,
     SettingsModule,
     // Módulos pendientes (ver docs/dominio/02-necesidades-stakeholders.md §3

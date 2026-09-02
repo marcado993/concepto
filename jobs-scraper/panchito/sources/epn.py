@@ -44,8 +44,18 @@ BASE = "https://epn.hiringroomcampus.com"
 POR_PAGINA = 10
 PAGINAS_MAX = 4  # 40 avisos por término; la bolsa entera ronda los 400
 
-# El propio HiringRoom sirve este marcador cuando la empresa no subió logo.
-_LOGO_PLACEHOLDER = re.compile(r"no-logo|nologo|default", re.IGNORECASE)
+# El propio HiringRoom sirve un marcador cuando la empresa no subió logo.
+#
+# El patrón real que devuelve el sitio es "../assets/img/no-company-logo.png"
+# y la versión anterior de esta regex (no-logo|nologo|default) NO lo cazaba:
+# "no-company-logo" no contiene "no-logo". Resultado medido en producción:
+# 161 de 162 ofertas de la EPN llegaban con ese placeholder como si fuera un
+# logo real. No se vio roto de casualidad — la ruta es relativa y el backend
+# descarta lo que no sea http(s) — pero el día que HiringRoom lo sirva
+# absoluto, la lista entera mostraría el mismo icono anónimo en vez de la
+# inicial de cada empresa, que es justo lo que este filtro existe para
+# evitar.
+_LOGO_PLACEHOLDER = re.compile(r"no-?company-?logo|no-?logo|nologo|default|placeholder", re.IGNORECASE)
 
 
 def _extraer_tarjetas(page) -> list[dict]:

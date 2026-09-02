@@ -5,7 +5,7 @@ import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
 import { PeriodService } from "../shared/period/period.service";
-import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
+import { PromoCodeService, normalizar as normalizarPromo } from "../promo/promo-code.service";
 import { executeMoneyMutation } from "../shared/payment/money-mutation.helper";
 import { calculateLockerPrice } from "./rental-calculator";
 import { MailService } from "../shared/mail/mail.service";
@@ -49,6 +49,8 @@ export interface RentLockerParams {
   phone: string;
   acceptedTerms: boolean;
   ipAddress?: string;
+  /** Código promocional, opcional — ver promo/promo-code.service.ts. */
+  promoCode?: string;
 }
 
 // Transferencia + comprobante por OCR se retiró (PayPhone es el único
@@ -73,7 +75,7 @@ export class LockerService {
     private readonly audit: AuditService,
     private readonly payphone: PayphoneClient,
     private readonly period: PeriodService,
-    private readonly subscriptionBenefits: SubscriptionBenefitsService,
+    private readonly promoCodes: PromoCodeService,
     private readonly mail: MailService
   ) {}
 
@@ -116,8 +118,17 @@ export class LockerService {
   // identidad, sin que el estudiante tenga que declarar si es aportante ni
   // de qué plan (eso ya lo resuelve subscriptionBenefits a partir de su
   // propia sesión — ver comentario en rent()).
-  async getPricePreview(userId: string) {
-    const { discountPercent, tierName } = await this.subscriptionBenefits.getLockerDiscountInfo(userId);
+  async getPricePreview(_userId: string) {
+    // Sin descuento automático: desde que las aportaciones dejaron de
+    // cobrarse dentro de la app (method INFORMATIVE, ver
+    // SubscriptionService.subscribe()), la app no puede confirmar quién
+    // aportó de verdad, y un descuento automático basado en esa tabla era
+    // prometer un beneficio sobre un dato no verificable. El beneficio
+    // ahora viaja en un código promocional que la directiva reparte a mano
+    // (ver promo/promo-code.service.ts), y el estudiante lo escribe en el
+    // formulario — por eso la vista previa muestra el precio de lista.
+    const discountPercent = 0;
+    const tierName: string | null = null;
     // El periodo viaja con el precio a propósito: "$6.50" sin decir por
     // cuánto tiempo es un precio que no se puede evaluar, y el texto de
     // términos que el estudiante firma tiene que nombrar el MISMO
@@ -133,6 +144,15 @@ export class LockerService {
       price: { PAYPHONE: calculateLockerPrice(basePrice, discountPercent).amount },
       period: { label: period.label, endsAt: period.endsAt.toISOString() },
     };
+  }
+
+  /**
+   * Verifica un código promocional sin canjearlo — delega en el dominio de
+   * promociones en vez de leer su tabla directamente, mismo criterio que
+   * antes se usaba con el dominio de Aportaciones.
+   */
+  verifyPromoCode(code: string) {
+    return this.promoCodes.verificar(code);
   }
 
   async rent(params: RentLockerParams) {
@@ -183,12 +203,17 @@ export class LockerService {
       );
     }
 
-    // Cruce de dominio real, no una lectura directa a la tabla de
-    // Subscription: le preguntamos al dominio de Aportaciones "¿cuánto
-    // descuento tiene este estudiante?" y confiamos en su respuesta (0 si
-    // no aporta o su tier no trae ese beneficio) — ver
-    // subscription/subscription-benefits.service.ts.
-    const discountPercent = await this.subscriptionBenefits.getLockerDiscountPercent(params.userId);
+    // El descuento sale del código promocional, si el estudiante escribió
+    // uno. Acá solo se VERIFICA para poder calcular el precio; el canje
+    // real ocurre más abajo, dentro de la misma transacción que crea el
+    // alquiler (ver PromoCodeService.canjear) — así un alquiler que falla
+    // no quema el código.
+    let discountPercent = 0;
+    if (params.promoCode) {
+      const check = await this.promoCodes.verificar(params.promoCode);
+      if (!check.valido) throw new BadRequestException(check.motivo ?? "Ese código no es válido");
+      discountPercent = check.discountPercent;
+    }
     const price = calculateLockerPrice(Number(period.lockerBasePrice), discountPercent);
 
     // Nombre/cédula/celular/código único se piden y confirman acá mismo —
@@ -224,12 +249,21 @@ export class LockerService {
       return activeRental;
     }
 
+    // Un código del 100% deja el precio en $0, y PayPhone no puede
+    // procesar un cobro de cero — el widget lo rechaza. Ese caso no es un
+    // pago pendiente: es un casillero ya entregado, así que se confirma de
+    // una vez con method PROMO y nunca se abre la pasarela. Sin esto, un
+    // código de "casillero gratis" dejaba al estudiante atascado frente a
+    // un widget que no podía completar.
+    const esGratis = price.amount === 0;
+
     return executeMoneyMutation<LockerRental>(
       { prisma: this.prisma, audit: this.audit },
       {
         userId: params.userId,
         amount: price.amount,
-        method: "PAYPHONE",
+        method: esGratis ? "PROMO" : "PAYPHONE",
+        autoConfirm: esGratis,
         ipAddress: params.ipAddress,
         auditAction: "locker.rental.created",
         auditEntityType: "LockerRental",
@@ -243,6 +277,9 @@ export class LockerService {
         auditMetadata: () => ({
           lockerCode: params.lockerCode,
           discountPercent,
+          // Qué código se usó queda en la auditoría: es la trazabilidad de
+          // por qué este alquiler costó menos que el de al lado.
+          promoCode: params.promoCode ? normalizarPromo(params.promoCode) : null,
           termsAccepted: true,
           termsVersion: lockerTermsVersion(period.label),
         }),
@@ -255,14 +292,36 @@ export class LockerService {
           const rental = await tx.lockerRental.create({
             data: { lockerId: locker.id, userId: params.userId, periodId, paymentId },
           });
+
+          // El canje va DENTRO de esta transacción, no antes: si la
+          // creación del alquiler falla (casillero tomado en la carrera),
+          // el canje se revierte con ella y el código queda libre. Canjear
+          // fuera habría quemado un código en cada intento fallido.
+          //
+          // Es también donde se resuelve el doble uso bajo concurrencia:
+          // canjear() usa un UPDATE condicionado a redeemedAt IS NULL, así
+          // que de dos alquileres simultáneos con el mismo código solo uno
+          // gana (ver promo-code.service.ts).
+          if (params.promoCode) {
+            await this.promoCodes.canjear(tx, {
+              code: params.promoCode,
+              userId: params.userId,
+              rentalId: rental.id,
+            });
+          }
           // RESERVED, no RENTED de una vez — PAYPHONE no cobra de forma
           // síncrona aquí (ver money-mutation.helper.ts), así que no hay
           // forma de saber en este punto si el estudiante de verdad va a
           // completar el pago en el widget. RENTED solo llega después, vía
           // confirmPayphonePayment().
+          //
+          // Salvo que sea gratis: ahí no hay pago que esperar ni widget que
+          // abrir, así que el casillero queda RENTED de una vez. Dejarlo
+          // RESERVED habría sido mentir sobre su estado — nadie iba a venir
+          // a confirmar nada después.
           await tx.locker.update({
             where: { id: locker.id },
-            data: { status: "RESERVED" },
+            data: { status: esGratis ? "RENTED" : "RESERVED" },
           });
           return rental;
         },

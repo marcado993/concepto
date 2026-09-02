@@ -68,15 +68,24 @@ class Config:
         default_factory=lambda: _lista_env(
             "SCRAPER_TERMINOS_LOCALES",
             [
+                # Perfil de entrada — los que mas rinden para un estudiante.
                 "pasante",
                 "practicante",
                 "trainee",
+                "junior",
+                # Desarrollo
                 "desarrollador",
                 "programador",
+                "software",
+                # Sistemas / TI en general
                 "sistemas",
+                "informatica",
                 "tecnologia",
                 "soporte tecnico",
+                "qa",
+                # Areas especificas de la carrera
                 "datos",
+                "base de datos",
                 "redes",
                 "ciberseguridad",
             ],

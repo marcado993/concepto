@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Req } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { Request } from "express";
 import { Public } from "../shared/auth/public.decorator";
@@ -91,6 +91,7 @@ export class LockerController {
       cedula: dto.cedula,
       phone: dto.phone,
       acceptedTerms: dto.acceptedTerms,
+      promoCode: dto.promoCode,
       ipAddress: req.ip,
     });
   }
@@ -103,5 +104,27 @@ export class LockerController {
   @Throttle({ short: { limit: 5, ttl: 60_000 } })
   confirmPayphone(@Body() dto: ConfirmPayphoneDto, @Req() req: Request & { user: { id: string } }) {
     return this.lockerService.confirmPayphonePayment(dto.clientTransactionId, dto.id, req.user.id, req.ip);
+  }
+
+  /**
+   * Verifica un código promocional SIN canjearlo.
+   *
+   * Existe para que el estudiante vea el precio con descuento antes de
+   * pagar, en vez de descubrir si su código sirve recién al confirmar.
+   * Devuelve `{valido:false, motivo}` en vez de un error HTTP: acá "no
+   * sirve" es una respuesta esperada del formulario.
+   *
+   * Requiere sesión (no lleva @Public()): sin eso, cualquiera podría
+   * probar códigos contra este endpoint hasta dar con uno válido. El
+   * límite por minuto acota además cuántos puede probar un alumno con
+   * sesión — un código son 8 caracteres de un alfabeto de 31, así que
+   * adivinarlo a ciegas es inviable, pero no hay razón para regalar
+   * intentos.
+   */
+  @Throttle({ short: { limit: 3, ttl: 10_000 }, medium: { limit: 30, ttl: 60_000 } })
+  @Get("promo-code/:code")
+  @Roles(Role.ESTUDIANTE)
+  verifyPromoCode(@Param("code") code: string) {
+    return this.lockerService.verifyPromoCode(code);
   }
 }

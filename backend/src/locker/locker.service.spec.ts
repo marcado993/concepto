@@ -6,7 +6,7 @@ import { PrismaService } from "../shared/prisma/prisma.service";
 import { AuditService } from "../shared/audit/audit.service";
 import { PayphoneClient } from "../shared/payment/payphone.client";
 import { PeriodService } from "../shared/period/period.service";
-import { SubscriptionBenefitsService } from "../subscription/subscription-benefits.service";
+import { PromoCodeService } from "../promo/promo-code.service";
 import { MailService } from "../shared/mail/mail.service";
 
 // El periodo activo real, no solo su id: el texto de términos que el
@@ -33,7 +33,7 @@ describe("LockerService.rent", () => {
   let prisma: any;
   let audit: { record: jest.Mock };
   let payphone: { confirm: jest.Mock; getPublicConfig: jest.Mock };
-  let subscriptionBenefits: { getLockerDiscountPercent: jest.Mock; getLockerDiscountInfo: jest.Mock };
+  let promoCodes: { verificar: jest.Mock; canjear: jest.Mock };
   let period: ReturnType<typeof makePeriodMock>;
 
   const locker = { id: "locker-1", code: "A07", zone: "A", status: "AVAILABLE" };
@@ -67,9 +67,9 @@ describe("LockerService.rent", () => {
     };
     audit = { record: jest.fn().mockResolvedValue({ id: "log-1" }) };
     payphone = { confirm: jest.fn(), getPublicConfig: jest.fn() };
-    subscriptionBenefits = {
-      getLockerDiscountPercent: jest.fn().mockResolvedValue(0),
-      getLockerDiscountInfo: jest.fn().mockResolvedValue({ discountPercent: 0, tierName: null }),
+    promoCodes = {
+      verificar: jest.fn().mockResolvedValue({ valido: true, discountPercent: 0 }),
+      canjear: jest.fn().mockResolvedValue(0),
     };
     period = makePeriodMock();
 
@@ -80,7 +80,7 @@ describe("LockerService.rent", () => {
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: payphone },
         { provide: PeriodService, useValue: period },
-        { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
+        { provide: PromoCodeService, useValue: promoCodes },
         { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
@@ -185,18 +185,72 @@ describe("LockerService.rent", () => {
     );
   });
 
-  // Cruce de dominio: un aportante con beneficio "descuento_casillero"
-  // paga menos por el casillero — pero LockerService nunca lee la tabla de
-  // Subscription, solo confía en lo que le devuelve
-  // SubscriptionBenefitsService (mockeado aquí, probado de verdad en
-  // subscription-benefits.service.spec.ts).
-  it("Dado un estudiante con 20% de descuento en casilleros (tier de Aportaciones), Cuando alquila, Entonces el precio ya viene descontado", async () => {
-    subscriptionBenefits.getLockerDiscountPercent.mockResolvedValue(20);
+  // Cruce de dominio: el descuento sale de un codigo promocional, no del
+  // tier de aportacion. LockerService nunca lee la tabla de PromoCode —
+  // solo confia en lo que le devuelve PromoCodeService (mockeado aqui,
+  // probado de verdad en promo-code.service.spec.ts).
+  it("Dado un codigo promocional del 20%, Cuando alquila, Entonces el precio ya viene descontado", async () => {
+    promoCodes.verificar.mockResolvedValue({ valido: true, discountPercent: 20 });
 
-    await service.rent(params);
+    await service.rent({ ...params, promoCode: "AEIS-ABCD-2345" });
 
     expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ amount: 5.2 }) }) // 6.50×0.8
+    );
+  });
+
+  // El canje va DENTRO de la transaccion del alquiler: si crear el alquiler
+  // falla, el codigo se libera con el rollback en vez de quedar quemado.
+  it("Dado un codigo valido, Cuando alquila, Entonces lo canjea dentro de la MISMA transaccion, atado al alquiler creado", async () => {
+    promoCodes.verificar.mockResolvedValue({ valido: true, discountPercent: 20 });
+
+    await service.rent({ ...params, promoCode: "AEIS-ABCD-2345" });
+
+    expect(promoCodes.canjear).toHaveBeenCalledWith(
+      prisma.__tx,
+      expect.objectContaining({ code: "AEIS-ABCD-2345", userId: "user-1" })
+    );
+  });
+
+  it("Dado un codigo invalido, Cuando alquila, Entonces rechaza ANTES de crear pago o alquiler", async () => {
+    promoCodes.verificar.mockResolvedValue({ valido: false, discountPercent: 0, motivo: "Ese código ya fue usado" });
+
+    await expect(service.rent({ ...params, promoCode: "AEIS-ABCD-2345" })).rejects.toThrow(/ya fue usado/i);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("Dado un alquiler SIN codigo, Cuando alquila, Entonces no consulta ni canjea nada", async () => {
+    await service.rent(params);
+
+    expect(promoCodes.verificar).not.toHaveBeenCalled();
+    expect(promoCodes.canjear).not.toHaveBeenCalled();
+  });
+
+  // Un codigo del 100% deja el precio en $0 y PayPhone no puede cobrar
+  // cero: el widget lo rechaza. Sin este caso, un codigo de "casillero
+  // gratis" dejaba al estudiante atascado frente a una pasarela que no
+  // podia completar.
+  it("Dado un codigo del 100%, Cuando alquila, Entonces el pago queda CONFIRMED con method PROMO y NUNCA pasa por PayPhone", async () => {
+    promoCodes.verificar.mockResolvedValue({ valido: true, discountPercent: 100 });
+
+    await service.rent({ ...params, promoCode: "AEIS-FREE-2345" });
+
+    expect(prisma.__tx.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ amount: 0, method: "PROMO", status: "CONFIRMED" }),
+      })
+    );
+  });
+
+  // Un casillero gratis ya esta pagado: no hay pago que esperar ni widget
+  // que abrir, asi que dejarlo RESERVED seria mentir sobre su estado.
+  it("Dado un codigo del 100%, Cuando alquila, Entonces el casillero queda RENTED y no RESERVED", async () => {
+    promoCodes.verificar.mockResolvedValue({ valido: true, discountPercent: 100 });
+
+    await service.rent({ ...params, promoCode: "AEIS-FREE-2345" });
+
+    expect(prisma.__tx.locker.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "RENTED" } })
     );
   });
 
@@ -276,12 +330,12 @@ describe("LockerService.rent", () => {
 
 describe("LockerService.getPricePreview", () => {
   let service: LockerService;
-  let subscriptionBenefits: { getLockerDiscountPercent: jest.Mock; getLockerDiscountInfo: jest.Mock };
+  let promoCodes: { verificar: jest.Mock; canjear: jest.Mock };
 
   beforeEach(async () => {
-    subscriptionBenefits = {
-      getLockerDiscountPercent: jest.fn(),
-      getLockerDiscountInfo: jest.fn(),
+    promoCodes = {
+      verificar: jest.fn().mockResolvedValue({ valido: true, discountPercent: 0 }),
+      canjear: jest.fn().mockResolvedValue(0),
     };
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -290,33 +344,20 @@ describe("LockerService.getPricePreview", () => {
         { provide: AuditService, useValue: {} },
         { provide: PayphoneClient, useValue: {} },
         { provide: PeriodService, useValue: makePeriodMock() },
-        { provide: SubscriptionBenefitsService, useValue: subscriptionBenefits },
+        { provide: PromoCodeService, useValue: promoCodes },
         { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(LockerService);
   });
 
-  // Esto es lo que reemplaza las preguntas "¿eres aportante?" / "¿qué plan
-  // tienes?" del formulario en papel — el frontend llama a este preview
-  // ANTES de mostrar el precio, y el descuento ya viene resuelto solo con
-  // la sesión del estudiante, sin que declare nada.
-  it("Dado un aportante Plan Platino (10% de descuento), Cuando pide el preview de precio, Entonces devuelve el nombre del tier y el precio ya descontado", async () => {
-    subscriptionBenefits.getLockerDiscountInfo.mockResolvedValue({ discountPercent: 10, tierName: "Platino" });
-
-    const preview = await service.getPricePreview("user-1");
-
-    expect(preview).toEqual({
-      basePrice: 6.5,
-      discountPercent: 10,
-      tierName: "Platino",
-      price: { PAYPHONE: 5.85 }, // 6.5*0.9
-      period: { label: "2026-B", endsAt: TEST_PERIOD.endsAt.toISOString() },
-    });
-  });
-
-  it("Dado un estudiante sin aportación, Cuando pide el preview de precio, Entonces tierName es null y el precio es de lista", async () => {
-    subscriptionBenefits.getLockerDiscountInfo.mockResolvedValue({ discountPercent: 0, tierName: null });
+  // Ya NO hay descuento automatico que anticipar: desde que las
+  // aportaciones dejaron de cobrarse dentro de la app, esta no puede
+  // confirmar quien aporto de verdad, y prometer un beneficio sobre un dato
+  // no verificable era el problema. El descuento llega por codigo, que el
+  // estudiante escribe en el formulario — por eso el preview muestra el
+  // precio de lista.
+  it("Dado cualquier estudiante, Cuando pide el preview de precio, Entonces recibe el precio de LISTA, sin descuento automatico", async () => {
 
     const preview = await service.getPricePreview("user-1");
 
@@ -380,8 +421,8 @@ describe("LockerService.confirmPayphonePayment", () => {
         { provide: PayphoneClient, useValue: payphone },
         { provide: PeriodService, useValue: makePeriodMock() },
         {
-          provide: SubscriptionBenefitsService,
-          useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
+          provide: PromoCodeService,
+          useValue: { verificar: jest.fn(), canjear: jest.fn() },
         },
         { provide: MailService, useValue: mail },
       ],
@@ -620,8 +661,8 @@ describe("LockerService.releaseExpiredTransferReservations (limpieza de datos le
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
         { provide: PeriodService, useValue: makePeriodMock() },
         {
-          provide: SubscriptionBenefitsService,
-          useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) },
+          provide: PromoCodeService,
+          useValue: { verificar: jest.fn(), canjear: jest.fn() },
         },
         { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
@@ -721,7 +762,7 @@ describe("LockerService.releaseExpiredPayphoneReservations", () => {
         { provide: AuditService, useValue: audit },
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
         { provide: PeriodService, useValue: makePeriodMock() },
-        { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountPercent: jest.fn().mockResolvedValue(0) } },
+        { provide: PromoCodeService, useValue: { verificar: jest.fn(), canjear: jest.fn() } },
         { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
@@ -776,7 +817,7 @@ describe("LockerService.list", () => {
         { provide: AuditService, useValue: { record: jest.fn() } },
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
         { provide: PeriodService, useValue: makePeriodMock() },
-        { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountInfo: jest.fn() } },
+        { provide: PromoCodeService, useValue: { verificar: jest.fn(), canjear: jest.fn() } },
         { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
@@ -830,7 +871,7 @@ describe("LockerService.getMyRentedLocker", () => {
         { provide: AuditService, useValue: { record: jest.fn() } },
         { provide: PayphoneClient, useValue: { confirm: jest.fn(), getPublicConfig: jest.fn() } },
         { provide: PeriodService, useValue: period },
-        { provide: SubscriptionBenefitsService, useValue: { getLockerDiscountInfo: jest.fn() } },
+        { provide: PromoCodeService, useValue: { verificar: jest.fn(), canjear: jest.fn() } },
         { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
