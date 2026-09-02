@@ -53,7 +53,10 @@ export class JobIngestService {
   }
 
   /**
-   * Cada 3 horas.
+   * Cada 3 horas — el mismo número que la página le muestra al estudiante
+   * ("se actualiza cada 3 h", ver REFRESH_HOURS en job.service.ts). Si este
+   * cron cambia, hay que mover esa constante también: prometer una
+   * frecuencia distinta de la real es peor que no prometer ninguna.
    *
    * No cada 5 minutos, aunque el pedido dijera "tiempo real": las bolsas
    * publican por lotes (una vacante nueva no aparece a los 5 minutos de

@@ -384,6 +384,10 @@ export interface JobListResult {
   total: number;
   /** Conteos que respetan los filtros activos, no la tabla entera. */
   facets: { internships: number; remote: number; ecuador: number };
+  /** Cuando se refresco el listado (ISO), o null si aun no hay ofertas. */
+  updatedAt: string | null;
+  /** Cada cuantas horas corre la ingesta automatica. */
+  refreshHours: number;
 }
 
 export interface JobFilters {

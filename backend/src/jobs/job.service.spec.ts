@@ -31,6 +31,7 @@ async function buildService(rows: ReturnType<typeof row>[] = [row()]) {
     jobOffer: {
       findMany: jest.fn().mockResolvedValue(rows),
       count: jest.fn().mockResolvedValue(rows.length),
+      aggregate: jest.fn().mockResolvedValue({ _max: { lastSeenAt: new Date("2026-09-02T14:00:00Z") } }),
     },
   };
   const moduleRef = await Test.createTestingModule({
@@ -166,6 +167,41 @@ describe("JobService.list — facetas", () => {
     expect(result.facets).toEqual(
       expect.objectContaining({ internships: expect.any(Number), remote: expect.any(Number), ecuador: expect.any(Number) })
     );
+  });
+});
+
+describe("JobService.list — cuando se actualizo", () => {
+  // Sin esto, un listado de ofertas obliga a adivinar si lo que se ve es de
+  // hoy o de la semana pasada, justo en un modulo cuyo valor entero es la
+  // frescura.
+  it("Dada una consulta, Cuando se lista, Entonces devuelve cuando se refresco y cada cuanto se revisa", async () => {
+    const { service } = await buildService();
+
+    const r = await service.list({} as QueryJobsDto);
+
+    expect(r.updatedAt).toBe("2026-09-02T14:00:00.000Z");
+    expect(r.refreshHours).toBe(3);
+  });
+
+  // "Cuando se actualizo el listado" es una propiedad de la INGESTA, no del
+  // filtro que el estudiante tenga puesto. Si dependiera del filtro, buscar
+  // "java" podria mostrar una fecha mas vieja y hacer creer que el modulo
+  // esta desactualizado.
+  it("Dado un filtro activo, Cuando se lista, Entonces la fecha se calcula sobre TODAS las activas, no sobre las filtradas", async () => {
+    const { service, prisma } = await buildService();
+
+    await service.list({ q: "java", kind: "INTERNSHIP" } as QueryJobsDto);
+
+    expect(prisma.jobOffer.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { active: true } })
+    );
+  });
+
+  it("Dado que aun no hay ninguna oferta, Cuando se lista, Entonces updatedAt es null y no revienta", async () => {
+    const { service, prisma } = await buildService([]);
+    prisma.jobOffer.aggregate.mockResolvedValue({ _max: { lastSeenAt: null } });
+
+    await expect(service.list({} as QueryJobsDto)).resolves.toMatchObject({ updatedAt: null });
   });
 });
 

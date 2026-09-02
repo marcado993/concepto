@@ -168,6 +168,22 @@
     );
   }
 
+  /**
+   * "hace 40 min" — el detalle importa acá: en el aviso de actualización,
+   * decir "hoy" cuando la última corrida fue hace 10 minutos oculta
+   * justamente lo que se quiere comunicar. Por eso baja hasta minutos.
+   */
+  function haceCuanto(iso: string | null): string {
+    if (!iso) return "";
+    const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+    if (min < 1) return "recién";
+    if (min < 60) return `hace ${min} min`;
+    const horas = Math.floor(min / 60);
+    if (horas < 24) return `hace ${horas} h`;
+    const dias = Math.floor(horas / 24);
+    return dias === 1 ? "hace 1 día" : `hace ${dias} días`;
+  }
+
   /** "hace 3 días" — más legible que una fecha absoluta para algo que se mide en frescura. */
   function relativeDate(iso: string | null): string {
     if (!iso) return "";
@@ -262,14 +278,26 @@
   {/if}
 
   {#if result && !loading}
-    <p class="jobs-count">
-      {result.total}
-      {result.total === 1 ? "oferta" : "ofertas"}
-      {#if result.facets.internships > 0}
-        · {result.facets.internships} {result.facets.internships === 1 ? "pasantía" : "pasantías"}
+    <div class="jobs-meta">
+      <p class="jobs-count">
+        {result.total}
+        {result.total === 1 ? "oferta" : "ofertas"}
+        {#if result.facets.internships > 0}
+          · {result.facets.internships} {result.facets.internships === 1 ? "pasantía" : "pasantías"}
+        {/if}
+        · últimos {maxAgeDays} días
+      </p>
+
+      <!-- Sin esto, un listado de ofertas obliga a adivinar si lo que se ve
+           es de hoy o de la semana pasada — justo en un módulo cuyo valor
+           entero es la frescura. -->
+      {#if result.updatedAt}
+        <p class="jobs-sync" title="Las ofertas se traen automáticamente de Bolsa EPN, Multitrabajos, Computrabajo, Indeed y LinkedIn">
+          <span class="sync-dot" aria-hidden="true"></span>
+          Actualizado {haceCuanto(result.updatedAt)} · se revisa cada {result.refreshHours} h
+        </p>
       {/if}
-      · últimos {maxAgeDays} días
-    </p>
+    </div>
   {/if}
 
   <div class="jobs-list">
@@ -453,11 +481,54 @@
     cursor: pointer;
   }
 
+  .jobs-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
   .jobs-count {
     margin: 0;
     font-size: 11px;
     letter-spacing: 0.04em;
     color: rgba(234, 255, 245, 0.5);
+  }
+
+  .jobs-sync {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 10.5px;
+    color: rgba(234, 255, 245, 0.42);
+  }
+
+  /* Punto verde que late: comunica "esto está vivo y se refresca solo" de
+     un vistazo, sin gastar palabras en una línea que ya es larga. */
+  .sync-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #21e0a0;
+    animation: sync-pulse 2.8s ease-in-out infinite;
+  }
+
+  @keyframes sync-pulse {
+    0%,
+    100% {
+      opacity: 0.9;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sync-dot {
+      animation: none;
+    }
   }
 
   .jobs-list {
@@ -468,10 +539,14 @@
 
   /* En escritorio el listado NO pasa a grilla: la tarjeta se expande hacia
      abajo, y en una grilla de 3 columnas eso empuja de golpe toda la fila y
-     hace perder el sitio donde estabas leyendo. Una sola columna ancha
-     mantiene el desplazamiento predecible. */
-  :global(.content-wrap.wide) .jobs-list {
-    max-width: 860px;
+     hace perder el sitio donde estabas leyendo. Una sola columna que ocupa
+     todo el ancho mantiene el desplazamiento predecible y aprovecha el
+     espacio — antes había un tope de 860 px que dejaba media pantalla
+     vacía a la derecha. */
+  :global(.content-wrap.wide) .jobs-list,
+  :global(.content-wrap.wide) .jobs-controls {
+    width: 100%;
+    max-width: none;
   }
 
   .job-card {

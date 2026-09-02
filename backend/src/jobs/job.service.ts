@@ -39,10 +39,33 @@ export interface JobListResult {
     remote: number;
     ecuador: number;
   };
+  /**
+   * Cuándo se refrescó el listado por última vez (ISO), o null si no hay
+   * ninguna oferta todavía.
+   *
+   * Sale de `MAX(lastSeenAt)`, que el ingest pone en CADA oferta que vuelve
+   * a ver — o sea, es la hora de la última corrida que trajo algo, no un
+   * contador aparte que podría quedar desincronizado con los datos reales.
+   *
+   * Se expone porque un listado de ofertas sin fecha de actualización
+   * obliga a adivinar si lo que se está viendo es de hoy o de la semana
+   * pasada, justo en un módulo cuyo valor entero es la frescura.
+   */
+  updatedAt: string | null;
+  /** Cada cuánto corre la ingesta automática, en horas. */
+  refreshHours: number;
 }
 
 const EXCERPT_LENGTH = 280;
 export const DEFAULT_LIMIT = 30;
+
+/**
+ * Cada cuánto corre la ingesta. Debe coincidir con el `@Cron` de
+ * JobIngestService — se expone al frontend para que la página pueda decir
+ * "se actualiza cada 3 horas" sin que ese número esté escrito a mano en dos
+ * lugares que se pueden desincronizar.
+ */
+export const REFRESH_HOURS = 3;
 
 /**
  * Etiqueta legible por fuente.
@@ -76,7 +99,7 @@ export class JobService {
     // contador de pasantías tiene que decir cuántas pasantías de React
     // hay — no cuántas pasantías hay en total, que sería un número que no
     // corresponde a nada de lo que está viendo.
-    const [rows, total, internships, remote, ecuador] = await Promise.all([
+    const [rows, total, internships, remote, ecuador, ultima] = await Promise.all([
       this.prisma.jobOffer.findMany({
         where,
         orderBy: orderBy(query.sort),
@@ -87,12 +110,23 @@ export class JobService {
       this.prisma.jobOffer.count({ where: { ...where, kind: "INTERNSHIP" } }),
       this.prisma.jobOffer.count({ where: { ...where, workMode: "REMOTE" } }),
       this.prisma.jobOffer.count({ where: { ...where, ...ecuadorFilter() } }),
+      // Sobre TODAS las ofertas activas, no sobre las filtradas: "cuándo se
+      // actualizó el listado" es una propiedad de la ingesta, no del filtro
+      // que el estudiante tenga puesto. Si dependiera del filtro, buscar
+      // "java" podría mostrar una fecha más vieja y hacer creer que el
+      // módulo está desactualizado.
+      this.prisma.jobOffer.aggregate({
+        where: { active: true },
+        _max: { lastSeenAt: true },
+      }),
     ]);
 
     return {
       jobs: rows.map(toPublic),
       total,
       facets: { internships, remote, ecuador },
+      updatedAt: ultima._max.lastSeenAt?.toISOString() ?? null,
+      refreshHours: REFRESH_HOURS,
     };
   }
 
