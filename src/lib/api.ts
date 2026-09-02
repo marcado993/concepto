@@ -339,3 +339,74 @@ export function fetchUiVariant(): Promise<{ variant: "A" | "B" }> {
 // src/lib/admin/adminApi.ts — usa su PROPIA sesión (login de correo+
 // contraseña, ver admin-auth.service.ts), nunca el token de estudiante de
 // este archivo.
+
+// ---------------------------------------------------------------------
+// Bolsa de empleo — pasantias y vacantes de Sistemas/Software agregadas
+// por el backend desde varias fuentes (ver backend/src/jobs/).
+//
+// El listado es publico (sin auth), igual que /ventures y /security: son
+// datos que ya son publicos en las bolsas de origen, y exigir login para
+// ver pasantias seria una puerta justo delante de lo que la asociacion
+// quiere que la gente use.
+// ---------------------------------------------------------------------
+
+export type JobKind = "INTERNSHIP" | "FULL_TIME" | "PART_TIME" | "CONTRACT";
+export type JobWorkMode = "ONSITE" | "HYBRID" | "REMOTE";
+export type JobSeniority = "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "UNKNOWN";
+
+export interface JobOfferPublic {
+  id: string;
+  title: string;
+  company: string;
+  excerpt: string;
+  url: string;
+  location: string | null;
+  kind: JobKind;
+  seniority: JobSeniority;
+  workMode: JobWorkMode;
+  tags: string[];
+  /** Ya formateado por el backend ("USD 60k - 90k"), o null si no se informo. */
+  salary: string | null;
+  /** Nombre legible de la bolsa de origen — se MUESTRA en la tarjeta:
+      Remote OK exige la atribucion en sus terminos de uso de la API. */
+  source: string;
+  postedAt: string | null;
+  relevance: number;
+}
+
+export interface JobListResult {
+  jobs: JobOfferPublic[];
+  total: number;
+  /** Conteos que respetan los filtros activos, no la tabla entera. */
+  facets: { internships: number; remote: number; ecuador: number };
+}
+
+export interface JobFilters {
+  q?: string;
+  kind?: JobKind;
+  workMode?: JobWorkMode;
+  seniority?: JobSeniority;
+  ecuador?: boolean;
+  tag?: string;
+  sort?: "relevance" | "recent";
+  limit?: number;
+  offset?: number;
+}
+
+export function fetchJobs(filters: JobFilters = {}): Promise<JobListResult> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    // Se omiten los vacios en vez de mandarlos como cadena vacia: el DTO
+    // del backend valida con @IsIn/@IsBoolean, y un "" explicito seria un
+    // 400 en vez de "sin filtro" — que es lo que quiere decir un select
+    // que el estudiante dejo en "Todos".
+    if (value === undefined || value === null || value === "") continue;
+    params.set(key, String(value));
+  }
+  const qs = params.toString();
+  return getJSON<JobListResult>(`/jobs${qs ? `?${qs}` : ""}`);
+}
+
+export function fetchJobTags(): Promise<{ tag: string; count: number }[]> {
+  return getJSON<{ tag: string; count: number }[]>("/jobs/tags");
+}

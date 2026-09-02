@@ -1,4 +1,4 @@
-export type IconKind = "lockers" | "events" | "resources" | "community" | "security" | "subscriptions";
+export type IconKind = "lockers" | "events" | "resources" | "community" | "security" | "subscriptions" | "jobs";
 export type LockerStatus = "available" | "occupied" | "reserved";
 
 export interface LockerUnit {
@@ -94,7 +94,7 @@ export interface CategoryTheme {
 }
 
 export interface Category {
-  id: "lockers" | "events" | "resources" | "community" | "security" | "subscriptions";
+  id: "lockers" | "events" | "resources" | "community" | "security" | "subscriptions" | "jobs";
   label: string;
   /** Nombre corto para la barra inferior, donde cada botón tiene ~62px de
       ancho en un celular de 375px. Solo se define donde `label` no cabe
@@ -209,19 +209,29 @@ export const categories: Category[] = [
     ],
   },
   {
-    id: "community",
-    label: "Emprendimientos",
-    navLabel: "Negocios",
-    sublabel: "Politécnicos emprendedores",
-    prompt: "Elige esto para descubrir emprendimientos de estudiantes",
-    icon: "community",
-    detailTitle: "Directorio de emprendimientos",
+    id: "jobs",
+    label: "Empleos",
+    navLabel: "Empleos",
+    sublabel: "Pasantías y vacantes de Sistemas",
+    prompt: "Elige esto para ver pasantías y vacantes de tu carrera",
+    icon: "jobs",
+    detailTitle: "Bolsa de empleo",
     theme: { accent: "#5b8def", accentDim: "#1c2f66", deep: "#0a1230", glow: "rgba(91, 141, 239, 0.4)", hue: 57 },
-    // Reemplaza "Comunidad" (docs/dominio/01-analisis-negocio-mision.md §4)
-    // — vitrina + contacto WhatsApp, pedida al backend (fetchVentures en
-    // api.ts), igual que security. `news`/NewsItem se dejan sin usar aquí
-    // a propósito, no se borra el tipo por si algún día vuelve a hacer
-    // falta un feed real de noticias.
+    // Ocupa el lugar que tenía "Emprendimientos" en el menú. El motivo del
+    // cambio: el directorio de emprendimientos casi no se usaba, mientras
+    // que "dónde consigo pasantía" es la pregunta recurrente de los
+    // estudiantes de la EPN.
+    //
+    // Emprendimientos NO se borró — la categoría se quitó de esta lista
+    // (que es lo único que arma el menú), pero el objeto de más abajo, el
+    // organism CommunitySection, los endpoints /ventures y la tabla siguen
+    // existiendo. Volver a mostrarlo es reinsertar una entrada acá.
+    //
+    // Los datos NO viven en este archivo: JobsSection los pide al backend
+    // con sus propios filtros (fetchJobs en api.ts). A diferencia de
+    // security/ventures, no se cargan en App.svelte porque el listado es
+    // filtrable y paginado — el estado de esos filtros pertenece a la
+    // sección, no a la raíz de la app.
   },
   {
     id: "subscriptions",

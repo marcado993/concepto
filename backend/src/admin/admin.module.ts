@@ -7,9 +7,13 @@ import { AuditModule } from "../shared/audit/audit.module";
 import { PeriodModule } from "../shared/period/period.module";
 import { SettingsModule } from "../shared/settings/settings.module";
 import { MonitoringModule } from "../shared/monitoring/monitoring.module";
+import { JobsModule } from "../jobs/jobs.module";
 
 @Module({
-  imports: [AuditModule, PeriodModule, AdminAuthModule, SettingsModule, MonitoringModule],
+  // JobsModule entra solo por JobIngestService (lo unico que exporta), para
+  // el boton de "actualizar ofertas ahora" del panel — sin el, publicar el
+  // modulo o cambiar un peso del motor obligaba a esperar el cron de 3 h.
+  imports: [AuditModule, PeriodModule, AdminAuthModule, SettingsModule, MonitoringModule, JobsModule],
   controllers: [AdminController],
   providers: [AdminService, DangerZoneService],
 })

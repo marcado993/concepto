@@ -1,0 +1,14 @@
+# JobSpy (https://github.com/speedyapply/JobSpy) — la libreria que hace el
+# scraping real de Indeed/LinkedIn/Glassdoor. Es Python, por eso este
+# servicio existe: el backend de AEIS es NestJS y reimplementar el parseo de
+# cinco bolsas en TypeScript seria mantenerlo a mano cada vez que una de
+# ellas cambia el HTML.
+#
+# Versiones fijadas a proposito: un scraper que se auto-actualiza es un
+# scraper que un dia deja de compilar en produccion sin que nadie tocara
+# nada. Subirlas es una decision explicita, no un efecto de reconstruir la
+# imagen.
+python-jobspy==1.1.82
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4

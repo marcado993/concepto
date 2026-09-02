@@ -50,6 +50,15 @@
           { x: 1, y: 0.4, face: 0.8 },
           { x: 0, y: 1, face: 1 },
         ].map((p) => ({ ...isoToScreen(p.x, p.y, 0, W, H, 34), face: p.face }));
+      case "jobs":
+        // Un maletín: base ancha de dos cubos y un asa de un cubo encima,
+        // desplazada — a 34px de lado es la silueta que se lee como
+        // "trabajo" sin depender del color.
+        return [
+          { x: -0.55, y: 0, level: 0, face: 0.62 },
+          { x: 0.55, y: 0, level: 0, face: 0.82 },
+          { x: 0, y: 0, level: 1, face: 1 },
+        ].map((p) => ({ ...isoToScreen(p.x, p.y, p.level, W, H, 30), face: p.face }));
       case "security":
         // A small beacon: a wide base cube with a narrower one stacked on
         // top, reading as a watchtower/alarm silhouette on the wheel.

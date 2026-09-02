@@ -55,10 +55,46 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      # Bolsa de empleo: dónde vive el scraper de JobSpy. Es el nombre del
+      # servicio del compose, no una URL pública — el contenedor no es
+      # alcanzable desde fuera de esta red. Si se quita esta variable, el
+      # módulo de empleos sigue funcionando solo con las APIs públicas
+      # (ver JobSpySource: la fuente se desactiva sola).
+      JOBS_SCRAPER_URL: http://jobs-scraper:8000
     expose:
       - "3000"
     # Tampoco publica "ports:" al host — solo Caddy le habla, por la red
     # interna del compose. Nadie externo llega a :3000 directamente.
+
+  # Scraper de ofertas de empleo (JobSpy, Python). Alimenta el módulo de
+  # bolsa de empleo que reemplazó a Emprendimientos en el menú de la app.
+  #
+  # Igual que postgres: SIN "ports:". Solo el backend le habla, por la red
+  # interna. Un scraper es de las últimas piezas que conviene exponer a
+  # internet — no tiene autenticación propia justamente porque nadie de
+  # afuera puede alcanzarlo.
+  jobs-scraper:
+    build:
+      context: ./jobs-scraper
+    container_name: aeis-jobs-scraper
+    restart: unless-stopped
+    expose:
+      - "8000"
+    # Límite de memoria explícito: pandas puede inflarse con un lote grande
+    # de resultados, y este VPS tiene 12 GB compartidos entre Postgres,
+    # Logto, el backend y Caddy. Es preferible que el scraper muera solo y
+    # se reinicie a que el OOM killer del kernel elija a Postgres.
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # start_period generoso: la primera importación de jobspy arrastra
+      # pandas y tarda varios segundos; sin esto el contenedor entraba en
+      # bucle de reinicios antes de terminar de arrancar.
+      start_period: 40s
 
   # Logto self-hosted (docs/dominio/02-necesidades-stakeholders.md §4.5,
   # decisión: self-hosted, no Logto Cloud). Usa el MISMO Postgres que el

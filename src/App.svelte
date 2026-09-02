@@ -14,7 +14,6 @@
   import { riskForHour, themeForRisk } from "./lib/risk";
   import {
     fetchSecurityIndicators,
-    fetchVentures,
     fetchLockers,
     fetchMyRentedLocker,
     fetchSubscriptionTiers,
@@ -224,20 +223,22 @@
       });
   });
 
-  // Directorio de emprendimientos — mismo patrón que los indicadores de
-  // seguridad: se pide una vez al backend, con estado de error explícito
-  // en vez de dejar la sección en blanco sin explicación.
+  // Directorio de emprendimientos — OCULTO, no borrado.
+  //
+  // La categoría salió del menú (ver data.ts, la reemplazó "Empleos"), así
+  // que CommunitySection ya no se renderiza y pedir /ventures en cada carga
+  // era una petición de red que nadie iba a ver. El estado y el cableado se
+  // quedan a propósito: volver a mostrar la sección es reinsertar su
+  // entrada en `categories` (data.ts), descomentar el efecto de abajo y
+  // volver a importar `fetchVentures` de ./lib/api — sin migración de base
+  // de datos ni recuperar código borrado de git.
   let ventures = $state<VenturePublic[] | null>(null);
   let venturesError = $state(false);
-  $effect(() => {
-    fetchVentures()
-      .then((data) => {
-        ventures = data;
-      })
-      .catch(() => {
-        venturesError = true;
-      });
-  });
+  // $effect(() => {
+  //   fetchVentures()
+  //     .then((data) => { ventures = data; })
+  //     .catch(() => { venturesError = true; });
+  // });
 
   // Casilleros reales — reemplaza los 9 casilleros MOCK que generaba
   // makeLockers() en data.ts. Mismo patrón de error explícito que

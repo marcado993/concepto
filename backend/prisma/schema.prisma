@@ -273,3 +273,93 @@ model AuditLog {
   @@index([entityType, entityId])
   @@map("audit_logs")
 }
+
+// ---------------------------------------------------------------------
+// Bolsa de empleo — pasantias y vacantes de Sistemas/Software agregadas
+// de varias fuentes (APIs publicas + JobSpy sobre bolsas locales).
+//
+// Reemplaza a Emprendimientos como modulo visible de la app: el hallazgo
+// que lo motivo es que el directorio de emprendimientos casi no se usaba,
+// mientras que "donde consigo pasantia" es la pregunta que los estudiantes
+// de la EPN hacen todo el tiempo. Venture NO se borra (ver arriba) — el
+// modelo y sus datos siguen, solo deja de estar en el menu.
+//
+// A diferencia del resto del esquema, estas filas NO son propiedad de
+// ningun usuario: no hay ownerId ni FK a User, porque una oferta no le
+// pertenece a nadie de AEIS — se ingesta de afuera. El principio de
+// "ningun dato desacoplado" del encabezado de este archivo aplica a lo que
+// la asociacion administra (pagos, alquileres, aportaciones); una cache de
+// datos externos es otra cosa y por eso puede vaciarse entera sin romper
+// ninguna integridad referencial.
+// ---------------------------------------------------------------------
+
+enum JobKind {
+  INTERNSHIP // pasantia / practicas preprofesionales — el caso de uso central
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+}
+
+enum JobSeniority {
+  INTERN
+  JUNIOR
+  MID
+  SENIOR
+  UNKNOWN
+}
+
+enum JobWorkMode {
+  ONSITE
+  HYBRID
+  REMOTE
+}
+
+model JobOffer {
+  id String @id @default(uuid())
+
+  // Huella empresa+puesto (ver normalize.ts::jobFingerprint). UNIQUE es lo
+  // que hace que la misma vacante publicada en LinkedIn, Indeed y
+  // Computrabajo colapse en UNA fila, incluso entre corridas distintas del
+  // ingest — el dedupe en memoria solo cubre un lote.
+  fingerprint String @unique
+
+  source   String // "remotive" | "remoteok" | "jobspy:indeed" | ...
+  sourceId String
+  url      String
+
+  title       String
+  company     String
+  description String // texto plano: el HTML se remueve en la ingesta (XSS)
+  location    String?
+
+  kind      JobKind
+  seniority JobSeniority
+  workMode  JobWorkMode
+
+  salaryMin      Float?
+  salaryMax      Float?
+  salaryCurrency String?
+
+  tags String[] // stacks detectados por el motor, ej. ["Java", "SQL"]
+
+  // Puntaje 0..100 del motor de relevancia — es el ORDEN por defecto del
+  // listado, por eso tiene indice propio.
+  relevance Int
+  // Por que obtuvo ese puntaje. Se guarda para poder depurar el ranking en
+  // produccion sin tener que reproducir la ingesta entera.
+  reasons String[]
+
+  postedAt    DateTime?
+  firstSeenAt DateTime  @default(now())
+  // Se actualiza en cada corrida que vuelva a ver la oferta. Cuando deja de
+  // aparecer en las fuentes, este campo se queda quieto y el barrido de
+  // archivado la marca inactiva — asi el listado no muestra vacantes que ya
+  // se bajaron.
+  lastSeenAt DateTime
+  active     Boolean  @default(true)
+
+  @@index([active, relevance])
+  @@index([active, kind])
+  @@index([source])
+  @@map("job_offers")
+}

@@ -4,7 +4,8 @@
   //   EventsSection       → events/recursos
   //   BenefitsSection     → recursos de la AEIS
   //   SubscriptionsSection → tiers de aportación
-  //   CommunitySection    → directorio de emprendimientos
+  //   JobsSection         → bolsa de empleo (pasantías y vacantes)
+  //   CommunitySection    → directorio de emprendimientos (oculto del menú)
   //   LockersSection      → grilla de casilleros (108 unidades)
   //   SecuritySection     → mapa 3D + indicadores de seguridad
   //
@@ -20,6 +21,7 @@
   import BenefitsSection from "./organisms/BenefitsSection.svelte";
   import SubscriptionsSection from "./organisms/SubscriptionsSection.svelte";
   import CommunitySection from "./organisms/CommunitySection.svelte";
+  import JobsSection from "./organisms/JobsSection.svelte";
   import LockersSection from "./organisms/LockersSection.svelte";
   import SecuritySection from "./organisms/SecuritySection.svelte";
 
@@ -139,7 +141,16 @@
         {subscriptionTiersError}
         {onsubscribed}
       />
+    {:else if category.id === "jobs"}
+      <!-- JobsSection pide sus propios datos (a diferencia del resto): el
+           listado es filtrable y paginado, y ese estado pertenece a la
+           sección, no a App.svelte. -->
+      <JobsSection />
     {:else if category.id === "community"}
+      <!-- Emprendimientos — OCULTO, no borrado: la categoría salió de
+           `categories` en data.ts, así que esta rama ya no se alcanza. Se
+           deja cableada a propósito para que volver a mostrarla sea
+           reinsertar la entrada allá y nada más. -->
       <CommunitySection {category} {venturesError} />
     {/if}
 
