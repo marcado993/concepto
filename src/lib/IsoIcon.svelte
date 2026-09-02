@@ -101,6 +101,7 @@
     events: { src: "/Calendar.png", alt: "Eventos" },
     resources: { src: "/repo.png", alt: "Recursos" },
     community: { src: "/emprendimiento.png", alt: "Emprendimientos" },
+    jobs: { src: "/trabajo.png", alt: "Empleos" },
     security: { src: "/alerta.png", alt: "Seguridad" },
     subscriptions: { src: "/aportaciones.png", alt: "Aportaciones" },
   };

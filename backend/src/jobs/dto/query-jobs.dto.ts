@@ -62,6 +62,24 @@ export class QueryJobsDto {
   sort?: (typeof JOB_SORTS)[number];
 
   /**
+   * Antigüedad máxima en días.
+   *
+   * Existe porque una vacante de hace dos meses casi siempre ya está
+   * cerrada, y mostrarla mezclada con las de esta semana hace perder el
+   * tiempo a quien postula. Poder acotar a 3 días / 1 semana / 1 mes es lo
+   * que deja ver de un vistazo qué sigue realmente abierto.
+   *
+   * Tope de 365: más allá no filtra nada útil (el ingest archiva a los 45
+   * días) y un número enorme solo sirve para forzar un escaneo caro.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  maxAgeDays?: number;
+
+  /**
    * Tope duro de 100 por página.
    *
    * Sin tope, `?limit=100000` convertía el endpoint público en una

@@ -19,13 +19,23 @@ import { jobFingerprint, RawJob } from "./normalize";
  * Una fuente desconocida vale 0 — nunca le gana a una conocida.
  */
 export const SOURCE_PRIORITY: Readonly<Record<string, number>> = {
-  remotive: 100,
-  arbeitnow: 90,
-  remoteok: 80,
-  "jobspy:indeed": 70,
-  "jobspy:glassdoor": 55,
-  "jobspy:google": 50,
-  "jobspy:linkedin": 40,
+  // La bolsa de la EPN va PRIMERA, por encima de cualquier API: es la
+  // unica fuente donde solo se compite con gente de la misma universidad,
+  // trae el tipo de contrato ya etiquetado por la plataforma, y varias
+  // empresas publican ahi pasantias que nunca llegan a los portales
+  // generales. Cuando la misma vacante aparece en la EPN y en Computrabajo,
+  // la version de la EPN es la mejor.
+  epn: 120,
+  // Portales locales: son los que de verdad publican pasantias en Ecuador.
+  indeed: 100,
+  multitrabajos: 95,
+  computrabajo: 90,
+  linkedin: 85,
+  // APIs internacionales: datos limpios y completos, pero casi todo lo que
+  // traen es remoto del exterior.
+  remotive: 70,
+  arbeitnow: 60,
+  remoteok: 50,
 };
 
 export function sourcePriority(source: string): number {

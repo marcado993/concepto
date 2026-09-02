@@ -358,8 +358,13 @@ export interface JobOfferPublic {
   id: string;
   title: string;
   company: string;
+  /** Resumen corto — es lo que se ve con la tarjeta plegada. */
   excerpt: string;
+  /** Descripcion completa — aparece al expandir la tarjeta. */
+  description: string;
   url: string;
+  /** Logo de la empresa, o null: la tarjeta cae a la inicial. */
+  companyLogo: string | null;
   location: string | null;
   kind: JobKind;
   seniority: JobSeniority;
@@ -389,6 +394,9 @@ export interface JobFilters {
   ecuador?: boolean;
   tag?: string;
   sort?: "relevance" | "recent";
+  /** Antiguedad maxima en dias (3 / 7 / 30). Sin esto, una vacante de hace
+      dos meses se ve igual que una de ayer y casi siempre ya esta cerrada. */
+  maxAgeDays?: number;
   limit?: number;
   offset?: number;
 }

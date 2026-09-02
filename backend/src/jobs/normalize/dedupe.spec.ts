@@ -23,8 +23,8 @@ function raw(overrides: Partial<RawJob> = {}): RawJob {
 describe("dedupeJobs", () => {
   it("Dada la misma vacante en tres bolsas, Cuando se deduplica, Entonces queda UNA sola fila", () => {
     const out = dedupeJobs([
-      raw({ source: "jobspy:linkedin", sourceId: "a", title: "Backend Developer (Remote)" }),
-      raw({ source: "jobspy:indeed", sourceId: "b", company: "ACME" }),
+      raw({ source: "linkedin", sourceId: "a", title: "Backend Developer (Remote)" }),
+      raw({ source: "indeed", sourceId: "b", company: "ACME" }),
       raw({ source: "remotive", sourceId: "c" }),
     ]);
 
@@ -47,20 +47,23 @@ describe("dedupeJobs", () => {
   it("Dada una duplicada donde solo la fuente de MENOR prioridad trae fecha, Cuando se deduplica, Entonces gana la que tiene fecha", () => {
     const out = dedupeJobs([
       raw({ source: "remotive", sourceId: "sin-fecha", postedAt: null }),
-      raw({ source: "jobspy:linkedin", sourceId: "con-fecha", postedAt: new Date("2026-08-25T00:00:00Z") }),
+      raw({ source: "linkedin", sourceId: "con-fecha", postedAt: new Date("2026-08-25T00:00:00Z") }),
     ]);
 
     expect(out).toHaveLength(1);
     expect(out[0].sourceId).toBe("con-fecha");
   });
 
+  // La Bolsa EPN gana a todo: misma vacante, pero la version de la EPN
+  // trae el tipo de contrato etiquetado y solo compite gente de la propia
+  // universidad.
   it("Dada una duplicada donde ambas traen fecha, Cuando se deduplica, Entonces gana la fuente de mayor prioridad", () => {
     const out = dedupeJobs([
-      raw({ source: "jobspy:linkedin", sourceId: "linkedin" }),
-      raw({ source: "remotive", sourceId: "remotive" }),
+      raw({ source: "computrabajo", sourceId: "computrabajo" }),
+      raw({ source: "epn", sourceId: "epn" }),
     ]);
 
-    expect(out[0].sourceId).toBe("remotive");
+    expect(out[0].sourceId).toBe("epn");
   });
 
   it("Dada una duplicada de la misma fuente, Cuando se deduplica, Entonces gana la de descripcion mas larga", () => {
@@ -91,18 +94,31 @@ describe("dedupeJobs", () => {
 });
 
 describe("sourcePriority", () => {
-  it("Dada una fuente conocida, Cuando se consulta, Entonces devuelve su prioridad", () => {
-    expect(sourcePriority("remotive")).toBeGreaterThan(sourcePriority("jobspy:linkedin"));
+  // La bolsa de la EPN gana a TODAS: es la unica fuente donde solo se
+  // compite con gente de la misma universidad, trae el tipo de contrato ya
+  // etiquetado, y publica pasantias que no llegan a los portales generales.
+  it("Dada la Bolsa EPN frente a cualquier otra, Cuando se comparan, Entonces la EPN tiene la mayor prioridad", () => {
+    for (const otra of ["indeed", "linkedin", "multitrabajos", "computrabajo", "remotive"]) {
+      expect(sourcePriority("epn")).toBeGreaterThan(sourcePriority(otra));
+    }
+  });
+
+  // Los portales locales van por encima de las APIs internacionales: son
+  // los que de verdad publican pasantias en Ecuador.
+  it("Dados los portales locales frente a las APIs internacionales, Cuando se comparan, Entonces mandan los locales", () => {
+    for (const local of ["indeed", "multitrabajos", "computrabajo"]) {
+      expect(sourcePriority(local)).toBeGreaterThan(sourcePriority("remotive"));
+    }
   });
 
   // Indeed es, segun el propio README de JobSpy, el scraper mas estable;
   // LinkedIn el que mas se rompe y el que recorta la descripcion.
-  it("Dado jobspy:indeed frente a jobspy:linkedin, Cuando se comparan, Entonces indeed tiene mas prioridad", () => {
-    expect(sourcePriority("jobspy:indeed")).toBeGreaterThan(sourcePriority("jobspy:linkedin"));
+  it("Dado indeed frente a linkedin, Cuando se comparan, Entonces indeed tiene mas prioridad", () => {
+    expect(sourcePriority("indeed")).toBeGreaterThan(sourcePriority("linkedin"));
   });
 
   it("Dada una fuente desconocida, Cuando se consulta, Entonces vale 0 y nunca le gana a una conocida", () => {
     expect(sourcePriority("bolsa-nueva")).toBe(0);
-    expect(sourcePriority("bolsa-nueva")).toBeLessThan(sourcePriority("jobspy:linkedin"));
+    expect(sourcePriority("bolsa-nueva")).toBeLessThan(sourcePriority("linkedin"));
   });
 });

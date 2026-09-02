@@ -4,7 +4,7 @@ import { PrismaService } from "../shared/prisma/prisma.service";
 import { RemoteOkSource } from "./sources/remoteok.source";
 import { ArbeitnowSource } from "./sources/arbeitnow.source";
 import { RemotiveSource } from "./sources/remotive.source";
-import { JobSpySource } from "./sources/jobspy.source";
+import { ScraperSource } from "./sources/scraper.source";
 import type { RawJob } from "./normalize/normalize";
 
 const NOW = new Date("2026-09-01T12:00:00Z");
@@ -41,8 +41,8 @@ function buildPrisma() {
 async function buildService(opts: {
   prisma?: ReturnType<typeof buildPrisma>;
   remoteokJobs?: RawJob[] | Error;
-  jobspyEnabled?: boolean;
-  jobspyJobs?: RawJob[] | Error;
+  scraperEnabled?: boolean;
+  scraperJobs?: RawJob[] | Error;
 }) {
   const prisma = opts.prisma ?? buildPrisma();
 
@@ -62,8 +62,8 @@ async function buildService(opts: {
       { provide: ArbeitnowSource, useValue: source([], "arbeitnow") },
       { provide: RemotiveSource, useValue: source([], "remotive") },
       {
-        provide: JobSpySource,
-        useValue: { ...source(opts.jobspyJobs, "jobspy"), enabled: opts.jobspyEnabled ?? false },
+        provide: ScraperSource,
+        useValue: { ...source(opts.scraperJobs, "scraper"), enabled: opts.scraperEnabled ?? false },
       },
     ],
   }).compile();
@@ -160,7 +160,7 @@ describe("JobIngestService.ingest — filtrado y dedupe", () => {
     const { service, prisma } = await buildService({
       remoteokJobs: [
         raw({ source: "remoteok", sourceId: "a" }),
-        raw({ source: "jobspy:indeed", sourceId: "b", title: "Desarrollador Backend (Remote)" }),
+        raw({ source: "indeed", sourceId: "b", title: "Desarrollador Backend (Remote)" }),
       ],
     });
 
@@ -218,11 +218,11 @@ describe("JobIngestService.ingest — resiliencia", () => {
   // Sin JOBS_SCRAPER_URL el modulo tiene que seguir funcionando con las
   // APIs publicas — el entorno de desarrollo no levanta el contenedor
   // Python.
-  it("Dado JobSpy desactivado, Cuando se ingesta, Entonces no se lo consulta y el resto igual corre", async () => {
+  it("Dados los scrapers desactivados, Cuando se ingesta, Entonces no se los consulta y las APIs publicas igual corren", async () => {
     const { service } = await buildService({
       remoteokJobs: [raw()],
-      jobspyEnabled: false,
-      jobspyJobs: new Error("no deberia llamarse"),
+      scraperEnabled: false,
+      scraperJobs: new Error("no deberia llamarse"),
     });
 
     const report = await service.ingest(NOW);
@@ -231,11 +231,11 @@ describe("JobIngestService.ingest — resiliencia", () => {
     expect(report.created).toBe(1);
   });
 
-  it("Dado JobSpy activado, Cuando se ingesta, Entonces sus ofertas tambien entran", async () => {
+  it("Dados los scrapers activados, Cuando se ingesta, Entonces sus ofertas (Bolsa EPN, Multitrabajos...) tambien entran", async () => {
     const { service } = await buildService({
       remoteokJobs: [],
-      jobspyEnabled: true,
-      jobspyJobs: [raw({ source: "jobspy:indeed", title: "Pasante de QA" })],
+      scraperEnabled: true,
+      scraperJobs: [raw({ source: "epn", title: "Pasante de QA" })],
     });
 
     const report = await service.ingest(NOW);

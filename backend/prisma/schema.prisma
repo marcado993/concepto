@@ -323,9 +323,13 @@ model JobOffer {
   // ingest — el dedupe en memoria solo cubre un lote.
   fingerprint String @unique
 
-  source   String // "remotive" | "remoteok" | "jobspy:indeed" | ...
+  source   String // "epn" | "indeed" | "multitrabajos" | "computrabajo" | ...
   sourceId String
   url      String
+  // Logo de la empresa. Reconocer un logo es mas rapido que leer un nombre
+  // al escanear decenas de ofertas. Null cuando la fuente no lo publica o
+  // sirve un placeholder generico — ahi la UI cae a la inicial.
+  companyLogo String?
 
   title       String
   company     String

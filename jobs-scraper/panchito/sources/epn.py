@@ -1,0 +1,156 @@
+"""Bolsa de empleo de la Escuela Politécnica Nacional (epn.hiringroomcampus.com).
+
+Corre sobre HiringRoom Campus, la plataforma que la EPN usa para publicar
+ofertas dirigidas a sus propios estudiantes y egresados. Es la fuente de mayor
+señal del proyecto: no hay que competir con todo el país, solo con gente de la
+misma universidad, y muchas empresas publican aquí pasantías que no aparecen en
+los portales generales.
+
+El sitio es público — no exige sesión para ver el listado.
+
+Estructura verificada el 2026-09-02:
+  - Búsqueda:    /jobs?q=<termino>
+  - Paginación:  &page=N  (10 avisos por página)
+  - Tarjeta:     a.item-block
+      título   -> h4
+      empresa  -> h5
+      lugar    -> .location        ("Quito - Pichincha, Ecuador")
+      fecha    -> .publish_time    ("Publicado en 24/08/2026")
+      tipo     -> .label           ("Pasantía", "Intern", "FULL-TIME", "EVENTUAL")
+      logo     -> header img
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime, timezone
+
+from ..config import Config
+from ..models import Job
+from ..normalize import (
+    calcular_dedupe_key,
+    detectar_pasantia,
+    detectar_remoto,
+    limpiar_titulo,
+    parsear_fecha,
+    quitar_acentos,
+)
+from .base import contexto_navegador, lanzar_navegador, pausa
+
+log = logging.getLogger(__name__)
+
+BASE = "https://epn.hiringroomcampus.com"
+POR_PAGINA = 10
+PAGINAS_MAX = 4  # 40 avisos por término; la bolsa entera ronda los 400
+
+# El propio HiringRoom sirve este marcador cuando la empresa no subió logo.
+_LOGO_PLACEHOLDER = re.compile(r"no-logo|nologo|default", re.IGNORECASE)
+
+
+def _extraer_tarjetas(page) -> list[dict]:
+    return page.evaluate(
+        r"""() => [...document.querySelectorAll('a.item-block')].map(c => ({
+            href:     c.getAttribute('href') || '',
+            titulo:   c.querySelector('h4')?.textContent.trim() || '',
+            empresa:  c.querySelector('h5')?.textContent.trim() || '',
+            lugar:    c.querySelector('.location')?.textContent.replace(/\s+/g, ' ').trim() || '',
+            fecha:    c.querySelector('.publish_time')?.textContent.replace(/\s+/g, ' ').trim() || '',
+            etiquetas:[...c.querySelectorAll('.label')].map(e => e.textContent.trim()),
+            logo:     c.querySelector('img')?.getAttribute('src') || '',
+        }))"""
+    )
+
+
+def _tarjeta_a_job(t: dict, ahora: datetime) -> Job | None:
+    titulo = limpiar_titulo(t.get("titulo", ""))
+    if not titulo:
+        return None
+
+    empresa = t.get("empresa", "")
+    etiquetas = [e for e in t.get("etiquetas", []) if e]
+    # "Quito - Pichincha, Ecuador" -> "Quito, Pichincha", que es como lo
+    # escriben las otras fuentes. El país sobra: todo el proyecto es Ecuador.
+    lugar = t.get("lugar", "").replace(", Ecuador", "").replace(" - ", ", ").strip()
+
+    href = t.get("href", "")
+    url = href if href.startswith("http") else f"{BASE}{href}"
+    # El id va al final del slug: /jobs/pasante-de-calidad-6a95eb5c2c670
+    m = re.search(r"-([0-9a-f]{8,})$", href)
+
+    logo = (t.get("logo") or "").strip()
+    if _LOGO_PLACEHOLDER.search(logo):
+        logo = ""
+
+    return Job(
+        dedupe_key=calcular_dedupe_key(titulo, empresa),
+        source="epn",
+        source_id=m.group(1) if m else "",
+        url=url,
+        company_logo=logo,
+        title=titulo,
+        company=empresa,
+        location=lugar,
+        is_remote=detectar_remoto(titulo, lugar, " ".join(etiquetas)),
+        # La plataforma etiqueta el tipo de contrato, así que aquí no hay que
+        # adivinarlo desde el título como en los portales generales.
+        is_internship=(
+            any(quitar_acentos(e).lower() in ("pasantia", "intern", "trainee")
+                for e in etiquetas)
+            or detectar_pasantia(titulo)
+        ),
+        posted_at=parsear_fecha(t.get("fecha", "")),
+        scraped_at=ahora,
+        tags=etiquetas,
+    )
+
+
+def recolectar(cfg: Config) -> list[Job]:
+    from playwright.sync_api import sync_playwright
+
+    ahora = datetime.now(timezone.utc)
+    jobs: list[Job] = []
+
+    with sync_playwright() as p:
+        navegador = lanzar_navegador(p, cfg)
+        ctx = contexto_navegador(navegador)
+        page = ctx.new_page()
+        page.route(
+            re.compile(r"\.(png|jpe?g|gif|webp|woff2?|ttf|mp4)$"),
+            lambda ruta: ruta.abort(),
+        )
+
+        try:
+            for termino in cfg.terminos_locales:
+                for pagina in range(1, PAGINAS_MAX + 1):
+                    url = f"{BASE}/jobs?q={termino.replace(' ', '+')}"
+                    if pagina > 1:
+                        url += f"&page={pagina}"
+
+                    try:
+                        page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                        # Es React: el HTML inicial llega sin tarjetas.
+                        page.wait_for_selector("a.item-block", timeout=12_000)
+                    except Exception as e:
+                        log.debug("  epn %s p%d: %s", termino, pagina, type(e).__name__)
+                        break
+
+                    tarjetas = _extraer_tarjetas(page)
+                    if not tarjetas:
+                        break
+
+                    for t in tarjetas:
+                        job = _tarjeta_a_job(t, ahora)
+                        if job:
+                            jobs.append(job)
+
+                    log.info("  epn / %r p%d -> %d", termino, pagina, len(tarjetas))
+                    pausa(cfg.delay_min_seg, cfg.delay_max_seg)
+
+                    if len(tarjetas) < POR_PAGINA:
+                        break  # última página
+        finally:
+            ctx.close()
+            navegador.close()
+
+    return jobs

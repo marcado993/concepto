@@ -12,17 +12,32 @@
   let loadError = $state(false);
   let loading = $state(true);
 
-  // Filtros. `kind: "INTERNSHIP"` NO es el valor inicial a propósito: se
-  // abre en "Todo" para que nadie crea que la app solo tiene pasantías,
-  // pero el orden por relevancia ya las pone arriba solo (el motor les da
-  // +30). Filtrar por defecto habría escondido las vacantes junior, que
-  // para un estudiante de último semestre son igual de válidas.
   let search = $state("");
   let kind = $state<JobFilters["kind"] | "">("");
   let workMode = $state<JobFilters["workMode"] | "">("");
   let onlyEcuador = $state(true);
   let sort = $state<"relevance" | "recent">("relevance");
   let activeTag = $state<string>("");
+
+  /**
+   * Ventana de antigüedad. Arranca en 30 días.
+   *
+   * No arranca en "Todo" a propósito: una vacante de hace dos meses casi
+   * siempre ya está cerrada, y mezclarla con las de esta semana hace perder
+   * el tiempo a quien postula. 30 días es el punto donde todavía queda
+   * volumen y casi todo sigue vivo; quien quiera ver solo lo fresco tiene
+   * "3 días" a un toque.
+   */
+  const AGE_OPTIONS: { label: string; days: number | null }[] = [
+    { label: "3 días", days: 3 },
+    { label: "1 semana", days: 7 },
+    { label: "1 mes", days: 30 },
+    { label: "Todo", days: null },
+  ];
+  let maxAgeDays = $state<number | null>(30);
+
+  /** La tarjeta abierta. null = todas plegadas. */
+  let expandedId = $state<string | null>(null);
 
   // Debounce de la búsqueda: sin esto cada tecla disparaba un GET, y el
   // endpoint hace tres `contains` sobre la tabla. Escribir "desarrollador"
@@ -42,6 +57,7 @@
     workMode: workMode || undefined,
     ecuador: onlyEcuador || undefined,
     tag: activeTag || undefined,
+    maxAgeDays: maxAgeDays ?? undefined,
     sort,
     limit: 40,
   });
@@ -62,6 +78,10 @@
         if (cancelled) return;
         result = data;
         loadError = false;
+        // Al cambiar los filtros la tarjeta abierta ya no está en la lista;
+        // dejar el id vivo hacía que otra oferta apareciera expandida al
+        // azar cuando su posición coincidía.
+        expandedId = null;
       })
       .catch(() => {
         if (!cancelled) loadError = true;
@@ -81,12 +101,40 @@
     PART_TIME: "Medio tiempo",
     CONTRACT: "Por contrato",
   };
+  const MODE_LABELS: Record<string, string> = { REMOTE: "Remoto", HYBRID: "Híbrido", ONSITE: "Presencial" };
 
-  const MODE_LABELS: Record<string, string> = {
-    REMOTE: "Remoto",
-    HYBRID: "Híbrido",
-    ONSITE: "Presencial",
+  /**
+   * Color de marca por fuente, para el sello de origen.
+   *
+   * Un color reconocible (el azul de LinkedIn, el verde de la EPN) se
+   * identifica de un vistazo al escanear la lista; el nombre en texto hay
+   * que leerlo. Se usa un sello propio y NO el logotipo oficial de cada
+   * portal: reproducir marcas de terceros en la app tiene un problema de
+   * uso de marca que un color no tiene.
+   */
+  const SOURCE_STYLE: Record<string, { bg: string; fg: string; short: string }> = {
+    "Bolsa EPN": { bg: "#0d5c3a", fg: "#7df0c6", short: "EPN" },
+    LinkedIn: { bg: "#0a66c2", fg: "#ffffff", short: "in" },
+    Indeed: { bg: "#2557a7", fg: "#ffffff", short: "id" },
+    Multitrabajos: { bg: "#7b2ff2", fg: "#ffffff", short: "MT" },
+    Computrabajo: { bg: "#e8542f", fg: "#ffffff", short: "CT" },
+    "Remote OK": { bg: "#ff4742", fg: "#ffffff", short: "OK" },
+    Remotive: { bg: "#1c3d5a", fg: "#8fd3ff", short: "Rm" },
+    Arbeitnow: { bg: "#334155", fg: "#cbd5e1", short: "An" },
   };
+  const sourceStyle = (s: string) => SOURCE_STYLE[s] ?? { bg: "#334155", fg: "#cbd5e1", short: s.slice(0, 2) };
+
+  function initials(name: string): string {
+    return (
+      name
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => w[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase() || "?"
+    );
+  }
 
   /** "hace 3 días" — más legible que una fecha absoluta para algo que se mide en frescura. */
   function relativeDate(iso: string | null): string {
@@ -103,6 +151,10 @@
     activeTag = activeTag === tag ? "" : tag;
   }
 
+  function toggleCard(id: string) {
+    expandedId = expandedId === id ? null : id;
+  }
+
   const jobs = $derived<JobOfferPublic[]>(result?.jobs ?? []);
 </script>
 
@@ -115,6 +167,21 @@
       bind:value={search}
       aria-label="Buscar ofertas"
     />
+
+    <!-- Antigüedad: lo primero después de buscar, porque es el filtro que
+         más cambia si lo que ves sigue abierto o no. -->
+    <div class="chip-row" role="group" aria-label="Antigüedad de la oferta">
+      {#each AGE_OPTIONS as opt (opt.label)}
+        <button
+          class="chip"
+          class:active={maxAgeDays === opt.days}
+          onclick={() => (maxAgeDays = opt.days)}
+          aria-pressed={maxAgeDays === opt.days}
+        >
+          {opt.label}
+        </button>
+      {/each}
+    </div>
 
     <div class="jobs-selects">
       <select bind:value={kind} aria-label="Tipo de oferta">
@@ -138,9 +205,6 @@
       </select>
     </div>
 
-    <!-- Encendido por defecto: para un estudiante en Quito, una vacante
-         presencial en Berlín es ruido. Incluye las remotas, que sí son
-         tomables desde acá (ver ecuadorFilter en el backend). -->
     <label class="jobs-toggle">
       <input type="checkbox" bind:checked={onlyEcuador} />
       <span>Solo lo que puedo tomar desde Ecuador (incluye remoto)</span>
@@ -160,8 +224,8 @@
       {#if result.facets.internships > 0}
         · {result.facets.internships} {result.facets.internships === 1 ? "pasantía" : "pasantías"}
       {/if}
-      {#if result.facets.remote > 0}
-        · {result.facets.remote} remoto
+      {#if maxAgeDays !== null}
+        · últimos {maxAgeDays} días
       {/if}
     </p>
   {/if}
@@ -173,61 +237,78 @@
       <p class="sec-note">No se pudo cargar la bolsa de empleo.</p>
     {:else if jobs.length === 0}
       <p class="sec-note">
-        No hay ofertas con esos filtros. Prueba desmarcando "solo Ecuador" o buscando otro término.
+        No hay ofertas con esos filtros. Prueba ampliando la antigüedad a "1 mes" o "Todo", o desmarcando
+        "solo Ecuador".
       </p>
     {:else}
       {#each jobs as job, i (job.id)}
-        <article class="job-card list-in" class:is-internship={job.kind === "INTERNSHIP"} style="--li: {i}">
-          <div class="job-head">
-            <div class="job-titles">
-              <h3 class="job-title">{job.title}</h3>
-              <p class="job-company">
-                {job.company}{#if job.location}<span class="job-sep">·</span>{job.location}{/if}
-              </p>
+        {@const open = expandedId === job.id}
+        {@const src = sourceStyle(job.source)}
+        <article class="job-card list-in" class:is-internship={job.kind === "INTERNSHIP"} class:open style="--li: {i}">
+          <!-- La tarjeta ENTERA es el botón de expandir: en móvil obligar a
+               acertar un chevron de 20px es la diferencia entre usarlo y no.
+               El link de la oferta va aparte, dentro del panel abierto, para
+               que nunca se dispare por error al querer solo leer más. -->
+          <button class="job-head" onclick={() => toggleCard(job.id)} aria-expanded={open}>
+            <span class="job-logo" style="--src-bg: {src.bg}; --src-fg: {src.fg}">
+              {#if job.companyLogo}
+                <!-- La imagen viene de un CDN de terceros: si falla, se
+                     esconde y queda la inicial que ya está debajo. -->
+                <img
+                  src={job.companyLogo}
+                  alt=""
+                  loading="lazy"
+                  onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+                />
+              {/if}
+              <span class="job-logo-fallback">{initials(job.company || job.title)}</span>
+              <span class="job-source-badge" title={job.source}>{src.short}</span>
+            </span>
+
+            <span class="job-titles">
+              <span class="job-title">{job.title}</span>
+              <span class="job-company">
+                {job.company || "Confidencial"}{#if job.location}<span class="job-sep">·</span>{job.location}{/if}
+              </span>
+              <span class="job-meta">
+                {#if job.kind === "INTERNSHIP"}<span class="job-flag">Pasantía</span>{/if}
+                <span class="job-chip mode-{job.workMode.toLowerCase()}">{MODE_LABELS[job.workMode]}</span>
+                {#if job.salary}<span class="job-chip salary">{job.salary}</span>{/if}
+                {#if job.postedAt}<span class="job-when">{relativeDate(job.postedAt)}</span>{/if}
+              </span>
+            </span>
+
+            <span class="job-score" aria-label="Relevancia {job.relevance} de 100">{job.relevance}</span>
+          </button>
+
+          {#if open}
+            <div class="job-detail">
+              {#if job.kind !== "INTERNSHIP"}
+                <p class="detail-line"><strong>Tipo:</strong> {KIND_LABELS[job.kind] ?? job.kind}</p>
+              {/if}
+
+              {#if job.description}
+                <p class="job-description">{job.description}</p>
+              {:else}
+                <p class="sec-note">Esta fuente no publica la descripción en el listado — ábrela para verla.</p>
+              {/if}
+
+              {#if job.tags.length > 0}
+                <div class="job-tags">
+                  {#each job.tags as tag (tag)}
+                    <button class="job-tag" class:active={activeTag === tag} onclick={() => toggleTag(tag)}>
+                      {tag}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+
+              <div class="job-foot">
+                <a class="job-cta" href={job.url} target="_blank" rel="noreferrer">Ver oferta y postular</a>
+                <span class="job-source">vía {job.source}</span>
+              </div>
             </div>
-            {#if job.kind === "INTERNSHIP"}
-              <span class="job-flag">Pasantía</span>
-            {/if}
-          </div>
-
-          <div class="job-meta">
-            <span class="job-chip mode-{job.workMode.toLowerCase()}">{MODE_LABELS[job.workMode]}</span>
-            {#if job.kind !== "INTERNSHIP"}
-              <span class="job-chip">{KIND_LABELS[job.kind]}</span>
-            {/if}
-            {#if job.salary}<span class="job-chip salary">{job.salary}</span>{/if}
-            {#if job.postedAt}<span class="job-when">{relativeDate(job.postedAt)}</span>{/if}
-          </div>
-
-          {#if job.excerpt}
-            <p class="job-excerpt">{job.excerpt}</p>
           {/if}
-
-          {#if job.tags.length > 0}
-            <div class="job-tags">
-              {#each job.tags.slice(0, 6) as tag (tag)}
-                <button
-                  class="job-tag"
-                  class:active={activeTag === tag}
-                  onclick={() => toggleTag(tag)}
-                  aria-pressed={activeTag === tag}
-                >
-                  {tag}
-                </button>
-              {/each}
-            </div>
-          {/if}
-
-          <div class="job-foot">
-            <!-- rel="noreferrer" además de noopener: la oferta va a un sitio
-                 de terceros y no hay motivo para filtrarle de dónde vino el
-                 estudiante. Mismo criterio que el CTA de WhatsApp. -->
-            <a class="job-cta" href={job.url} target="_blank" rel="noreferrer">Ver oferta</a>
-            <!-- Atribución de la fuente: Remote OK la exige explícitamente
-                 en los términos de su API, y al estudiante le sirve saber a
-                 qué bolsa va a caer antes de hacer clic. -->
-            <span class="job-source">vía {job.source}</span>
-          </div>
         </article>
       {/each}
     {/if}
@@ -264,6 +345,32 @@
   .jobs-search:focus {
     outline: none;
     border-color: var(--sheet-accent, #5b8def);
+  }
+
+  .chip-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .chip {
+    padding: 6px 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: transparent;
+    color: rgba(234, 255, 245, 0.7);
+    font-size: 12px;
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease,
+      color 0.15s ease;
+  }
+  .chip.active {
+    border-color: var(--sheet-accent, #5b8def);
+    background: rgba(91, 141, 239, 0.18);
+    color: #eef4fb;
+    font-weight: 600;
   }
 
   .jobs-selects {
@@ -323,26 +430,23 @@
   .jobs-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
 
+  /* En escritorio el listado NO pasa a grilla: la tarjeta se expande hacia
+     abajo, y en una grilla de 3 columnas eso empuja de golpe toda la fila y
+     hace perder el sitio donde estabas leyendo. Una sola columna ancha
+     mantiene el desplazamiento predecible. */
   :global(.content-wrap.wide) .jobs-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: 12px;
+    max-width: 860px;
   }
 
   .job-card {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 15px;
     border-radius: var(--radius-md, 18px);
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
     border: 1px solid rgba(255, 255, 255, 0.09);
-    transition:
-      transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
-      border-color 0.22s ease;
+    overflow: hidden;
+    transition: border-color 0.22s ease;
   }
 
   /* Las pasantías llevan un borde izquierdo marcado, no solo la etiqueta:
@@ -351,78 +455,143 @@
   .job-card.is-internship {
     border-left: 3px solid var(--sheet-accent, #5b8def);
   }
-
+  .job-card.open {
+    border-color: rgba(91, 141, 239, 0.55);
+  }
   @media (hover: hover) and (pointer: fine) {
     .job-card:hover {
-      transform: translateY(-3px);
-      border-color: rgba(91, 141, 239, 0.5);
+      border-color: rgba(91, 141, 239, 0.4);
     }
-  }
-  .job-card:focus-within {
-    border-color: rgba(91, 141, 239, 0.5);
   }
 
   .job-head {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+  .job-head:focus-visible {
+    outline: 2px solid var(--sheet-accent, #5b8def);
+    outline-offset: -2px;
+  }
+
+  .job-logo {
+    position: relative;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.07);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+  .job-logo img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 12px;
+    background: #fff;
+    z-index: 1;
+  }
+  .job-logo-fallback {
+    font-family: var(--font-heading);
+    font-size: 15px;
+    font-weight: 700;
+    color: rgba(234, 255, 245, 0.75);
+  }
+
+  /* Sello de origen pegado al logo. Va con el color de la marca pero SIN su
+     logotipo: reproducir marcas de terceros en la app trae un problema de
+     uso de marca que un color no tiene. */
+  .job-source-badge {
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    z-index: 2;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    border-radius: 6px;
+    background: var(--src-bg);
+    color: var(--src-fg);
+    font-size: 9.5px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+    box-shadow: 0 0 0 2px rgba(10, 14, 25, 0.9);
   }
 
   .job-titles {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .job-title {
-    margin: 0 0 2px;
     font-family: var(--font-heading);
     font-weight: 600;
-    font-size: 15px;
+    font-size: 14.5px;
     line-height: 1.3;
     color: #f4f9ff;
+    /* Una sola línea con elipsis: con títulos de 3 líneas las tarjetas
+       cambiaban de alto y la lista se volvía imposible de escanear. El
+       título completo se ve al expandir. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .job-company {
-    margin: 0;
-    font-size: 12px;
-    color: rgba(234, 255, 245, 0.62);
+    font-size: 11.5px;
+    color: rgba(234, 255, 245, 0.55);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-
   .job-sep {
     margin: 0 5px;
     opacity: 0.5;
   }
 
+  .job-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-top: 3px;
+  }
+
   .job-flag {
-    flex-shrink: 0;
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 700;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    padding: 4px 9px;
+    padding: 3px 7px;
     border-radius: 999px;
     color: #04150d;
     background: var(--sheet-accent, #5b8def);
   }
 
-  .job-meta {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
   .job-chip {
-    font-size: 10.5px;
-    padding: 3px 8px;
+    font-size: 10px;
+    padding: 2px 7px;
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.07);
-    color: rgba(234, 255, 245, 0.78);
+    color: rgba(234, 255, 245, 0.7);
   }
-
-  /* Modalidad con color propio: es el dato que más cambia si la oferta
-     sirve o no para alguien en Quito, y con todos los chips grises había
-     que leerlos uno por uno. */
   .job-chip.mode-remote {
     background: rgba(33, 224, 160, 0.16);
     color: #7df0c6;
@@ -437,21 +606,71 @@
   }
 
   .job-when {
-    margin-left: auto;
-    font-size: 10.5px;
-    color: rgba(234, 255, 245, 0.42);
+    font-size: 10px;
+    color: rgba(234, 255, 245, 0.4);
   }
 
-  .job-excerpt {
+  /* tabular-nums: sin esto los números bailan de ancho y la columna deja de
+     leerse como una escala. */
+  .job-score {
+    flex-shrink: 0;
+    align-self: flex-start;
+    min-width: 30px;
+    padding: 3px 7px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.07);
+    color: rgba(234, 255, 245, 0.8);
+    font-size: 11.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  .job-detail {
+    padding: 0 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    padding-top: 12px;
+    margin: 0 0 0 0;
+    animation: detail-in 0.2s ease;
+  }
+  @keyframes detail-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .job-detail {
+      animation: none;
+    }
+  }
+
+  .detail-line {
+    margin: 0;
+    font-size: 12px;
+    color: rgba(234, 255, 245, 0.65);
+  }
+  .detail-line strong {
+    color: rgba(234, 255, 245, 0.85);
+  }
+
+  .job-description {
     margin: 0;
     font-size: 12.5px;
-    line-height: 1.5;
-    color: rgba(234, 255, 245, 0.66);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    line-height: 1.6;
+    color: rgba(234, 255, 245, 0.72);
+    /* Tope de alto con scroll propio: algunas descripciones pasan de 4000
+       caracteres y sin esto una sola tarjeta abierta ocupaba diez pantallas. */
+    max-height: 260px;
+    overflow-y: auto;
+    white-space: pre-line;
   }
 
   .job-tags {
@@ -488,11 +707,11 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 2px;
+    flex-wrap: wrap;
   }
 
   .job-cta {
-    padding: 8px 16px;
+    padding: 9px 18px;
     border-radius: 999px;
     background: var(--sheet-accent, #5b8def);
     color: #04122e;

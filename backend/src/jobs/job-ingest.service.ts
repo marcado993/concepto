@@ -5,7 +5,7 @@ import { collectFromSources, JobSource } from "./sources/job-source";
 import { RemoteOkSource } from "./sources/remoteok.source";
 import { ArbeitnowSource } from "./sources/arbeitnow.source";
 import { RemotiveSource } from "./sources/remotive.source";
-import { JobSpySource } from "./sources/jobspy.source";
+import { ScraperSource } from "./sources/scraper.source";
 import { dedupeJobs } from "./normalize/dedupe";
 import { jobFingerprint, RawJob } from "./normalize/normalize";
 import { assessJob, MAX_AGE_DAYS } from "./relevance/job-relevance.engine";
@@ -38,14 +38,17 @@ export class JobIngestService {
     private readonly remoteok: RemoteOkSource,
     private readonly arbeitnow: ArbeitnowSource,
     private readonly remotive: RemotiveSource,
-    private readonly jobspy: JobSpySource
+    private readonly scraper: ScraperSource
   ) {}
 
   private get sources(): JobSource[] {
-    // JobSpy solo entra si está configurado — sin `JOBS_SCRAPER_URL` el
-    // módulo funciona igual con las APIs públicas (ver JobSpySource).
+    // Los scrapers (Bolsa EPN, Indeed, LinkedIn, Multitrabajos,
+    // Computrabajo) solo entran si `JOBS_SCRAPER_URL` está configurado —
+    // sin eso el módulo sigue funcionando con las APIs públicas, que es lo
+    // que permite correr el backend en local sin levantar el contenedor
+    // con Chromium adentro (ver ScraperSource).
     const list: JobSource[] = [this.remoteok, this.arbeitnow, this.remotive];
-    if (this.jobspy.enabled) list.push(this.jobspy);
+    if (this.scraper.enabled) list.push(this.scraper);
     return list;
   }
 
@@ -150,6 +153,7 @@ export class JobIngestService {
       source: raw.source,
       sourceId: raw.sourceId,
       url: raw.url,
+      companyLogo: raw.companyLogo ?? null,
       title: raw.title,
       company: raw.company,
       description: raw.description,

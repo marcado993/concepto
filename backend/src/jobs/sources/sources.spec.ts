@@ -2,7 +2,7 @@ import { Logger } from "@nestjs/common";
 import { parseRemoteOk } from "./remoteok.source";
 import { parseArbeitnow } from "./arbeitnow.source";
 import { parseRemotive } from "./remotive.source";
-import { parseJobSpy } from "./jobspy.source";
+import { parseScraperJobs } from "./scraper.source";
 import { collectFromSources, JobSource } from "./job-source";
 import type { RawJob } from "../normalize/normalize";
 
@@ -189,83 +189,121 @@ describe("parseRemotive", () => {
   });
 });
 
-describe("parseJobSpy", () => {
+describe("parseScraperJobs", () => {
+  // Forma REAL que devuelve el servicio Python (jobs-scraper/app.py):
+  // el dataclass Job serializado, en snake_case.
   const payload = {
+    stats: { epn: 2, computrabajo: 1 },
+    errors: [],
     jobs: [
       {
-        site: "indeed",
-        id: "in-123",
-        title: "Pasante de Desarrollo",
-        company: "Banco Pichincha",
-        description: "Practicas preprofesionales en TI",
-        job_url: "https://ec.indeed.com/viewjob?jk=123",
+        source: "epn",
+        source_id: "6a95eb5c2c670",
+        url: "https://epn.hiringroomcampus.com/jobs/pasante-de-calidad-6a95eb5c2c670",
+        company_logo: "https://cdn.hiringroom.com/logos/acme.png",
+        title: "Pasante de Calidad de Software",
+        company: "Acme",
         location: "Quito, Pichincha",
         is_remote: false,
-        job_type: "internship",
-        date_posted: "2026-08-28",
-        min_amount: 460,
-        max_amount: 0,
-        currency: "USD",
+        is_internship: true,
+        description: "Practicas preprofesionales en QA",
+        salary_min: null,
+        salary_max: null,
+        salary_currency: null,
+        posted_at: "2026-08-24",
+        tags: ["Pasantia"],
       },
       {
-        site: "linkedin",
-        id: null,
-        title: "Backend Developer",
-        company: "Acme",
-        description: "nan",
-        job_url: "https://linkedin.com/jobs/view/999",
+        source: "computrabajo",
+        source_id: "abc123",
+        url: "https://ec.computrabajo.com/trabajo-de-desarrollador-junior",
+        company_logo: "",
+        title: "Desarrollador Junior",
+        company: "Beta",
         location: "Quito",
-        is_remote: null,
-        job_type: "fulltime, contract",
-        date_posted: null,
-        min_amount: null,
-        max_amount: null,
-        currency: null,
+        is_remote: false,
+        is_internship: false,
+        description: "",
+        salary_min: 0,
+        salary_max: 0,
+        salary_currency: null,
+        posted_at: null,
+        tags: [],
       },
     ],
   };
 
-  // El dedupe necesita saber QUE bolsa fue para poder preferir Indeed sobre
-  // LinkedIn cuando la misma vacante llega por las dos — por eso el source
-  // lleva sufijo y no es un generico "jobspy".
-  it("Dado el payload, Cuando se parsea, Entonces cada fila lleva su bolsa en el source", () => {
-    const jobs = parseJobSpy(payload);
-
-    expect(jobs[0].source).toBe("jobspy:indeed");
-    expect(jobs[1].source).toBe("jobspy:linkedin");
+  it("Dado el payload real, Cuando se parsea, Entonces extrae ambas ofertas", () => {
+    expect(parseScraperJobs(payload)).toHaveLength(2);
   });
 
-  // Varias bolsas no devuelven id propio; la URL siempre es unica y estable.
-  it("Dada una fila sin id, Cuando se parsea, Entonces usa la URL como identificador de respaldo", () => {
-    expect(parseJobSpy(payload)[1].sourceId).toBe("https://linkedin.com/jobs/view/999");
+  // El dedupe necesita saber de QUE bolsa vino para preferir la Bolsa EPN
+  // sobre Computrabajo cuando la misma vacante llega por las dos.
+  it("Dado el payload, Cuando se parsea, Entonces conserva el nombre de la fuente tal cual", () => {
+    const jobs = parseScraperJobs(payload);
+
+    expect(jobs[0].source).toBe("epn");
+    expect(jobs[1].source).toBe("computrabajo");
+  });
+
+  // La plataforma de la EPN ETIQUETA el tipo de contrato, asi que el
+  // scraper ya lo sabe y no hay que adivinarlo del titulo.
+  it("Dado is_internship=true, Cuando se parsea, Entonces kind=INTERNSHIP", () => {
+    expect(parseScraperJobs(payload)[0].kind).toBe("INTERNSHIP");
+  });
+
+  it("Dado is_internship=false, Cuando se parsea, Entonces kind=null y que lo decida el motor por titulo", () => {
+    expect(parseScraperJobs(payload)[1].kind).toBeNull();
+  });
+
+  it("Dado un logo http, Cuando se parsea, Entonces lo conserva", () => {
+    expect(parseScraperJobs(payload)[0].companyLogo).toContain("acme.png");
+  });
+
+  // Un logo vacio o relativo produciria un <img> roto en cada tarjeta; con
+  // null la UI cae a la inicial de la empresa, que ademas distingue una
+  // empresa de otra mejor que un icono generico.
+  it.each([[""], ["/img/logo.png"], ["data:image/png;base64,AAA"], [null]])(
+    "Dado el logo no utilizable %p, Cuando se parsea, Entonces queda null",
+    (logo) => {
+      const jobs = parseScraperJobs({ jobs: [{ ...payload.jobs[0], company_logo: logo }] });
+
+      expect(jobs[0].companyLogo).toBeNull();
+    }
+  );
+
+  it("Dado salary 0, Cuando se parsea, Entonces es null — 0 significa 'no informado'", () => {
+    const job = parseScraperJobs(payload)[1];
+
+    expect(job.salaryMin).toBeNull();
+    expect(job.salaryMax).toBeNull();
+  });
+
+  it("Dada una fecha ISO de solo dia, Cuando se parsea, Entonces la reconoce", () => {
+    expect(parseScraperJobs(payload)[0].postedAt?.getUTCFullYear()).toBe(2026);
+  });
+
+  it("Dada una fila sin url, Cuando se parsea, Entonces se descarta — sin link no se puede postular", () => {
+    expect(parseScraperJobs({ jobs: [{ ...payload.jobs[0], url: "" }] })).toEqual([]);
+  });
+
+  it("Dada una fila sin titulo, Cuando se parsea, Entonces se descarta", () => {
+    expect(parseScraperJobs({ jobs: [{ ...payload.jobs[0], title: "" }] })).toEqual([]);
   });
 
   // JobSpy viene de un DataFrame de pandas: los huecos llegan como la
-  // cadena "nan", no como null. Guardarla tal cual ponia literalmente la
-  // palabra "nan" en la descripcion que ve el estudiante.
+  // cadena "nan", no como null.
   it("Dada la cadena 'nan' de pandas, Cuando se parsea, Entonces NO termina como texto visible", () => {
-    expect(parseJobSpy(payload)[1].description).toBe("");
-  });
+    const jobs = parseScraperJobs({ jobs: [{ ...payload.jobs[0], description: "nan", company: "nan" }] });
 
-  it("Dado job_type con varios valores separados por coma, Cuando se parsea, Entonces toma el primero reconocido", () => {
-    expect(parseJobSpy(payload)[1].kind).toBe("FULL_TIME");
-  });
-
-  it("Dado job_type='internship', Cuando se parsea, Entonces kind=INTERNSHIP", () => {
-    expect(parseJobSpy(payload)[0].kind).toBe("INTERNSHIP");
-  });
-
-  it("Dado max_amount=0, Cuando se parsea, Entonces es null — 0 significa 'no informado'", () => {
-    const job = parseJobSpy(payload)[0];
-
-    expect(job.salaryMin).toBe(460);
-    expect(job.salaryMax).toBeNull();
+    expect(jobs[0].description).toBe("");
+    expect(jobs[0].company).toBe("");
   });
 
   it.each([[null], [{}], [{ jobs: "no soy array" }]])(
     "Dado el payload invalido %p, Cuando se parsea, Entonces devuelve []",
     (bad) => {
-      expect(parseJobSpy(bad)).toEqual([]);
+      expect(parseScraperJobs(bad)).toEqual([]);
     }
   );
 });

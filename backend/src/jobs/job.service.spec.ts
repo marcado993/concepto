@@ -18,7 +18,8 @@ function row(overrides: Record<string, unknown> = {}) {
     salaryMin: null,
     salaryMax: null,
     salaryCurrency: null,
-    source: "jobspy:indeed",
+    source: "indeed",
+    companyLogo: null,
     postedAt: new Date("2026-08-30T00:00:00Z"),
     relevance: 72,
     ...overrides,
@@ -178,7 +179,32 @@ describe("JobService.list — vista publica", () => {
 
     expect(job).not.toHaveProperty("reasons");
     expect(job).not.toHaveProperty("sourceId");
-    expect(job).not.toHaveProperty("description");
+    expect(job).not.toHaveProperty("fingerprint");
+  });
+
+  // La tarjeta se expande en el propio listado para leer de que va la
+  // oferta sin salir de la app, asi que necesita AMBOS: el extracto para el
+  // estado plegado y la descripcion completa para el desplegado.
+  it("Dada una oferta, Cuando se expone, Entonces trae el extracto Y la descripcion completa", async () => {
+    const largo = "palabra ".repeat(200);
+    const { service } = await buildService([row({ description: largo })]);
+
+    const [job] = (await service.list({} as QueryJobsDto)).jobs;
+
+    expect(job.excerpt.length).toBeLessThan(job.description.length);
+    expect(job.description).toBe(largo);
+  });
+
+  // Reconocer un logo es mas rapido que leer un nombre al escanear decenas
+  // de ofertas; cuando la fuente no lo trae, la UI cae a la inicial.
+  it("Dada una oferta con logo, Cuando se expone, Entonces el logo viaja al frontend", async () => {
+    const { service } = await buildService([row({ companyLogo: "https://cdn.example.com/acme.png" })]);
+
+    expect((await service.list({} as QueryJobsDto)).jobs[0].companyLogo).toContain("acme.png");
+  });
+
+  it("Dada una oferta sin logo, Cuando se expone, Entonces companyLogo es null y no una cadena vacia", async () => {
+    expect((await (await buildService()).service.list({} as QueryJobsDto)).jobs[0].companyLogo).toBeNull();
   });
 
   // Remote OK exige por sus terminos que se los mencione como fuente.

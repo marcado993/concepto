@@ -5,7 +5,7 @@ import { JobIngestService } from "./job-ingest.service";
 import { RemoteOkSource } from "./sources/remoteok.source";
 import { ArbeitnowSource } from "./sources/arbeitnow.source";
 import { RemotiveSource } from "./sources/remotive.source";
-import { JobSpySource } from "./sources/jobspy.source";
+import { ScraperSource } from "./sources/scraper.source";
 
 // Bolsa de empleo — pasantias y vacantes de Sistemas/Software.
 //
@@ -17,7 +17,7 @@ import { JobSpySource } from "./sources/jobspy.source";
 // pueda disparar una ingesta manual sin esperar al cron de cada 3 horas.
 @Module({
   controllers: [JobController],
-  providers: [JobService, JobIngestService, RemoteOkSource, ArbeitnowSource, RemotiveSource, JobSpySource],
+  providers: [JobService, JobIngestService, RemoteOkSource, ArbeitnowSource, RemotiveSource, ScraperSource],
   exports: [JobIngestService],
 })
 export class JobsModule {}

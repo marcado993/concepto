@@ -14,7 +14,11 @@ export interface JobOfferPublic {
   company: string;
   /** Extracto, no la descripción entera — la completa está en `url`. */
   excerpt: string;
+  /** Descripcion completa — la tarjeta la muestra al expandirse. */
+  description: string;
   url: string;
+  /** Logo de la empresa, o null: la UI cae a la inicial. */
+  companyLogo: string | null;
   location: string | null;
   kind: string;
   seniority: string;
@@ -48,14 +52,14 @@ export const DEFAULT_LIMIT = 30;
  * qué bolsa va a caer antes de hacer clic.
  */
 const SOURCE_LABELS: Readonly<Record<string, string>> = {
+  epn: "Bolsa EPN",
+  indeed: "Indeed",
+  linkedin: "LinkedIn",
+  multitrabajos: "Multitrabajos",
+  computrabajo: "Computrabajo",
   remotive: "Remotive",
   remoteok: "Remote OK",
   arbeitnow: "Arbeitnow",
-  "jobspy:indeed": "Indeed",
-  "jobspy:linkedin": "LinkedIn",
-  "jobspy:glassdoor": "Glassdoor",
-  "jobspy:google": "Google Jobs",
-  "jobspy:zip_recruiter": "ZipRecruiter",
 };
 
 @Injectable()
@@ -135,6 +139,14 @@ function buildWhere(query: QueryJobsDto): Prisma.JobOfferWhereInput {
   if (query.seniority) where.seniority = query.seniority;
   if (query.tag) where.tags = { has: query.tag };
 
+  if (query.maxAgeDays) {
+    // Las ofertas SIN fecha quedan fuera al filtrar por antigüedad, y es a
+    // propósito: el filtro existe para responder "¿qué sigue abierto?", y
+    // de una oferta sin fecha no se puede afirmar eso. Colarla en "últimos
+    // 3 días" sería justamente la mentira que el filtro viene a evitar.
+    where.postedAt = { gte: new Date(Date.now() - query.maxAgeDays * 86_400_000) };
+  }
+
   if (query.q) {
     // `mode: "insensitive"` y no un `toLowerCase()` a mano: la columna
     // guarda el texto tal como lo publicó la empresa, con mayúsculas y
@@ -177,6 +189,7 @@ function toPublic(row: {
   company: string;
   description: string;
   url: string;
+  companyLogo: string | null;
   location: string | null;
   kind: string;
   seniority: string;
@@ -194,7 +207,9 @@ function toPublic(row: {
     title: row.title,
     company: row.company,
     excerpt: excerpt(row.description),
+    description: row.description,
     url: row.url,
+    companyLogo: row.companyLogo,
     location: row.location,
     kind: row.kind,
     seniority: row.seniority,

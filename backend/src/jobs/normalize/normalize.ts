@@ -15,6 +15,16 @@ export interface RawJob {
   /** Texto plano — el HTML ya viene removido, ver `stripHtml`. */
   description: string;
   url: string;
+  /**
+   * Logo de la empresa, si la fuente lo trae y es una URL http(s).
+   *
+   * Lo usan las tarjetas del listado: reconocer el logo de una empresa es
+   * mucho mas rapido que leer su nombre, sobre todo al escanear decenas de
+   * ofertas. Null cuando la fuente no lo publica o sirve un placeholder
+   * generico — en ese caso la UI cae a la inicial, que al menos distingue
+   * una empresa de otra.
+   */
+  companyLogo?: string | null;
   location: string | null;
   remote: boolean | null;
   kind: JobKind | null;
