@@ -20,7 +20,10 @@ import { AdminActionContext } from "./admin.service";
 //     (hallazgo real de este mismo proyecto: un DELETE FROM users sin
 //     filtrar por tenant se llevó por delante el acceso a la consola de
 //     Logto una vez — ver create-logto-admin.ps1 / grant-logto-admin-
-//     permissions.ps1 para la recuperación que hizo falta).
+//     permissions.ps1 para la recuperación que hizo falta). Además del
+//     WHERE, el borrado corre en una transacción que cuenta el tenant
+//     "admin" antes y después y REVIERTE todo si el número cambió — ver
+//     wipeLogtoDefaultTenant().
 @Injectable()
 export class DangerZoneService {
   private readonly logger = new Logger(DangerZoneService.name);
@@ -176,16 +179,63 @@ export class DangerZoneService {
     });
   }
 
-  // SOLO tenant 'default' — el WHERE es lo que existe para proteger la
-  // cuenta de consola (tenant 'admin'). Las 15 FK que cuelgan de
-  // logto.users tienen ON DELETE CASCADE confirmado (verificado a mano
-  // contra pg_constraint), así que este DELETE arrastra limpio
-  // sesiones/identidades/tokens sin dejar huérfanos, igual que
-  // wipe-all-to-zero.ps1.
+  /**
+   * Borra los usuarios de Logto del tenant 'default' (estudiantes).
+   *
+   * SOLO tenant 'default'. El `WHERE` es lo que protege la cuenta de la
+   * consola (tenant 'admin'). Las 15 FK que cuelgan de logto.users tienen
+   * ON DELETE CASCADE confirmado (verificado a mano contra pg_constraint),
+   * así que este DELETE arrastra limpio sesiones/identidades/tokens sin
+   * dejar huérfanos.
+   *
+   * Todo corre dentro de una TRANSACCIÓN con una verificación posterior, y
+   * esa es la parte importante: en este mismo proyecto un
+   * `DELETE FROM users` sin filtrar por tenant ya se llevó por delante la
+   * cuenta de la consola de Logto, y hubo que recrearla a mano con hash
+   * Argon2i y volver a asignarle los permisos (ver create-logto-admin.ps1
+   * y grant-logto-admin-permissions.ps1). Un `WHERE` correcto evita que
+   * eso vuelva a pasar hoy; contar el tenant 'admin' antes y después, y
+   * ABORTAR la transacción si el número cambió, evita que vuelva a pasar
+   * si alguien edita esta consulta mañana.
+   *
+   * Con esto, el peor caso deja de ser "el admin desaparece y nadie se
+   * entera hasta que intenta entrar" y pasa a ser "la operación se
+   * revierte entera y salta una alerta crítica".
+   */
   private wipeLogtoDefaultTenant(): Promise<number> {
-    return this.withLogtoClient(async (client) => {
-      const result = await client.$executeRaw`DELETE FROM users WHERE tenant_id = 'default'`;
-      return result;
-    });
+    return this.withLogtoClient((client) =>
+      client.$transaction(async (tx) => {
+        const adminsBefore = await this.countLogtoTenantUsers(tx, "admin");
+
+        const deleted = await tx.$executeRaw`DELETE FROM users WHERE tenant_id = 'default'`;
+
+        const adminsAfter = await this.countLogtoTenantUsers(tx, "admin");
+        if (adminsAfter !== adminsBefore) {
+          void this.alert.send(
+            `ABORTADO: el wipe de Logto iba a borrar cuentas del tenant 'admin' (${adminsBefore} -> ${adminsAfter}). ` +
+              `La transaccion se revirtio, no se borro nada. Revisar DangerZoneService antes de reintentar.`,
+            "critical"
+          );
+          // Lanzar DENTRO de la transacción es lo que la revierte: el
+          // DELETE de arriba se deshace y la cuenta de consola sobrevive.
+          throw new Error(
+            `Wipe de Logto abortado: el tenant 'admin' paso de ${adminsBefore} a ${adminsAfter} cuentas. Nada se borro.`
+          );
+        }
+
+        return deleted;
+      })
+    );
+  }
+
+  // `tx` en vez del cliente completo para poder contar DENTRO de la
+  // transacción — contar fuera leería un snapshot distinto y la
+  // comprobación no probaría nada.
+  private async countLogtoTenantUsers(
+    tx: Pick<PrismaClient, "$queryRaw">,
+    tenantId: string
+  ): Promise<number> {
+    const rows = await tx.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM users WHERE tenant_id = ${tenantId}`;
+    return Number(rows[0]?.count ?? 0);
   }
 }

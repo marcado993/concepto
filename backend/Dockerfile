@@ -8,7 +8,29 @@
 # + prisma/seed.ts) y anida el output bajo dist/src/... — confirmado
 # inspeccionando la imagen real (docs/dominio/10-despliegue-vps-vercel.md).
 
+# Parches del SISTEMA OPERATIVO de la imagen base, en CADA build.
+#
+# El problema real que esto resuelve: node:22-alpine se reconstruye río
+# arriba cada tanto, pero entre una versión y otra Alpine publica parches
+# de seguridad que la imagen base todavía no incluye. Como acá se
+# despliega por commit y a veces pasa un mes entre uno y otro, esas CVEs
+# se ACUMULAN y el gate de Trivy termina bloqueando un deploy que no tiene
+# nada que ver con el cambio que se quería subir. Pasó exactamente así con
+# CVE-2026-14456 (openssl/libcrypto3 3.5.7-r0 → 3.5.8-r0, DoS por
+# crecimiento de memoria sin límite en el servidor QUIC): parche
+# disponible río arriba, imagen base sin él, deploy bloqueado.
+#
+# `apk upgrade` en cada build hace que el commit de hoy salga siempre con
+# los parches de hoy, sin tener que esperar a que se actualice la imagen
+# base ni ir agregando excepciones a .trivyignore por algo que SÍ tiene
+# arreglo. El costo es que la build deja de ser reproducible byte a byte —
+# aceptado a conciencia: acá vale más no arrastrar un CVE con parche
+# disponible que poder reproducir una imagen vieja idéntica.
+#
+# Va en AMBOS stages: el builder porque compila, y el runtime porque es la
+# imagen que de verdad se escanea y se despliega.
 FROM node:22-alpine AS builder
+RUN apk --no-cache upgrade
 WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma
@@ -18,6 +40,9 @@ RUN npx prisma generate
 RUN npm run build
 
 FROM node:22-alpine AS runtime
+# Ver la nota del stage builder: parches del SO en cada build. Esta es la
+# imagen que escanea Trivy en el pipeline y la que corre en el VPS.
+RUN apk --no-cache upgrade
 WORKDIR /app
 ENV NODE_ENV=production
 # El npm que trae node:22-alpine por defecto carga sus propias dependencias

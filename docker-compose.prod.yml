@@ -112,7 +112,17 @@ services:
   # de administración donde se configura la app, el API resource y el
   # conector de GitHub — ver Caddyfile.
   logto:
-    image: svhd/logto:latest
+    # Versión FIJA, no "latest". Con "latest", un `docker compose pull` en
+    # cualquier momento podía saltar de versión sin que nadie lo decidiera
+    # — y Logto es el proveedor de identidad: si un cambio suyo rompe el
+    # login, nadie entra a la app y no queda registro de qué cambió ni
+    # cuándo. Subir de versión ahora es editar esta línea, que es un
+    # commit revisable y reversible.
+    #
+    # Al subir de versión, Logto corre sus propias migraciones sobre la
+    # base "logto" — hacer respaldo ANTES (pg_dump de esa base), igual que
+    # con cualquier migración de aeis_app.
+    image: svhd/logto:1.43.0
     container_name: aeis-logto
     restart: unless-stopped
     environment:

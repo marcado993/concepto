@@ -20,12 +20,22 @@ jest.mock("@prisma/client", () => {
   const actual = jest.requireActual("@prisma/client");
   return {
     ...actual,
-    PrismaClient: jest.fn().mockImplementation(() => ({
-      $connect: logtoConnect,
-      $disconnect: logtoDisconnect,
-      $queryRaw: (...args: unknown[]) => logtoQueryRaw(...args),
-      $executeRaw: (...args: unknown[]) => logtoExecuteRaw(...args),
-    })),
+    PrismaClient: jest.fn().mockImplementation(() => {
+      const inner = {
+        $queryRaw: (...args: unknown[]) => logtoQueryRaw(...args),
+        $executeRaw: (...args: unknown[]) => logtoExecuteRaw(...args),
+      };
+      return {
+        ...inner,
+        $connect: logtoConnect,
+        $disconnect: logtoDisconnect,
+        // Transacción interactiva: se le pasa el mismo `inner` como `tx`.
+        // No simula rollback de datos (no hay datos reales acá) pero SÍ
+        // la parte que importa para el test — que un throw de dentro se
+        // propague hacia afuera, que es lo que en Postgres revierte.
+        $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(inner),
+      };
+    }),
   };
 });
 
@@ -140,6 +150,85 @@ describe("DangerZoneService.wipeTestData", () => {
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: expect.objectContaining({ logtoError: expect.stringContaining("no se pudo conectar") }) })
     );
+  });
+
+  // ---------------------------------------------------------------
+  // Blindaje de la cuenta de consola de Logto (tenant 'admin').
+  //
+  // Esto no es paranoia teorica: en este mismo proyecto un
+  // `DELETE FROM users` sin filtrar por tenant ya borro la cuenta de la
+  // consola de Logto, y hubo que recrearla a mano con hash Argon2i y
+  // volver a asignarle permisos. El WHERE evita que pase hoy; estos tests
+  // evitan que vuelva a pasar si alguien edita la consulta manana.
+  // ---------------------------------------------------------------
+  it("Cuando se borra el tenant default, Entonces el DELETE filtra por tenant_id='default' — NUNCA un DELETE FROM users pelado", async () => {
+    logtoQueryRaw.mockResolvedValue([{ count: BigInt(1) }]);
+    logtoExecuteRaw.mockResolvedValue(3);
+    const { service } = await buildService();
+
+    await service.wipeTestData({ adminActorId: "admin-1" });
+
+    // El tagged template llega como array de fragmentos de SQL.
+    const sql = (logtoExecuteRaw.mock.calls[0][0] as unknown as string[]).join("?");
+    expect(sql).toContain("tenant_id = 'default'");
+    expect(sql).not.toMatch(/DELETE\s+FROM\s+users\s*$/i);
+  });
+
+  it("Dado que el conteo del tenant 'admin' CAMBIA durante el borrado, Cuando se ejecuta, Entonces la transaccion se aborta y nada se borra en Logto", async () => {
+    // 1 admin antes, 0 despues = el DELETE se llevo la cuenta de consola.
+    logtoQueryRaw
+      .mockResolvedValueOnce([{ count: BigInt(2) }]) // previewWipe (tenant default)
+      .mockResolvedValueOnce([{ count: BigInt(1) }]) // admins ANTES
+      .mockResolvedValueOnce([{ count: BigInt(0) }]) // admins DESPUES
+      .mockResolvedValue([{ count: BigInt(0) }]);
+    logtoExecuteRaw.mockResolvedValue(2);
+    const { service } = await buildService();
+
+    const result = await service.wipeTestData({ adminActorId: "admin-1" });
+
+    expect(result.logtoDeleted).toBeNull();
+    expect(result.logtoError).toContain("abortado");
+  });
+
+  it("Dado ese mismo caso, Cuando se aborta, Entonces salta una alerta CRITICAL — no puede pasar en silencio como la vez que si paso", async () => {
+    logtoQueryRaw
+      .mockResolvedValueOnce([{ count: BigInt(2) }])
+      .mockResolvedValueOnce([{ count: BigInt(1) }])
+      .mockResolvedValueOnce([{ count: BigInt(0) }])
+      .mockResolvedValue([{ count: BigInt(0) }]);
+    logtoExecuteRaw.mockResolvedValue(2);
+    const { service, alert } = await buildService();
+
+    await service.wipeTestData({ adminActorId: "admin-1" });
+
+    expect(alert.send).toHaveBeenCalledWith(expect.stringContaining("ABORTADO"), "critical");
+  });
+
+  it("Dado que el tenant 'admin' queda intacto, Cuando se ejecuta, Entonces el borrado SI se confirma", async () => {
+    logtoQueryRaw
+      .mockResolvedValueOnce([{ count: BigInt(4) }]) // previewWipe
+      .mockResolvedValueOnce([{ count: BigInt(1) }]) // admins antes
+      .mockResolvedValueOnce([{ count: BigInt(1) }]) // admins despues — igual
+      .mockResolvedValue([{ count: BigInt(1) }]);
+    logtoExecuteRaw.mockResolvedValue(4);
+    const { service, alert } = await buildService();
+
+    const result = await service.wipeTestData({ adminActorId: "admin-1" });
+
+    expect(result.logtoDeleted).toBe(4);
+    expect(result.logtoError).toBeNull();
+    expect(alert.send).not.toHaveBeenCalledWith(expect.stringContaining("ABORTADO"), "critical");
+  });
+
+  it("Dado que NO existe ninguna cuenta admin en Logto, Cuando se ejecuta, Entonces igual borra — no hay nada que proteger y no debe quedarse trabado", async () => {
+    logtoQueryRaw.mockResolvedValue([{ count: BigInt(0) }]);
+    logtoExecuteRaw.mockResolvedValue(7);
+    const { service } = await buildService();
+
+    const result = await service.wipeTestData({ adminActorId: "admin-1" });
+
+    expect(result.logtoDeleted).toBe(7);
+    expect(result.logtoError).toBeNull();
   });
 
   it("Cuando se ejecuta, Entonces manda una alerta CRITICAL en tiempo real ANTES de borrar — 'en caso de que pase algo' no puede depender de revisar el AuditLog después", async () => {
