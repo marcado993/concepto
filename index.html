@@ -15,7 +15,13 @@
     <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
     <!-- El style JSON está auto-alojado en Vercel CDN. preload lo pide en
          paralelo con el bundle JS para que MapLibre lo encuentre ya listo. -->
-    <link rel="preload" href="/map-style.json" as="fetch" crossorigin />
+    <!-- El estilo del mapa (20 KB) YA NO se precarga acá.
+         Lo pedía en CADA carga de página, incluida la de login, donde el
+         mapa es inalcanzable — Seguridad vive detrás de la sesión. Y desde
+         que MapLibre solo se carga con sesión iniciada (ver App.svelte),
+         este preload además llegaba "sin usarse a tiempo", que es
+         exactamente lo que el navegador advierte como preload desperdiciado.
+         mapWarm.ts lo pide solo cuando de verdad crea el mapa. -->
 
     <!-- Loaded non-render-blocking: on a slow connection the Google Fonts
          stylesheet used to gate first paint behind two extra round trips.
@@ -202,13 +208,13 @@
           if (charIndex < line.length) {
             charIndex++;
             renderLine(line.slice(0, charIndex), true);
-            setTimeout(tick, 18);
+            setTimeout(tick, 11);
           } else {
             renderLine(line, false);
             lineIndex++;
             charIndex = 0;
             lineEl = null;
-            setTimeout(tick, 140);
+            setTimeout(tick, 90);
           }
         }
         tick();

@@ -6,41 +6,20 @@ const app = mount(App, {
   target: document.getElementById('app')!,
 })
 
-// import() dinámico, no un `import './lib/mapWarm'` estático — MapLibre GL
-// pesa ~1MB sin comprimir (es la única dependencia real de producción del
-// proyecto, ver package.json) y un import estático lo mete DENTRO del
-// bundle crítico de arranque: el splash y el resto de la app quedaban
-// esperando a que ese megabyte se descargue y parsee antes de volverse
-// interactivos, aunque el usuario nunca abra Seguridad (hallazgo real de
-// rendimiento, auditado con `npm run build` — antes de este cambio
-// dist/assets/index-*.js pesaba ~1MB). El import dinámico hace que Vite lo
-// separe en su propio chunk, cargado en paralelo apenas monta la app — el
-// mapa se sigue precalentando durante el splash (mismo efecto que antes),
-// pero ya no bloquea que el resto de la UI aparezca primero.
-// requestIdleCallback (no un import() disparado directamente) — el import
-// dinámico ya separa MapLibre en su propio chunk, pero descargarlo/
-// parsearlo/ejecutar `new maplibregl.Map()` (contexto WebGL + worker) sigue
-// compitiendo por el mismo hilo principal que la animación de entrada de
-// Casilleros (la categoría por defecto al arrancar) en un celular de gama
-// baja con 1-2 núcleos reales — hallazgo de auditoría de rendimiento móvil:
-// no eran dos lags separados, era un choque de arranque compartido. El
-// timeout de respaldo (1500ms) cubre navegadores sin idle real bajo carga
-// continua, para que el precalentado del mapa no se postergue para siempre.
-const warmMapWhenIdle = () => {
-  import('./lib/mapWarm')
-}
-if ('requestIdleCallback' in window) {
-  requestIdleCallback(warmMapWhenIdle, { timeout: 1500 })
-} else {
-  setTimeout(warmMapWhenIdle, 300)
-}
-
+// El precalentado del mapa (MapLibre, ~243 KB comprimidos) YA NO vive acá.
+// Se movió a App.svelte, condicionado a que el usuario haya iniciado
+// sesión — ver el comentario de `precalentarMapa()` allá para el porqué.
 // The boot screen lives in index.html so it paints before this bundle even
 // arrives. Hand off once Svelte has mounted, keeping it up for a beat so a
-// fast connection doesn't produce a jarring one-frame flash. 1500ms (not
-// 600ms) on purpose — index.html's own inline script types out a short
-// "system boot" log inside #bootLog, and cutting it off mid-sentence would
-// look broken instead of intentional; the sequence finishes in ~1.3s.
+// fast connection doesn't produce a jarring one-frame flash.
+//
+// 930ms, no 1500ms: el número no es libre, tiene que cubrir la animación de
+// tecleo de #bootLog en index.html — cortarla a media frase se ve rota, no
+// intencional. Lo que se hizo fue ACELERAR esa animación (11ms por carácter
+// y 90ms entre líneas, antes 18 y 140) en vez de recortarla: se siguen
+// viendo las tres líneas escribiéndose, solo que 570ms antes. Si se cambian
+// esos tiempos allá, hay que recalcular este número: 60 caracteres × 11ms +
+// 3 líneas × 90ms = 930ms.
 //
 // Excepción: PayPhone redirige de vuelta con una recarga COMPLETA de
 // página (App.svelte lee ?id=&clientTransactionId= al montar) — sin esto,
@@ -55,7 +34,7 @@ if (boot) {
     boot.addEventListener('transitionend', () => boot.remove(), { once: true })
   }
   const returningFromPayphone = new URLSearchParams(window.location.search).has('clientTransactionId')
-  setTimeout(dismiss, returningFromPayphone ? 300 : 1500)
+  setTimeout(dismiss, returningFromPayphone ? 300 : 930)
 }
 
 // Registra el Service Worker que cachea el style JSON, tiles, glyphs y

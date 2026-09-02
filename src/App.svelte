@@ -47,6 +47,36 @@
   // reportado en producción).
   const authed = $derived(isAuthenticated());
 
+  // Precalentado del mapa (MapLibre) — SOLO con sesión iniciada.
+  //
+  // MapLibre son ~243 KB comprimidos: el 72% de todo lo que descarga la
+  // app. Antes se precargaba en main.ts apenas montaba, o sea también en
+  // la pantalla de login, donde el mapa es literalmente inalcanzable —
+  // Seguridad vive detrás de la sesión. En la conexión móvil de 19.2 KB/s
+  // que este proyecto ya documentó (ver el reintento de red en api.ts) eso
+  // son ~13 segundos de ancho de banda robados justo al login, que es lo
+  // único que esa pantalla necesita.
+  //
+  // requestIdleCallback y no un import() directo: descargar, parsear y
+  // ejecutar `new maplibregl.Map()` (contexto WebGL + worker) compite por
+  // el mismo hilo principal que la animación de entrada de Casilleros en
+  // un celular de gama baja. El timeout de respaldo cubre navegadores sin
+  // idle real bajo carga continua, para que no se postergue para siempre.
+  let mapaPrecalentado = false;
+  $effect(() => {
+    if (!authed || mapaPrecalentado) return;
+    mapaPrecalentado = true;
+
+    const precalentarMapa = () => {
+      import("./lib/mapWarm");
+    };
+    if ("requestIdleCallback" in window) {
+      requestIdleCallback(precalentarMapa, { timeout: 1500 });
+    } else {
+      setTimeout(precalentarMapa, 300);
+    }
+  });
+
   // auth.controller.ts redirige aquí con ?auth_error=... cuando Logto
   // rechaza el intento (ej. credenciales placeholder en desarrollo, ver
   // docs/dominio/10-despliegue-vps-vercel.md) — mensaje claro en vez de
