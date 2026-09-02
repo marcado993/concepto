@@ -17,6 +17,16 @@ export interface IngestReport {
   created: number;
   updated: number;
   archived: number;
+  /**
+   * Ofertas que YA estaban guardadas y que el motor dejó de considerar
+   * relevantes — se dan de baja en el acto.
+   *
+   * Existe por un hueco real: al ajustar el motor, las ofertas viejas
+   * conservaban su puntaje anterior porque el bucle hacía `continue` sin
+   * tocarlas. Un aviso que subió al tope con las reglas viejas seguía ahí
+   * hasta que el barrido por antigüedad lo alcanzara, días después.
+   */
+  deactivated: number;
   failedSources: string[];
 }
 
@@ -94,6 +104,7 @@ export class JobIngestService {
       let created = 0;
       let updated = 0;
       let relevant = 0;
+      let deactivated = 0;
 
       for (const raw of deduped) {
         const assessment = assessJob(
@@ -112,7 +123,15 @@ export class JobIngestService {
         // Se filtra en la INGESTA y no en la consulta: guardar la basura
         // significaría pagar disco y tiempo de query para siempre por algo
         // que ningún estudiante va a querer ver (ver RELEVANCE_FLOOR).
-        if (!assessment.relevant) continue;
+        if (!assessment.relevant) {
+          // Si YA estaba guardada, se da de baja acá mismo. Antes esto era
+          // un `continue` a secas, y el efecto era que ajustar el motor no
+          // limpiaba lo ya publicado: una oferta que había llegado al tope
+          // con las reglas viejas seguía visible con su puntaje viejo hasta
+          // que el barrido por antigüedad la alcanzara, días después.
+          deactivated += await this.deactivateIfPresent(raw);
+          continue;
+        }
         relevant += 1;
 
         const wasCreated = await this.upsert(raw, assessment, now);
@@ -129,6 +148,7 @@ export class JobIngestService {
         created,
         updated,
         archived,
+        deactivated,
         failedSources: failed,
       };
       this.logger.log(`Ingesta: ${JSON.stringify(report)}`);
@@ -136,6 +156,21 @@ export class JobIngestService {
     } finally {
       this.running = false;
     }
+  }
+
+  /**
+   * Da de baja una oferta ya guardada que el motor dejó de aprobar.
+   *
+   * Devuelve 1 si de verdad había una fila activa que dar de baja, 0 si no
+   * existía o ya estaba inactiva — así el reporte cuenta bajas reales y no
+   * ofertas que nunca estuvieron publicadas.
+   */
+  private async deactivateIfPresent(raw: RawJob): Promise<number> {
+    const { count } = await this.prisma.jobOffer.updateMany({
+      where: { fingerprint: jobFingerprint(raw), active: true },
+      data: { active: false },
+    });
+    return count;
   }
 
   /**
@@ -220,5 +255,14 @@ export class JobIngestService {
 }
 
 function emptyReport(failedSources: string[]): IngestReport {
-  return { fetched: 0, afterDedupe: 0, relevant: 0, created: 0, updated: 0, archived: 0, failedSources };
+  return {
+    fetched: 0,
+    afterDedupe: 0,
+    relevant: 0,
+    created: 0,
+    updated: 0,
+    archived: 0,
+    deactivated: 0,
+    failedSources,
+  };
 }

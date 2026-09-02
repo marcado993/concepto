@@ -2,8 +2,8 @@
   // Bolsa de empleo — lo que el estudiante ve, más el botón de refresco.
   //
   // La lista NO es editable a propósito: las ofertas se ingestan de bolsas
-  // externas (Remotive, Remote OK, Arbeitnow, Indeed vía JobSpy), no las
-  // publica AEIS. Dejar que la directiva editara un título o un sueldo acá
+  // externas (Bolsa EPN, Multitrabajos, Computrabajo, Indeed y LinkedIn,
+  // más las APIs de Remotive/Remote OK/Arbeitnow), no las publica AEIS. Dejar que la directiva editara un título o un sueldo acá
   // significaría mostrarle al estudiante algo distinto de lo que dice la
   // oferta real, y el link lleva a esa oferta real. Lo que sí necesita el
   // panel es poder VER qué está publicado y forzar una actualización.
@@ -74,7 +74,7 @@
       <h2 class="font-heading text-xl text-ink">Bolsa de empleo</h2>
       <p class="mt-1 max-w-prose text-sm text-ink-2">
         Pasantías y vacantes de Sistemas que la app muestra a los estudiantes. Se actualizan solas cada 3 horas
-        desde Remotive, Remote OK, Arbeitnow e Indeed.
+        desde la Bolsa EPN, Multitrabajos, Computrabajo, Indeed y LinkedIn.
       </p>
     </div>
     <button
@@ -104,7 +104,7 @@
       <p class="text-sm text-ink">
         Listo: <strong>{report.created}</strong>
         {report.created === 1 ? "oferta nueva" : "ofertas nuevas"},
-        <strong>{report.updated}</strong> actualizadas, <strong>{report.archived}</strong> archivadas.
+        <strong>{report.updated}</strong> actualizadas, <strong>{report.archived}</strong> archivadas{#if report.deactivated > 0}, <strong>{report.deactivated}</strong> dadas de baja por dejar de ser del área{/if}.
       </p>
       <!-- Se muestra el embudo completo y no solo "N nuevas": que de 300
            ofertas crudas queden 40 es lo ESPERADO (el motor descarta lo que

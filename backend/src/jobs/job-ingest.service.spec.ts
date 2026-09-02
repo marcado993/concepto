@@ -34,6 +34,7 @@ function buildPrisma() {
       findUnique: jest.fn().mockResolvedValue(null), // por defecto: alta nueva
       upsert: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      deleteMany: jest.fn(),
     },
   };
 }
@@ -154,6 +155,39 @@ describe("JobIngestService.ingest — filtrado y dedupe", () => {
 
     expect(report.relevant).toBe(0);
     expect(prisma.jobOffer.upsert).not.toHaveBeenCalled();
+  });
+
+  // Hueco real: al ajustar el motor, las ofertas YA guardadas conservaban
+  // su puntaje viejo porque el bucle hacia `continue` sin tocarlas. Un
+  // aviso que habia llegado al tope con las reglas viejas seguia visible
+  // hasta que el barrido por antiguedad lo alcanzara, dias despues.
+  it("Dada una oferta ya guardada que el motor deja de aprobar, Cuando se ingesta, Entonces se da de baja en el acto", async () => {
+    const prisma = buildPrisma();
+    prisma.jobOffer.updateMany.mockResolvedValue({ count: 1 });
+    const { service } = await buildService({
+      prisma,
+      remoteokJobs: [raw({ title: "Asesor Comercial", description: "Ventas puerta a puerta." })],
+    });
+
+    const report = await service.ingest(NOW);
+
+    expect(report.deactivated).toBe(1);
+    // La baja apunta a la huella de ESA oferta y solo a filas activas.
+    const llamada = prisma.jobOffer.updateMany.mock.calls[0][0];
+    expect(llamada.where).toEqual(expect.objectContaining({ active: true }));
+    expect(llamada.where.fingerprint).toBeDefined();
+    expect(llamada.data).toEqual({ active: false });
+  });
+
+  it("Dada una oferta irrelevante que NUNCA estuvo guardada, Cuando se ingesta, Entonces no cuenta como baja", async () => {
+    const prisma = buildPrisma();
+    prisma.jobOffer.updateMany.mockResolvedValue({ count: 0 });
+    const { service } = await buildService({
+      prisma,
+      remoteokJobs: [raw({ title: "Asesor Comercial", description: "Ventas." })],
+    });
+
+    expect((await service.ingest(NOW)).deactivated).toBe(0);
   });
 
   it("Dada la misma vacante desde dos bolsas, Cuando se ingesta, Entonces se guarda UNA sola vez", async () => {

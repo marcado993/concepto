@@ -249,6 +249,8 @@ export interface JobIngestReport {
   created: number;
   updated: number;
   archived: number;
+  /** Ya guardadas que el motor dejo de aprobar y se dieron de baja. */
+  deactivated: number;
   /** Bolsas que fallaron en esta corrida. Vacio = todas respondieron. */
   failedSources: string[];
 }
