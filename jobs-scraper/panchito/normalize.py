@@ -79,7 +79,12 @@ def calcular_dedupe_key(titulo: str, empresa: str) -> str:
     t = slug(limpiar_titulo(titulo))
     e = slug(limpiar_empresa(empresa))
     base = f"{t}|{e}" if e else t
-    return hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
+    # SHA-256 y no SHA-1: aca la huella es un identificador, no una firma,
+    # asi que la resistencia a colisiones criptografica no hace falta —
+    # pero tampoco cuesta nada, y SHA-1 hace fallar el gate de SAST del
+    # pipeline (semgrep insecure-hash-algorithm). Se recorta a 16 chars
+    # igual que antes: es una llave de deduplicacion, no un digest.
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()[:16]
 
 
 def detectar_remoto(*textos: str) -> bool:
