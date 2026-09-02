@@ -67,6 +67,59 @@ describe("assessJob — clasificacion de dominio", () => {
     expect(assessJob(job({ title: "Administrador de Redes y Servidores" }), NOW).relevant).toBe(true);
   });
 
+  // REGRESION — el caso que obligo a que el dominio MULTIPLIQUE en vez de
+  // sumar. Este aviso encabezo el listado real con 56 puntos: es una
+  // consultora FINANCIERA de Berlin, y su unica senal del area era un
+  // termino suelto en una descripcion en aleman. Todo su puntaje venia de
+  // ser pasantia (+30), reciente (+15) y remota (+6) — bonos que no dicen
+  // nada sobre si es del area.
+  it("Dado el aviso real de consultoria financiera aleman, Cuando se evalua, Entonces cae muy por debajo del piso", () => {
+    const r = assessJob(
+      job({
+        title: "Trainee (m/w/d) Financial Consulting: Entrepreneurship und IHK-Qualifikation",
+        company: "Horbach Berlin",
+        description:
+          "Willst du in Berlin die Finanzwelt mitgestalten? High-End-Wirtschaftsberatung fuer Akademiker. Remote moeglich. Wir nutzen moderne Software.",
+        location: "Berlin",
+        postedAt: daysAgo(0),
+      }),
+      NOW
+    );
+
+    expect(r.relevant).toBe(false);
+    expect(r.score).toBeLessThan(RELEVANCE_FLOOR);
+  });
+
+  // La contraparte: al pasar el dominio a multiplicador, una vacante
+  // LEGITIMA de Sistemas que arrastrara el castigo por senior caia a 7
+  // puntos y quedaba fuera. Por eso existe DOMAIN_BASE.
+  it("Dada una vacante senior legitima del area, Cuando se evalua, Entonces SIGUE entrando (aunque puntue bajo)", () => {
+    const r = assessJob(
+      job({
+        title: "Senior DevOps Engineer",
+        company: "Localstack",
+        description: "Fully remote. Kubernetes, docker, aws.",
+        location: "United Kingdom",
+        postedAt: daysAgo(0),
+      }),
+      NOW
+    );
+
+    expect(r.relevant).toBe(true);
+  });
+
+  // Lo que la multiplicacion garantiza: una pasantia del area siempre gana
+  // a una pasantia igual de fresca pero de otra carrera, por muchos bonos
+  // que esta ultima acumule.
+  it("Dadas dos pasantias identicas salvo el area, Cuando se comparan, Entonces la del area puntua MUCHO mas", () => {
+    const base = { description: "Programa de formacion.", location: "Quito, Ecuador", postedAt: daysAgo(0) };
+    const delArea = assessJob(job({ ...base, title: "Pasante de Desarrollo de Software" }), NOW);
+    const deOtraCarrera = assessJob(job({ ...base, title: "Pasante de Recursos Humanos" }), NOW);
+
+    expect(deOtraCarrera.relevant).toBe(false);
+    expect(delArea.score).toBeGreaterThan(deOtraCarrera.score * 3);
+  });
+
   it("Dado un titulo sin ninguna senal del area, Cuando se evalua, Entonces NO es relevante aunque sume puntos por ubicacion", () => {
     const r = assessJob(
       job({ title: "Asistente Administrativa", description: "Manejo de agenda y archivo.", location: "Quito" }),

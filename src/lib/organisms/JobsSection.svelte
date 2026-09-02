@@ -20,7 +20,12 @@
   // solo lugar, en vez de castear en cada uso.
   let kindValue = $state("");
   let workModeValue = $state("");
-  let sortValue = $state("relevance");
+  // Arranca en "Más recientes" y no en "Más relevantes": con la ventana
+  // acotada a 2 semanas, todo lo que se ve ya pasó el filtro de calidad del
+  // motor, así que lo que de verdad decide si vale la pena postular es qué
+  // tan fresco es. La relevancia sigue ordenando dentro de la misma fecha
+  // (ver orderBy en el backend), y el otro orden queda a un toque.
+  let sortValue = $state("recent");
 
   const kind = $derived((kindValue || undefined) as JobFilters["kind"] | undefined);
   const workMode = $derived((workModeValue || undefined) as JobFilters["workMode"] | undefined);
@@ -30,24 +35,24 @@
   let activeTag = $state<string>("");
 
   /**
-   * Ventana de antigüedad. Arranca en 1 SEMANA.
+   * Ventana de antigüedad. Arranca en 1 semana y el techo es 2.
    *
-   * Arrancaba en 30 días y se bajó por cómo funcionan de verdad estos
-   * procesos: pasada la primera semana la convocatoria normalmente ya se
-   * cerró, aunque el aviso siga publicado — nadie baja una vacante llena.
-   * Abrir en un mes llenaba la primera pantalla de ofertas a las que ya no
-   * se puede postular, que es peor que mostrar menos.
+   * Antes llegaba hasta "1 mes" y "Todo", y se recortó por cómo funcionan de
+   * verdad estas convocatorias: pasadas dos semanas el proceso normalmente
+   * ya se cerró aunque el aviso siga publicado — nadie baja una vacante
+   * llena. Ofrecer ventanas más anchas era ofrecer ofertas a las que ya no
+   * se puede postular, y eso hace perder más tiempo del que ahorra.
    *
-   * Las otras ventanas siguen a un toque para quien quiera rastrear más
-   * atrás; simplemente dejan de ser lo primero que ve.
+   * Consecuencia deliberada: las ofertas SIN fecha quedan siempre fuera. El
+   * filtro responde "¿qué sigue abierto?" y de una oferta sin fecha no se
+   * puede afirmar eso (ver el filtro por maxAgeDays en el backend).
    */
-  const AGE_OPTIONS: { label: string; days: number | null }[] = [
+  const AGE_OPTIONS: { label: string; days: number }[] = [
     { label: "3 días", days: 3 },
     { label: "1 semana", days: 7 },
-    { label: "1 mes", days: 30 },
-    { label: "Todo", days: null },
+    { label: "2 semanas", days: 14 },
   ];
-  let maxAgeDays = $state<number | null>(7);
+  let maxAgeDays = $state(7);
 
   /**
    * Días bajo los cuales una oferta se marca como "reciente".
@@ -84,7 +89,7 @@
     workMode,
     ecuador: onlyEcuador || undefined,
     tag: activeTag || undefined,
-    maxAgeDays: maxAgeDays ?? undefined,
+    maxAgeDays,
     sort,
     limit: 40,
   });
@@ -238,8 +243,8 @@
         bind:value={sortValue}
         label="Orden"
         options={[
-          { value: "relevance", label: "Más relevantes" },
           { value: "recent", label: "Más recientes" },
+          { value: "relevance", label: "Más relevantes" },
         ]}
       />
     </div>
@@ -263,9 +268,7 @@
       {#if result.facets.internships > 0}
         · {result.facets.internships} {result.facets.internships === 1 ? "pasantía" : "pasantías"}
       {/if}
-      {#if maxAgeDays !== null}
-        · últimos {maxAgeDays} días
-      {/if}
+      · últimos {maxAgeDays} días
     </p>
   {/if}
 
@@ -276,7 +279,7 @@
       <p class="sec-note">No se pudo cargar la bolsa de empleo.</p>
     {:else if jobs.length === 0}
       <p class="sec-note">
-        No hay ofertas con esos filtros. Prueba ampliando la antigüedad a "1 mes" o "Todo", o desmarcando
+        No hay ofertas con esos filtros. Prueba ampliando la antigüedad a "2 semanas" o desmarcando
         "solo Ecuador".
       </p>
     {:else}

@@ -73,6 +73,16 @@ export interface JobAssessment {
  */
 export const RELEVANCE_FLOOR = 25;
 
+/**
+ * Puntaje base por ser del área, antes de cualquier modificador.
+ *
+ * Existe porque la fuerza del dominio MULTIPLICA en vez de sumar (ver
+ * assessJob): sin una base, una vacante del área sin bonos —o con el
+ * castigo por senior— quedaba en casi cero aunque fuera perfectamente
+ * válida.
+ */
+export const DOMAIN_BASE = 40;
+
 /** Vida útil de una oferta. Pasado esto se archiva aunque la fuente insista. */
 export const MAX_AGE_DAYS = 45;
 
@@ -93,41 +103,82 @@ export function assessJob(job: ScorableJob, now: Date): JobAssessment {
   const all = `${title} ${body} ${place}`;
 
   const reasons: string[] = [];
-  let score = 0;
+
+  // Base por SER del área. No es un número decorativo: sin ella, al pasar el
+  // dominio de sumando a multiplicador, una vacante legítima de Sistemas que
+  // arrastrara el castigo por senior (-22) caía a 7 puntos y quedaba fuera
+  // ("Senior DevOps Engineer", caso real). Los modificadores de abajo
+  // ajustan sobre esta base; el multiplicador de dominio decide cuánto de
+  // todo eso cuenta.
+  let score = DOMAIN_BASE;
 
   // --- 1. ¿Es del área? ---------------------------------------------------
+  //
+  // La fuerza del dominio MULTIPLICA al resto en vez de sumarse, y esa es la
+  // decisión central del motor. Sumando, un aviso que solo menciona una
+  // tecnología de pasada cobraba igual los bonos de pasantía (+30), frescura
+  // (+15) y remoto (+6) y terminaba arriba del listado.
+  //
+  // Caso real que lo obligó: "Trainee (m/w/d) Financial Consulting" de una
+  // consultora FINANCIERA de Berlín llegó a 56 puntos y encabezó la lista.
+  // Su única señal del área era UN término suelto en una descripción en
+  // alemán; todo lo demás vino de ser pasantía, reciente y remota. Con la
+  // multiplicación cae a ~17 y no entra.
+  //
+  // Multiplicar también expresa mejor lo que significa: "qué tan del área
+  // es" no es un punto más a sumar, es el factor que decide si el resto de
+  // los méritos cuentan siquiera.
   const domainInTitle = countTerms(title, DOMAIN_TERMS);
   const domainInBody = countTerms(body, DOMAIN_TERMS);
 
+  // 0..1. El TÍTULO vale mucho más que el cuerpo: casi toda descripción de
+  // vacante nombra alguna tecnología en algún lado (el ERP que usa la
+  // empresa, la herramienta del equipo), pero solo una vacante del área lo
+  // lleva en el puesto.
+  let domainStrength: number;
+  let domainWhy: string;
   if (domainInTitle > 0) {
-    // Tope a 3 términos: "Desarrollador Full Stack Java React Node SQL AWS"
-    // no es 6 veces mejor que "Desarrollador Java", solo está más detallado.
-    const pts = Math.min(domainInTitle, 3) * 14;
-    score += pts;
-    reasons.push(`titulo del area (+${pts})`);
-  }
-  if (domainInBody > 0) {
-    const pts = Math.min(domainInBody, 6) * 3;
-    score += pts;
-    reasons.push(`stack en la descripcion (+${pts})`);
+    domainStrength = 1;
+    domainWhy = "titulo del area";
+  } else if (domainInBody >= 3) {
+    // Tres o más términos ya no es una mención de pasada: es una
+    // descripción que de verdad habla del área.
+    domainStrength = 0.7;
+    domainWhy = `${domainInBody} senales del area en la descripcion`;
+  } else if (domainInBody === 2) {
+    domainStrength = 0.45;
+    domainWhy = "dos menciones en la descripcion";
+  } else if (domainInBody > 0) {
+    // UNA mención suelta es la evidencia más débil que existe, y es
+    // justamente la que tenía el trainee de consultoría financiera. Tan
+    // baja que ni sumando todos los bonos alcanza el piso.
+    domainStrength = 0.2;
+    domainWhy = "solo una mencion suelta en la descripcion";
+  } else {
+    domainStrength = 0;
+    domainWhy = "ninguna senal del area";
   }
 
   // --- 2. Ruido -----------------------------------------------------------
-  // El ruido en el TÍTULO es casi siempre definitivo ("Asesor Comercial"),
-  // el del cuerpo puede ser incidental (una vacante de dev que menciona que
-  // el equipo trabaja con el área comercial). De ahí el castigo asimétrico.
+  // El ruido REDUCE la fuerza del dominio en vez de restar puntos: "Asesor
+  // Comercial de Software" tiene un término del área en el título, y restar
+  // puntos lo dejaba compitiendo. Bajando el factor, no compite.
+  //
+  // El del título es casi siempre definitivo; el del cuerpo puede ser
+  // incidental (un dev que menciona al equipo comercial). De ahí la
+  // diferencia de castigo.
   const noiseInTitle = countTerms(title, NOISE_TERMS);
   const noiseInBody = countTerms(body, NOISE_TERMS);
   if (noiseInTitle > 0) {
-    const pts = noiseInTitle * 40;
-    score -= pts;
-    reasons.push(`ruido en el titulo (-${pts})`);
+    domainStrength *= 0.1;
+    reasons.push(`ruido en el titulo (x0.1)`);
   }
   if (noiseInBody > 0) {
-    const pts = Math.min(noiseInBody, 3) * 5;
-    score -= pts;
-    reasons.push(`ruido en la descripcion (-${pts})`);
+    domainStrength *= Math.max(0.5, 1 - Math.min(noiseInBody, 3) * 0.15);
+    reasons.push(`ruido en la descripcion`);
   }
+
+  reasons.push(`dominio: ${domainWhy} (x${domainStrength.toFixed(2)})`);
 
   // --- 3. Perfil: pasantía / junior / senior ------------------------------
   const kind = detectKind(job, title, body);
@@ -221,9 +272,11 @@ export function assessJob(job: ScorableJob, now: Date): JobAssessment {
     reasons.push(`${tags.length} tecnologias identificadas (+${pts})`);
   }
 
-  const clamped = clamp(score, 0, 100);
+  // Acá se aplica el multiplicador: todo lo de arriba son méritos que solo
+  // cuentan en la medida en que la oferta sea del área.
+  const clamped = clamp(Math.round(score * domainStrength), 0, 100);
   return {
-    relevant: clamped >= RELEVANCE_FLOOR && domainInTitle + domainInBody > 0,
+    relevant: clamped >= RELEVANCE_FLOOR && domainStrength > 0,
     score: clamped,
     kind,
     seniority,
