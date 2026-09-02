@@ -29,7 +29,7 @@
 #
 # Va en AMBOS stages: el builder porque compila, y el runtime porque es la
 # imagen que de verdad se escanea y se despliega.
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 RUN apk --no-cache upgrade
 WORKDIR /app
 COPY package*.json ./
@@ -39,7 +39,7 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 # Ver la nota del stage builder: parches del SO en cada build. Esta es la
 # imagen que escanea Trivy en el pipeline y la que corre en el VPS.
 RUN apk --no-cache upgrade
