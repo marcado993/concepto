@@ -235,3 +235,50 @@ export function wipeTestData(confirm: string): Promise<WipeTestDataResult> {
 export function freeLockers(confirm: string): Promise<{ freed: number }> {
   return postJSON("/admin/danger-zone/free-lockers", { confirm });
 }
+
+// Bolsa de empleo — refresco a demanda.
+//
+// El cron del backend corre cada 3 horas (JobIngestService), que para
+// postular a una pasantia es tiempo real de sobra. Este boton existe para
+// los casos en que esperar no sirve: acabas de publicar el modulo, o
+// cambiaste un peso del motor y quieres ver el efecto ya.
+export interface JobIngestReport {
+  fetched: number;
+  afterDedupe: number;
+  relevant: number;
+  created: number;
+  updated: number;
+  archived: number;
+  /** Bolsas que fallaron en esta corrida. Vacio = todas respondieron. */
+  failedSources: string[];
+}
+
+export function ingestJobs(): Promise<JobIngestReport> {
+  // POST sin cuerpo: a diferencia de la zona de riesgo, esto no borra nada
+  // — solo refresca una cache de datos externos, asi que no pide frase de
+  // confirmacion. Lo protege el mismo guard de admin que todo /admin/*.
+  return postJSON<JobIngestReport>("/admin/jobs/ingest", {});
+}
+
+export interface AdminJobsSnapshot {
+  total: number;
+  facets: { internships: number; remote: number; ecuador: number };
+  jobs: {
+    id: string;
+    title: string;
+    company: string;
+    kind: string;
+    workMode: string;
+    source: string;
+    relevance: number;
+    postedAt: string | null;
+    url: string;
+  }[];
+}
+
+// Reusa el endpoint PUBLICO /jobs a proposito — es exactamente lo que ve el
+// estudiante. Un endpoint de admin aparte podria divergir del real y
+// mostrar en el panel algo que en la app no aparece.
+export function fetchAdminJobsSnapshot(): Promise<AdminJobsSnapshot> {
+  return getJSON<AdminJobsSnapshot>("/jobs?limit=12&sort=relevance");
+}

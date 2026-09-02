@@ -154,22 +154,33 @@ export function assessJob(job: ScorableJob, now: Date): JobAssessment {
   const inQuito = QUITO_TERMS.some((t) => containsTerm(all, t));
   const inEcuador = ECUADOR_TERMS.some((t) => containsTerm(all, t));
 
+  // Estar en el país pesa más que cualquier otra señal de ubicación — es
+  // lo que separa "puedo postular a esto" de "esto es interesante de leer".
   if (inQuito) {
-    score += 20;
-    reasons.push("en Quito (+20)");
+    score += 26;
+    reasons.push("en Quito (+26)");
   } else if (inEcuador) {
-    score += 12;
-    reasons.push("en Ecuador (+12)");
+    score += 16;
+    reasons.push("en Ecuador (+16)");
   }
 
-  // Remoto compensa no estar en Ecuador — es la única categoría de oferta
-  // extranjera que un estudiante en Quito puede tomar de verdad. Por eso el
-  // bono es mayor cuando la oferta NO es local: ahí es cuando de verdad
-  // cambia si es alcanzable o no.
+  // Remoto suma, pero POCO y siempre lo mismo — nunca más que estar en el
+  // país.
+  //
+  // Antes el bono era mayor justamente cuando la oferta NO era local (+16
+  // contra +8), con la idea de que lo remoto "rescata" a la vacante
+  // extranjera. El efecto real, medido contra producción, fue que el
+  // listado se llenó de vacantes remotas internacionales (26 de 42) que en
+  // la práctica no le sirven a un estudiante de la EPN: piden inglés
+  // fluido, años de experiencia y contratación en otro país. Las de acá,
+  // que son las que de verdad puede tomar, quedaban debajo.
+  //
+  // Con un bono plano y chico, lo remoto sigue apareciendo — que es
+  // correcto, alguna sí sirve — pero ya nunca le gana a una vacante
+  // ecuatoriana comparable.
   if (workMode === "REMOTE") {
-    const pts = inEcuador ? 8 : 16;
-    score += pts;
-    reasons.push(`remoto (+${pts})`);
+    score += 6;
+    reasons.push("remoto (+6)");
   } else if (!inEcuador) {
     // Presencial y fuera del país: para un estudiante de la EPN esto es
     // ruido casi puro, sin importar lo buena que sea la vacante.

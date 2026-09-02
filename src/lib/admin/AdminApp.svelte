@@ -15,6 +15,7 @@
   import AdminAuditLog from "./AdminAuditLog.svelte";
   import AdminNavigation from "./AdminNavigation.svelte";
   import AdminDangerZone from "./AdminDangerZone.svelte";
+  import AdminJobs from "./AdminJobs.svelte";
   import { isAdminAuthenticated, adminLogout } from "./adminAuth.svelte";
   import { fetchAdminMe, AdminApiError, type AdminMe } from "./adminApi";
 
@@ -34,7 +35,7 @@
       });
   });
 
-  type Tab = "resumen" | "precios" | "usuarios" | "actividad" | "navegacion" | "peligro";
+  type Tab = "resumen" | "precios" | "usuarios" | "empleos" | "actividad" | "navegacion" | "peligro";
   let tab = $state<Tab>("resumen");
 
   // Menú lateral en vez de pestañas horizontales — con solo 5 secciones ya
@@ -46,6 +47,7 @@
     { id: "resumen", label: "Resumen", icon: "chart" },
     { id: "precios", label: "Precios", icon: "tag" },
     { id: "usuarios", label: "Usuarios", icon: "users" },
+    { id: "empleos", label: "Empleos", icon: "briefcase" },
     { id: "actividad", label: "Actividad", icon: "clock" },
     { id: "navegacion", label: "Navegación", icon: "compass" },
     { id: "peligro", label: "Zona de riesgo", icon: "warning" },
@@ -68,6 +70,12 @@
       <path d="M2.5 17c0-3 2.2-5 5-5s5 2 5 5" />
       <circle cx="14.5" cy="7" r="2" />
       <path d="M13 12.2c1.9.5 3.5 2.2 3.5 4.8" />
+    </svg>
+  {:else if name === "briefcase"}
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+      <rect x="2.5" y="6.5" width="15" height="10.5" rx="1.6" />
+      <path d="M7.25 6.5V5a1.2 1.2 0 0 1 1.2-1.2h3.1A1.2 1.2 0 0 1 12.75 5v1.5" />
+      <path d="M2.5 10.75h15" />
     </svg>
   {:else if name === "clock"}
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -167,6 +175,8 @@
           <AdminPricing />
         {:else if tab === "usuarios"}
           <AdminUsers />
+        {:else if tab === "empleos"}
+          <AdminJobs />
         {:else if tab === "actividad"}
           <AdminAuditLog />
         {:else if tab === "navegacion"}

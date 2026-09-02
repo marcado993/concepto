@@ -215,10 +215,7 @@ describe("assessJob — ubicacion (sesgo hacia lo alcanzable desde la EPN)", () 
     expect(fuera.score).toBeLessThan(local.score);
   });
 
-  // Remoto es la UNICA categoria de oferta extranjera que un estudiante en
-  // Quito puede tomar de verdad — por eso el bono es mayor cuando la
-  // oferta NO es local.
-  it("Dada una vacante remota en el extranjero, Cuando se evalua, Entonces recupera y sigue siendo relevante", () => {
+  it("Dada una vacante remota en el extranjero, Cuando se evalua, Entonces sigue siendo relevante — alguna si sirve", () => {
     const r = assessJob(
       job({ location: "Berlin, Alemania", description: "Fully remote backend role. Stack: node, postgres, docker." }),
       NOW
@@ -226,6 +223,98 @@ describe("assessJob — ubicacion (sesgo hacia lo alcanzable desde la EPN)", () 
 
     expect(r.relevant).toBe(true);
     expect(r.workMode).toBe("REMOTE");
+  });
+
+  // Ajuste pedido tras ver el listado REAL en produccion: 26 de 42 ofertas
+  // eran remotas internacionales que en la practica no le sirven a un
+  // estudiante de la EPN (ingles fluido, anios de experiencia,
+  // contratacion en otro pais), y empujaban abajo las de aca. Lo remoto
+  // sigue apareciendo, pero ya nunca le gana a una vacante ecuatoriana
+  // comparable.
+  it("Dada una remota extranjera y una presencial en Quito equivalentes, Cuando se comparan, Entonces gana la de Quito", () => {
+    const quito = assessJob(job({ location: "Quito, Ecuador", description: "Backend con node y postgres." }), NOW);
+    const remotaFuera = assessJob(
+      job({ location: "Berlin, Alemania", description: "Fully remote backend. Stack node, postgres." }),
+      NOW
+    );
+
+    expect(quito.score).toBeGreaterThan(remotaFuera.score);
+  });
+
+  it("Dada una remota EN Ecuador, Cuando se compara con una remota extranjera, Entonces gana la ecuatoriana", () => {
+    const remotaEc = assessJob(job({ location: "Quito, Ecuador", description: "100% remoto. Node y sql." }), NOW);
+    const remotaFuera = assessJob(job({ location: "Berlin", description: "Fully remote. Node y sql." }), NOW);
+
+    expect(remotaEc.score).toBeGreaterThan(remotaFuera.score);
+  });
+});
+
+// Pedido explicito: la carrera de Sistemas de la EPN no es solo
+// desarrollo. El vocabulario cubria casi puro "developer" y dejaba fuera
+// areas enteras donde sus egresados si trabajan.
+describe("assessJob — cobertura de TODAS las areas de Sistemas", () => {
+  const AREAS: [string, string][] = [
+    ["Cientifico de Datos Junior", "Ciencia de datos con python y machine learning"],
+    ["Analista de Datos", "Analitica de datos, power bi y sql"],
+    ["Ingeniero de Datos", "Pipeline de datos, etl y data warehouse"],
+    ["Especialista en Gobernanza de Datos", "Calidad de datos y gobierno de datos"],
+    ["Analista de Ciberseguridad", "SOC, SIEM y respuesta a incidentes"],
+    ["Pentester Junior", "Ethical hacking y gestion de vulnerabilidades"],
+    ["Auditor de Sistemas", "Auditoria informatica bajo COBIT e ITIL"],
+    ["Coordinador de Gobernanza de TI", "Gobierno de TI, ITIL y continuidad del negocio"],
+    ["Administrador de Redes", "Cisco, firewall y cableado estructurado"],
+    ["Analista de Telecomunicaciones", "Redes de datos, fibra optica y NOC"],
+    ["Administrador de Servidores", "Windows server, active directory y virtualizacion"],
+    ["Analista de Sistemas", "Tecnologias de la informacion y bases de datos"],
+    ["Soporte Tecnico TI", "Mesa de ayuda y service desk"],
+    ["Desarrollador Backend", "Node y postgresql"],
+  ];
+
+  it.each(AREAS)("Dada la vacante '%s', Cuando se evalua, Entonces es relevante", (title, description) => {
+    expect(assessJob(job({ title, description }), NOW).relevant).toBe(true);
+  });
+
+  it("Dada una pasantia de ciencia de datos en Quito, Cuando se evalua, Entonces puntua alto y es INTERNSHIP", () => {
+    const r = assessJob(
+      job({
+        title: "Pasante de Ciencia de Datos",
+        description: "Practicas preprofesionales. Python, sql y power bi.",
+        location: "Quito, Ecuador",
+      }),
+      NOW
+    );
+
+    expect(r.kind).toBe("INTERNSHIP");
+    expect(r.score).toBeGreaterThanOrEqual(70);
+  });
+
+  it("Dada una vacante de ciberseguridad, Cuando se evalua, Entonces la etiqueta como tal para poder filtrarla", () => {
+    const r = assessJob(
+      job({ title: "Analista de Ciberseguridad", description: "SIEM, SOC e ISO 27001." }),
+      NOW
+    );
+
+    expect(r.tags).toContain("Ciberseguridad");
+    expect(r.tags).toContain("SIEM");
+  });
+
+  it("Dada una vacante de BI, Cuando se evalua, Entonces 'business intelligence' e 'inteligencia de negocios' dan el MISMO tag", () => {
+    const ingles = assessJob(job({ title: "Analista Business Intelligence", description: "Power bi y sql." }), NOW);
+    const espanol = assessJob(job({ title: "Analista de Inteligencia de Negocios", description: "Power bi y sql." }), NOW);
+
+    expect(ingles.tags).toContain("BI");
+    expect(espanol.tags).toContain("BI");
+  });
+
+  // El vocabulario se amplio mucho — el riesgo real de eso es empezar a
+  // aceptar cualquier cosa. Estas siguen teniendo que quedar fuera.
+  it.each([
+    ["Asesor Comercial", "Venta de seguros"],
+    ["Auxiliar Contable", "Registro de facturas"],
+    ["Chofer Profesional", "Reparto de mercaderia"],
+    ["Enfermera", "Atencion a pacientes"],
+  ])("Dada la vacante ajena al area '%s', Cuando se evalua, Entonces sigue descartandose", (title, description) => {
+    expect(assessJob(job({ title, description }), NOW).relevant).toBe(false);
   });
 });
 

@@ -55,18 +55,52 @@ export const DOMAIN_TERMS: readonly string[] = [
   // se colaban al top del listado. Solo entra calificado.
   "devops", "sre", "qa", "qa tester", "software tester", "tester de software",
   "automation tester", "arquitecto de software",
-  "data engineer", "data scientist", "cientifico de datos", "analista de datos",
-  "data analyst", "machine learning", "inteligencia artificial",
-  "cybersecurity", "ciberseguridad", "seguridad informatica", "pentester",
-  "sysadmin", "administrador de sistemas", "administrador de base de datos", "dba",
-  "soporte tecnico", "help desk", "mesa de ayuda",
+  // --- Datos: ciencia, ingenieria, analitica, BI, gobernanza ---
+  // La carrera de Sistemas de la EPN no es solo desarrollo. Antes el
+  // vocabulario cubria casi puro "developer" y dejaba fuera areas enteras
+  // en las que sus egresados si trabajan — por eso esta seccion y las tres
+  // de abajo existen.
+  "data engineer", "data scientist", "cientifico de datos", "cientifica de datos",
+  "analista de datos", "data analyst", "ingeniero de datos", "ingeniera de datos",
+  "ciencia de datos", "analitica de datos", "analitica", "big data",
+  "business intelligence", "inteligencia de negocios", "power bi", "tableau",
+  "data warehouse", "datamart", "etl", "elt", "pipeline de datos",
+  "gobernanza de datos", "calidad de datos", "gobierno de datos",
+  "machine learning", "aprendizaje automatico", "inteligencia artificial",
+  "deep learning", "mlops", "modelos predictivos", "estadistica aplicada",
+  "base de datos", "bases de datos", "administrador de base de datos", "dba",
+  // --- Ciberseguridad ---
+  "cybersecurity", "ciberseguridad", "seguridad informatica",
+  "seguridad de la informacion", "seguridad ofensiva", "seguridad defensiva",
+  "pentester", "pentesting", "ethical hacking", "hacking etico",
+  "analista de seguridad", "ingeniero de seguridad", "soc", "siem",
+  "respuesta a incidentes", "forense digital", "informatica forense",
+  "gestion de vulnerabilidades", "iso 27001", "owasp", "blue team", "red team",
+  // --- Gobernanza / gestion de TI ---
+  "gobernanza de ti", "gobierno de ti", "gobernanza it", "gestion de ti",
+  "auditoria de sistemas", "auditor de sistemas", "auditoria informatica",
+  "cobit", "itil", "gestion de riesgos tecnologicos", "continuidad del negocio",
+  "cumplimiento normativo", "jefe de tecnologia", "coordinador de ti",
+  "analista de procesos", "mejora de procesos", "bpm",
+  "gestion de proyectos de ti", "scrum master", "product owner",
+  // --- Computacion, sistemas, infraestructura ---
+  "computacion", "ingenieria en computacion", "ciencias de la computacion",
+  "sysadmin", "administrador de sistemas", "administrador de servidores",
+  "soporte tecnico", "help desk", "mesa de ayuda", "service desk",
   "analista de sistemas", "ingeniero de sistemas", "ingeniera de sistemas",
+  "ingeniero en sistemas", "ingeniera en sistemas", "tecnologias de la informacion",
+  "virtualizacion", "vmware", "servidores", "windows server", "active directory",
   "mobile developer", "desarrollador movil", "android", "ios",
+  // --- Redes y telecomunicaciones ---
   // Mismo motivo que "tester": "redes" a secas es la mitad de "redes
   // sociales", y una vacante de Community Manager no es una vacante de
-  // Sistemas. Va calificado.
-  "cloud", "infraestructura ti", "redes de datos", "administrador de redes",
-  "ingeniero de redes", "networking",
+  // Sistemas. Va calificado, pero con todas las formas reales en que se
+  // publica una vacante de redes en Ecuador.
+  "cloud", "infraestructura ti", "infraestructura tecnologica",
+  "redes de datos", "administrador de redes", "ingeniero de redes",
+  "analista de redes", "soporte de redes", "networking", "telecomunicaciones",
+  "cisco", "ccna", "mikrotik", "fortinet", "firewall", "vpn", "lan", "wan",
+  "cableado estructurado", "fibra optica", "noc",
   // Stacks y herramientas (también sirven de tags, ver STACK_TAGS)
   "javascript", "typescript", "python", "java", "kotlin", "swift",
   "csharp", "c#", ".net", "dotnet", "php", "laravel", "ruby", "rails",
@@ -193,8 +227,33 @@ export const STACK_TAGS: ReadonlyMap<string, string> = new Map([
   ["aws", "AWS"], ["azure", "Azure"], ["gcp", "GCP"],
   ["graphql", "GraphQL"], ["linux", "Linux"], ["git", "Git"],
   ["machine learning", "Machine Learning"], ["inteligencia artificial", "IA"],
+  ["deep learning", "Machine Learning"], ["mlops", "MLOps"],
   ["ciberseguridad", "Ciberseguridad"], ["cybersecurity", "Ciberseguridad"],
+  ["seguridad informatica", "Ciberseguridad"], ["pentesting", "Pentesting"],
+  ["ethical hacking", "Pentesting"], ["siem", "SIEM"], ["soc", "SOC"],
+  ["iso 27001", "ISO 27001"], ["owasp", "OWASP"],
   ["devops", "DevOps"], ["qa", "QA"],
+  // Datos y BI — el estudiante que busca "datos" filtra por estos chips,
+  // asi que las variantes ("business intelligence"/"inteligencia de
+  // negocios") colapsan al mismo tag, igual que node/nodejs/node.js.
+  ["ciencia de datos", "Ciencia de Datos"], ["data science", "Ciencia de Datos"],
+  ["big data", "Big Data"], ["power bi", "Power BI"], ["tableau", "Tableau"],
+  ["business intelligence", "BI"], ["inteligencia de negocios", "BI"],
+  ["data warehouse", "Data Warehouse"], ["etl", "ETL"],
+  ["gobernanza de datos", "Gobernanza de Datos"],
+  ["gobierno de datos", "Gobernanza de Datos"],
+  // Gobernanza y gestion de TI
+  ["gobernanza de ti", "Gobernanza TI"], ["gobierno de ti", "Gobernanza TI"],
+  ["cobit", "COBIT"], ["itil", "ITIL"],
+  ["auditoria de sistemas", "Auditoria TI"], ["auditoria informatica", "Auditoria TI"],
+  ["scrum master", "Scrum"],
+  // Redes e infraestructura
+  ["cisco", "Cisco"], ["ccna", "Cisco"], ["fortinet", "Fortinet"],
+  ["mikrotik", "MikroTik"], ["telecomunicaciones", "Redes"],
+  ["redes de datos", "Redes"], ["administrador de redes", "Redes"],
+  ["ingeniero de redes", "Redes"], ["networking", "Redes"],
+  ["vmware", "VMware"], ["active directory", "Active Directory"],
+  ["windows server", "Windows Server"],
 ]);
 
 /**
