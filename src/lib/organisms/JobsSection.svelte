@@ -7,16 +7,26 @@
   // obligado a App.svelte a conocer los filtros de empleos para poder
   // volver a pedirlos en cada cambio.
   import { fetchJobs, type JobFilters, type JobListResult, type JobOfferPublic } from "../api";
+  import Select from "../Select.svelte";
+  import { tituloLegible } from "../jobTitle";
 
   let result = $state<JobListResult | null>(null);
   let loadError = $state(false);
   let loading = $state(true);
 
   let search = $state("");
-  let kind = $state<JobFilters["kind"] | "">("");
-  let workMode = $state<JobFilters["workMode"] | "">("");
+  // El desplegable propio trabaja con `string` (es lo que maneja cualquier
+  // control de formulario); acá se estrecha al tipo real del filtro en un
+  // solo lugar, en vez de castear en cada uso.
+  let kindValue = $state("");
+  let workModeValue = $state("");
+  let sortValue = $state("relevance");
+
+  const kind = $derived((kindValue || undefined) as JobFilters["kind"] | undefined);
+  const workMode = $derived((workModeValue || undefined) as JobFilters["workMode"] | undefined);
+  const sort = $derived(sortValue as "relevance" | "recent");
+
   let onlyEcuador = $state(true);
-  let sort = $state<"relevance" | "recent">("relevance");
   let activeTag = $state<string>("");
 
   /**
@@ -70,8 +80,8 @@
 
   const filters = $derived<JobFilters>({
     q: searchDebounced.trim() || undefined,
-    kind: kind || undefined,
-    workMode: workMode || undefined,
+    kind,
+    workMode,
     ecuador: onlyEcuador || undefined,
     tag: activeTag || undefined,
     maxAgeDays: maxAgeDays ?? undefined,
@@ -201,25 +211,37 @@
     </div>
 
     <div class="jobs-selects">
-      <select bind:value={kind} aria-label="Tipo de oferta">
-        <option value="">Todo tipo</option>
-        <option value="INTERNSHIP">Pasantías</option>
-        <option value="FULL_TIME">Tiempo completo</option>
-        <option value="PART_TIME">Medio tiempo</option>
-        <option value="CONTRACT">Por contrato</option>
-      </select>
+      <Select
+        bind:value={kindValue}
+        label="Tipo de oferta"
+        options={[
+          { value: "", label: "Todo tipo" },
+          { value: "INTERNSHIP", label: "Pasantías" },
+          { value: "FULL_TIME", label: "Tiempo completo" },
+          { value: "PART_TIME", label: "Medio tiempo" },
+          { value: "CONTRACT", label: "Por contrato" },
+        ]}
+      />
 
-      <select bind:value={workMode} aria-label="Modalidad">
-        <option value="">Toda modalidad</option>
-        <option value="REMOTE">Remoto</option>
-        <option value="HYBRID">Híbrido</option>
-        <option value="ONSITE">Presencial</option>
-      </select>
+      <Select
+        bind:value={workModeValue}
+        label="Modalidad"
+        options={[
+          { value: "", label: "Toda modalidad" },
+          { value: "REMOTE", label: "Remoto" },
+          { value: "HYBRID", label: "Híbrido" },
+          { value: "ONSITE", label: "Presencial" },
+        ]}
+      />
 
-      <select bind:value={sort} aria-label="Orden">
-        <option value="relevance">Más relevantes</option>
-        <option value="recent">Más recientes</option>
-      </select>
+      <Select
+        bind:value={sortValue}
+        label="Orden"
+        options={[
+          { value: "relevance", label: "Más relevantes" },
+          { value: "recent", label: "Más recientes" },
+        ]}
+      />
     </div>
 
     <label class="jobs-toggle">
@@ -283,7 +305,7 @@
             </span>
 
             <span class="job-titles">
-              <span class="job-title">{job.title}</span>
+              <span class="job-title">{tituloLegible(job.title)}</span>
               <span class="job-company">
                 {job.company || "Confidencial"}{#if job.location}<span class="job-sep">·</span>{job.location}{/if}
               </span>
@@ -401,20 +423,6 @@
     flex-wrap: wrap;
   }
 
-  .jobs-selects select {
-    flex: 1 1 auto;
-    min-width: 120px;
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #eef4fb;
-    font-size: 12.5px;
-  }
-  .jobs-selects select:focus {
-    outline: none;
-    border-color: var(--sheet-accent, #5b8def);
-  }
 
   .jobs-toggle {
     display: flex;
@@ -562,11 +570,22 @@
     gap: 2px;
   }
 
+  /* Atkinson Hyperlegible (--font-display), NO la display condensada.
+     El propio app.css dice que --font-heading es "SOLO títulos cortos y
+     etiquetas, nunca oraciones largas", y un puesto como "Pasante Business
+     Intelligence" es exactamente una oración larga. Atkinson es del Braille
+     Institute, hecha para dislexia y baja visión: diferencia I/l/1 y O/0, y
+     tiene siluetas de palabra mucho más marcadas.
+
+     El interlineado sube a 1.4 y el tamaño a 15px por el mismo motivo:
+     apretado y condensado se lee peor, y este texto es el dato principal de
+     la tarjeta, no un adorno. */
   .job-title {
-    font-family: var(--font-heading);
-    font-weight: 600;
-    font-size: 14.5px;
-    line-height: 1.3;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    line-height: 1.4;
+    letter-spacing: 0.005em;
     color: #f4f9ff;
     /* Una sola línea con elipsis: con títulos de 3 líneas las tarjetas
        cambiaban de alto y la lista se volvía imposible de escanear. El
@@ -577,8 +596,11 @@
   }
 
   .job-company {
-    font-size: 11.5px;
-    color: rgba(234, 255, 245, 0.55);
+    font-family: var(--font-display);
+    font-size: 12px;
+    /* De 0.55 a 0.68 de opacidad: a 12 px, 0.55 sobre este fondo quedaba
+       por debajo del contraste mínimo legible. */
+    color: rgba(234, 255, 245, 0.68);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
