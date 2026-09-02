@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../shared/prisma/prisma.service";
 import { QueryJobsDto } from "./dto/query-jobs.dto";
-import { ECUADOR_TERMS } from "./relevance/taxonomy";
+import { ECUADOR_TERMS, GLOBAL_REMOTE_TERMS } from "./relevance/taxonomy";
 
 // Vista pública de una oferta. Se define aparte del modelo de Prisma a
 // propósito: `reasons` (la explicación del puntaje) y `sourceId` son para
@@ -199,17 +199,36 @@ function buildWhere(query: QueryJobsDto): Prisma.JobOfferWhereInput {
 }
 
 /**
- * "Alcanzable desde Ecuador" = está en Ecuador **o** es remota.
+ * "Alcanzable desde Ecuador" = está en Ecuador, **o** es remota Y de verdad
+ * abierta al mundo.
  *
- * Lo remoto entra a propósito: para un estudiante en Quito, una vacante
- * remota de una empresa extranjera es tan tomable como una de Quito, y
- * dejarla fuera de este filtro escondía la mitad de lo que sí puede
- * conseguir.
+ * Esa segunda condición no estaba y es la que importa: antes bastaba con
+ * `workMode: REMOTE`, y eso dejaba entrar "Remote — Munich" o "Full Remote
+ * aus Bayern", que NO quieren decir que contraten desde acá sino "desde tu
+ * casa, en Alemania" — piden permiso de trabajo local y casi siempre el
+ * idioma. Medido en producción, 10 de las remotas estaban atadas a una
+ * ciudad alemana o al Reino Unido, y el filtro las presentaba como
+ * tomables.
+ *
+ * Una remota SIN ubicación sí entra: las bolsas de remoto puro no la
+ * publican justamente porque no aplica.
  */
 function ecuadorFilter(): Prisma.JobOfferWhereInput {
   return {
     OR: [
-      { workMode: "REMOTE" },
+      // Remota y abierta: sin lugar declarado, o el lugar dice
+      // explícitamente que no está atada a un país.
+      {
+        workMode: "REMOTE",
+        OR: [
+          { location: null },
+          { location: "" },
+          ...GLOBAL_REMOTE_TERMS.map((t) => ({
+            location: { contains: t, mode: "insensitive" as const },
+          })),
+        ],
+      },
+      // O simplemente está en Ecuador (presencial, híbrida o remota).
       ...ECUADOR_TERMS.map((city) => ({
         location: { contains: city, mode: "insensitive" as const },
       })),

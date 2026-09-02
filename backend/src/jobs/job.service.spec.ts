@@ -79,17 +79,33 @@ describe("JobService.list — filtros", () => {
     expect(or[0].title).toEqual({ contains: "java", mode: "insensitive" });
   });
 
-  // Para un estudiante en Quito, una vacante remota de una empresa
-  // extranjera es tan tomable como una de Quito. Dejarla fuera de este
-  // filtro escondia la mitad de lo que si puede conseguir.
-  it("Dado ecuador=true, Cuando se lista, Entonces incluye tambien las REMOTAS y no solo las locales", async () => {
+  // Una remota extranjera puede ser tan tomable como una de Quito — pero
+  // SOLO si de verdad esta abierta al mundo. "Remote - Munich" no quiere
+  // decir que contraten desde aca.
+  it("Dado ecuador=true, Cuando se lista, Entonces incluye las remotas ABIERTAS y las locales", async () => {
     const { service, prisma } = await buildService();
 
     await service.list({ ecuador: true } as QueryJobsDto);
 
     const or = prisma.jobOffer.findMany.mock.calls[0][0].where.OR;
-    expect(or).toContainEqual({ workMode: "REMOTE" });
     expect(or.some((c: any) => c.location?.contains === "quito")).toBe(true);
+
+    const remota = or.find((c: any) => c.workMode === "REMOTE");
+    expect(remota).toBeDefined();
+    // La rama de remotas exige ademas que el lugar no la ate a un pais.
+    expect(remota.OR).toContainEqual({ location: null });
+    expect(remota.OR.some((c: any) => c.location?.contains === "latam")).toBe(true);
+  });
+
+  // La regresion que este filtro existe para evitar: una remota atada a
+  // una ciudad extranjera NO puede colarse solo por ser remota.
+  it("Dado ecuador=true, Cuando se lista, Entonces la rama de remotas NUNCA acepta workMode solo", async () => {
+    const { service, prisma } = await buildService();
+
+    await service.list({ ecuador: true } as QueryJobsDto);
+
+    const or = prisma.jobOffer.findMany.mock.calls[0][0].where.OR;
+    expect(or).not.toContainEqual({ workMode: "REMOTE" });
   });
 
   it("Dado ecuador=false, Cuando se lista, Entonces NO aplica el filtro de ubicacion", async () => {

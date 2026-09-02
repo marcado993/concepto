@@ -11,6 +11,7 @@ import {
   HYBRID_TERMS,
   ECUADOR_TERMS,
   QUITO_TERMS,
+  GLOBAL_REMOTE_TERMS,
   STACK_TAGS,
 } from "./taxonomy";
 
@@ -215,6 +216,22 @@ export function assessJob(job: ScorableJob, now: Date): JobAssessment {
     reasons.push("en Ecuador (+16)");
   }
 
+  // ¿El remoto es de verdad alcanzable desde Ecuador?
+  //
+  // "Remote — Munich" o "Full Remote aus Bayern" NO quieren decir que
+  // contraten desde acá: quieren decir "desde tu casa, en Alemania". Piden
+  // permiso de trabajo local y casi siempre el idioma. Contarlos como
+  // alcanzables llenaba el listado de vacantes imposibles — medido en
+  // producción, 10 de las remotas estaban atadas a una ciudad alemana o al
+  // Reino Unido.
+  //
+  // Sin ubicación se asume abierto: las bolsas de remoto puro (Remote OK)
+  // no la publican justamente porque no aplica.
+  const remoteAbierto =
+    place.trim() === "" ||
+    inEcuador ||
+    GLOBAL_REMOTE_TERMS.some((t) => containsTerm(place, t));
+
   // Remoto suma, pero POCO y siempre lo mismo — nunca más que estar en el
   // país.
   //
@@ -229,9 +246,14 @@ export function assessJob(job: ScorableJob, now: Date): JobAssessment {
   // Con un bono plano y chico, lo remoto sigue apareciendo — que es
   // correcto, alguna sí sirve — pero ya nunca le gana a una vacante
   // ecuatoriana comparable.
-  if (workMode === "REMOTE") {
+  if (workMode === "REMOTE" && remoteAbierto) {
     score += 6;
     reasons.push("remoto (+6)");
+  } else if (workMode === "REMOTE" && !remoteAbierto) {
+    // Mismo castigo que una presencial en el extranjero, porque en la
+    // práctica es lo mismo: no se puede tomar desde acá.
+    score -= 25;
+    reasons.push("remoto pero atado a otro pais (-25)");
   } else if (!inEcuador) {
     // Presencial y fuera del país: para un estudiante de la EPN esto es
     // ruido casi puro, sin importar lo buena que sea la vacante.

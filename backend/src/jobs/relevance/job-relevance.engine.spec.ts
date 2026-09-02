@@ -99,7 +99,10 @@ describe("assessJob — clasificacion de dominio", () => {
         title: "Senior DevOps Engineer",
         company: "Localstack",
         description: "Fully remote. Kubernetes, docker, aws.",
-        location: "United Kingdom",
+        // Remota ABIERTA, no atada a un pais: lo que este test comprueba es
+        // que el castigo por senior no expulse una vacante legitima, no la
+        // regla de alcance geografico (que tiene sus propios tests).
+        location: "Worldwide",
         postedAt: daysAgo(0),
       }),
       NOW
@@ -268,9 +271,43 @@ describe("assessJob — ubicacion (sesgo hacia lo alcanzable desde la EPN)", () 
     expect(fuera.score).toBeLessThan(local.score);
   });
 
+  // "Remote - Munich" o "Full Remote aus Bayern" NO significan que
+  // contraten desde Ecuador: significan "desde tu casa, EN ALEMANIA".
+  // Piden permiso de trabajo local y casi siempre el idioma. Medido en
+  // produccion: 10 de las remotas activas estaban atadas a una ciudad
+  // alemana o al Reino Unido, y se presentaban como tomables.
+  it.each([["Munich"], ["Berlin"], ["Berlin; Frankfurt; Munich"], ["Dusseldorf"], ["Remote - UK"], ["United Kingdom"]])(
+    "Dada una remota atada a '%s', Cuando se evalua, Entonces se castiga igual que una presencial en el extranjero",
+    (location) => {
+      const atada = assessJob(job({ location, description: "Fully remote. Node, docker, aws." }), NOW);
+      const abierta = assessJob(job({ location: "Worldwide", description: "Fully remote. Node, docker, aws." }), NOW);
+
+      expect(atada.score).toBeLessThan(abierta.score);
+      expect(atada.reasons.join(" ")).toContain("atado a otro pais");
+    }
+  );
+
+  // La contraparte: lo que de verdad esta abierto SI cuenta, y ahi Ecuador
+  // esta incluido.
+  it.each([["Worldwide"], ["Anywhere"], ["LATAM, Europe, USA, Canada, APAC"], ["America Latina"], [null]])(
+    "Dada una remota ABIERTA en '%s', Cuando se evalua, Entonces suma como alcanzable",
+    (location) => {
+      const r = assessJob(job({ location, description: "Fully remote. Node, docker, aws." }), NOW);
+
+      expect(r.reasons.join(" ")).toContain("remoto (+6)");
+      expect(r.relevant).toBe(true);
+    }
+  );
+
+  it("Dada una remota EN Ecuador, Cuando se evalua, Entonces nunca se confunde con una atada al extranjero", () => {
+    const r = assessJob(job({ location: "Pichincha, Ecuador", description: "Remoto. Node y sql." }), NOW);
+
+    expect(r.reasons.join(" ")).not.toContain("atado a otro pais");
+  });
+
   it("Dada una vacante remota en el extranjero, Cuando se evalua, Entonces sigue siendo relevante — alguna si sirve", () => {
     const r = assessJob(
-      job({ location: "Berlin, Alemania", description: "Fully remote backend role. Stack: node, postgres, docker." }),
+      job({ location: "Worldwide", description: "Fully remote backend role. Stack: node, postgres, docker." }),
       NOW
     );
 

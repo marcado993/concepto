@@ -236,6 +236,26 @@ export const ECUADOR_TERMS: readonly string[] = [
 export const QUITO_TERMS: readonly string[] = ["quito", "pichincha"];
 
 /**
+ * Señales de que un puesto remoto está ABIERTO al mundo, no encerrado en
+ * un país.
+ *
+ * Distinguirlo importa más de lo que parece: "Remote — Munich" o
+ * "Full Remote aus Bayern" NO significan que contraten desde Ecuador,
+ * significan "trabajás desde tu casa, en Alemania". Piden permiso de
+ * trabajo local y casi siempre el idioma. Contarlos como alcanzables
+ * llenaba el listado de vacantes a las que un estudiante de la EPN no
+ * puede postular — medido en producción: 10 de las remotas venían atadas
+ * a una ciudad alemana o al Reino Unido.
+ *
+ * "latam" y "america latina" entran porque ahí Ecuador SÍ está incluido.
+ */
+export const GLOBAL_REMOTE_TERMS: readonly string[] = [
+  "worldwide", "anywhere", "global", "globally", "international",
+  "latam", "america latina", "latinoamerica", "latin america",
+  "cualquier lugar", "sin importar", "any country", "remote first",
+];
+
+/**
  * Mapa término→tag para las etiquetas de stack que ve el estudiante.
  *
  * Es un mapa y no la lista cruda de DOMAIN_TERMS porque varios términos
