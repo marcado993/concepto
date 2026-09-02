@@ -19,6 +19,20 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# Un solo pipeline a la vez por rama — el job de despliegue corre
+# `docker compose build` y `up --force-recreate` por SSH sobre EL MISMO
+# VPS, así que dos ejecuciones simultáneas (dos commits seguidos, o un
+# push mientras otro sigue corriendo) se pisarían construyendo la misma
+# imagen y recreando el mismo contenedor al mismo tiempo.
+#
+# cancel-in-progress: false a propósito — para un pipeline de despliegue,
+# encolar es lo correcto y cancelar es peligroso: matar un run a mitad del
+# `docker compose build` deja la instancia en un estado a medias, sin
+# nadie mirando. Se espera y se despliega en orden.
+concurrency:
+  group: devsecops-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   security-events: write # requerido para subir resultados SARIF a la pestaña Security

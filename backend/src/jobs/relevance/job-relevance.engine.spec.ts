@@ -258,7 +258,8 @@ describe("assessJob — cobertura de TODAS las areas de Sistemas", () => {
     ["Analista de Datos", "Analitica de datos, power bi y sql"],
     ["Ingeniero de Datos", "Pipeline de datos, etl y data warehouse"],
     ["Especialista en Gobernanza de Datos", "Calidad de datos y gobierno de datos"],
-    ["Analista de Ciberseguridad", "SOC, SIEM y respuesta a incidentes"],
+    ["Analista de Ciberseguridad", "SIEM y respuesta a incidentes"],
+    ["Analista SOC", "Centro de operaciones de seguridad, turnos rotativos"],
     ["Pentester Junior", "Ethical hacking y gestion de vulnerabilidades"],
     ["Auditor de Sistemas", "Auditoria informatica bajo COBIT e ITIL"],
     ["Coordinador de Gobernanza de TI", "Gobierno de TI, ITIL y continuidad del negocio"],
@@ -297,6 +298,23 @@ describe("assessJob — cobertura de TODAS las areas de Sistemas", () => {
     expect(r.tags).toContain("Ciberseguridad");
     expect(r.tags).toContain("SIEM");
   });
+
+  // Riesgos de falso positivo propios del espanol de Ecuador, detectados al
+  // ampliar el vocabulario: el nombre de la empresa y la descripcion entran
+  // al texto evaluado, asi que una sigla corta puede colarse por donde no
+  // es. "soc" choca con "Soc. Anonima" (como se escribe toda sociedad
+  // anonima) y "servidores" con "servidores publicos" (los funcionarios del
+  // Estado). Ambos quedaron calificados por eso.
+  it.each([
+    ["Asistente Administrativa", "Manejo de agenda", "Constructora Andina Soc. Anonima"],
+    ["Analista de Talento Humano", "Seleccion para servidores publicos del ministerio", "Ministerio"],
+    ["Secretaria Ejecutiva", "Archivo y recepcion", "Comercial Soc. Anonima"],
+  ])(
+    "Dada la vacante ajena al area '%s' en '%s', Cuando se evalua, Entonces NO se cuela por una sigla corta",
+    (title, description, company) => {
+      expect(assessJob(job({ title, description, company, location: "Quito, Ecuador" }), NOW).relevant).toBe(false);
+    }
+  );
 
   it("Dada una vacante de BI, Cuando se evalua, Entonces 'business intelligence' e 'inteligencia de negocios' dan el MISMO tag", () => {
     const ingles = assessJob(job({ title: "Analista Business Intelligence", description: "Power bi y sql." }), NOW);

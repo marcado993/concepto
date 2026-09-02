@@ -73,7 +73,12 @@ export const DOMAIN_TERMS: readonly string[] = [
   "cybersecurity", "ciberseguridad", "seguridad informatica",
   "seguridad de la informacion", "seguridad ofensiva", "seguridad defensiva",
   "pentester", "pentesting", "ethical hacking", "hacking etico",
-  "analista de seguridad", "ingeniero de seguridad", "soc", "siem",
+  // "soc" a secas NO va: en Ecuador las empresas se escriben "Acme Soc.
+  // Anonima" y el nombre de la empresa entra al texto que se evalua, asi
+  // que cualquier vacante de esa empresa habria hecho match. Mismo criterio
+  // que "tester" y "redes".
+  "analista de seguridad", "ingeniero de seguridad", "siem",
+  "analista soc", "centro de operaciones de seguridad",
   "respuesta a incidentes", "forense digital", "informatica forense",
   "gestion de vulnerabilidades", "iso 27001", "owasp", "blue team", "red team",
   // --- Gobernanza / gestion de TI ---
@@ -89,7 +94,11 @@ export const DOMAIN_TERMS: readonly string[] = [
   "soporte tecnico", "help desk", "mesa de ayuda", "service desk",
   "analista de sistemas", "ingeniero de sistemas", "ingeniera de sistemas",
   "ingeniero en sistemas", "ingeniera en sistemas", "tecnologias de la informacion",
-  "virtualizacion", "vmware", "servidores", "windows server", "active directory",
+  // "servidores" a secas tampoco: "servidor publico" / "servidores
+  // publicos" es como se llama a los funcionarios del Estado en Ecuador, y
+  // toda convocatoria publica lo usa. Va solo calificado (arriba ya esta
+  // "administrador de servidores").
+  "virtualizacion", "vmware", "windows server", "active directory",
   "mobile developer", "desarrollador movil", "android", "ios",
   // --- Redes y telecomunicaciones ---
   // Mismo motivo que "tester": "redes" a secas es la mitad de "redes
@@ -230,7 +239,8 @@ export const STACK_TAGS: ReadonlyMap<string, string> = new Map([
   ["deep learning", "Machine Learning"], ["mlops", "MLOps"],
   ["ciberseguridad", "Ciberseguridad"], ["cybersecurity", "Ciberseguridad"],
   ["seguridad informatica", "Ciberseguridad"], ["pentesting", "Pentesting"],
-  ["ethical hacking", "Pentesting"], ["siem", "SIEM"], ["soc", "SOC"],
+  ["ethical hacking", "Pentesting"], ["siem", "SIEM"],
+  ["centro de operaciones de seguridad", "SOC"], ["analista soc", "SOC"],
   ["iso 27001", "ISO 27001"], ["owasp", "OWASP"],
   ["devops", "DevOps"], ["qa", "QA"],
   // Datos y BI — el estudiante que busca "datos" filtra por estos chips,
