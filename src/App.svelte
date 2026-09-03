@@ -178,11 +178,23 @@
 
   $effect(() => {
     if (typeof window === "undefined") return;
-    // Entrada base del menú: sin esto, el primer "atrás" desde una sección
-    // no tendría a dónde volver dentro de la app.
-    if (!history.state?.aeisView) {
-      history.replaceState({ aeisView: "inicio" }, "");
-    }
+    // Entrada base del menú, SIEMPRE — no solo cuando no hay estado.
+    //
+    // El navegador conserva `history.state` entre recargas, pero
+    // `mobileView` es $state("inicio") y siempre arranca en el menú. Si se
+    // recargaba estando DENTRO de una sección, el historial se quedaba
+    // diciendo "seccion" mientras la pantalla mostraba el menú, y con esa
+    // condición de más (`if (!history.state?.aeisView)`) nadie lo corregía.
+    //
+    // El efecto era el bug reportado: tras recargar, entrar a una sección
+    // apilaba una SEGUNDA entrada "seccion" sobre la vieja, así que
+    // "Volver" hacía history.back() y caía en la anterior — que también era
+    // "seccion" — y la pantalla no se movía. Había que tocar dos veces.
+    //
+    // Pisar el estado en cada montaje lo mantiene sincronizado con lo que
+    // de verdad se está viendo, que es la única forma de que "Volver" y el
+    // "atrás" del teléfono no se desfasen.
+    history.replaceState({ aeisView: "inicio" }, "");
     const onPop = (e: PopStateEvent) => {
       const vista = (e.state as { aeisView?: string } | null)?.aeisView;
       navDir = vista === "seccion" ? 1 : -1;
