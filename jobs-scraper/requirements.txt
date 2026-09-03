@@ -10,6 +10,34 @@ python-jobspy==1.1.82
 # y panchito/sources/base.py::lanzar_navegador).
 playwright==1.49.1
 
+# Scrapling (https://github.com/D4Vinci/Scrapling) — mueve la fuente
+# trabajo.org y aporta lo que Playwright NO cubre: la huella TLS/HTTP2.
+# Un GET con User-Agent de Chrome miente en la cabecera pero saluda en TLS
+# como Python, y esa contradiccion es justo lo que mira un WAF.
+scrapling==0.4.15
+
+# Las dependencias del extra `scrapling[fetchers]` van SUELTAS a proposito.
+# Ese extra declara `playwright>=1.62.0`, y subir Playwright aca es
+# arriesgado: en el VPS (ARM64) usamos el Chromium DEL SISTEMA, y un
+# Playwright mas nuevo contra un Chromium mas viejo desincroniza el
+# protocolo y tumba los tres scrapers que hoy funcionan. Verificado el
+# 2026-09-03 que Scrapling 0.4.15 corre bien con playwright 1.49.1: la
+# unica razon del `>=1.62` es su modo navegador, que esta fuente no usa.
+curl_cffi>=0.16.1
+
+# patchright FIJADO en 1.51.3, y no es un capricho: Scrapling lo importa si
+# o si (hasta su fetcher HTTP hace `from patchright._impl._errors import
+# Error`), pero la 1.62.x pide `pyee>=13` y playwright 1.49.1 fija
+# `pyee==12.0.0` EXACTO. Instalar ambos revienta la resolucion de pip y el
+# build de la imagen falla entero. La 1.51.3 pide `pyee>=12,<13`, que es el
+# unico punto donde las dos conviven.
+patchright==1.51.3
+browserforge>=1.2.4
+apify-fingerprint-datapoints>=0.15.0
+msgspec>=0.21.1
+anyio>=4.14.0
+protego>=0.6.2
+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4

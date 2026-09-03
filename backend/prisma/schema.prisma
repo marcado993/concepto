@@ -335,7 +335,7 @@ model JobOffer {
   // ingest — el dedupe en memoria solo cubre un lote.
   fingerprint String @unique
 
-  source      String // "epn" | "indeed" | "multitrabajos" | "computrabajo" | ...
+  source      String // "epn" | "indeed" | "multitrabajos" | "computrabajo" | "trabajo_org" | ...
   sourceId    String
   url         String
   // Logo de la empresa. Reconocer un logo es mas rapido que leer un nombre

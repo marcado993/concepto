@@ -107,7 +107,7 @@ class Config:
     fuentes: list[str] = field(
         default_factory=lambda: _lista_env(
             "SCRAPER_FUENTES",
-            ["epn", "indeed", "linkedin", "multitrabajos", "computrabajo"],
+            ["epn", "indeed", "linkedin", "multitrabajos", "computrabajo", "trabajo_org"],
         )
     )
 

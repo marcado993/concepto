@@ -26,7 +26,14 @@ import { parseDate, stripHtml, truncate, RawJob } from "../normalize/normalize";
 // un 500 que tiraria tambien las fuentes que si funcionaron.
 
 /** Nombres tal como los reporta el servicio Python. */
-export const SCRAPER_SOURCES = ["epn", "indeed", "linkedin", "multitrabajos", "computrabajo"] as const;
+export const SCRAPER_SOURCES = [
+  "epn",
+  "indeed",
+  "linkedin",
+  "multitrabajos",
+  "computrabajo",
+  "trabajo_org",
+] as const;
 
 /**
  * Cuanto se espera a que termine una corrida completa.

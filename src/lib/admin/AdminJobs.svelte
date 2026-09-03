@@ -2,7 +2,7 @@
   // Bolsa de empleo — lo que el estudiante ve, más el botón de refresco.
   //
   // La lista NO es editable a propósito: las ofertas se ingestan de bolsas
-  // externas (Bolsa EPN, Multitrabajos, Computrabajo, Indeed y LinkedIn,
+  // externas (Bolsa EPN, Multitrabajos, Computrabajo, Trabajo.org, Indeed y LinkedIn,
   // más las APIs de Remotive/Remote OK/Arbeitnow), no las publica AEIS. Dejar que la directiva editara un título o un sueldo acá
   // significaría mostrarle al estudiante algo distinto de lo que dice la
   // oferta real, y el link lleva a esa oferta real. Lo que sí necesita el
@@ -74,7 +74,8 @@
       <h2 class="font-heading text-xl text-ink">Bolsa de empleo</h2>
       <p class="mt-1 max-w-prose text-sm text-ink-2">
         Pasantías y vacantes de Sistemas que la app muestra a los estudiantes. Se actualizan solas cada 3 horas
-        desde la Bolsa EPN, Multitrabajos, Computrabajo, Indeed y LinkedIn.
+        desde la Bolsa EPN, Multitrabajos, Computrabajo, Trabajo.org, Indeed y
+        LinkedIn.
       </p>
     </div>
     <button

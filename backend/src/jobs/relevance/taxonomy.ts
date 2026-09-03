@@ -204,6 +204,18 @@ export const NOISE_TERMS: readonly string[] = [
   "redes sociales", "community manager", "gestion de redes sociales",
   "sistemas de gestion", "sistema de gestion", "sistemas contables",
   "sistemas integrados de gestion", "sistemas de calidad",
+  // Vistos en avisos REALES de trabajo.org (2026-09-03). Todos llevaban un
+  // termino del area en el titulo y aun asi son puestos de ventas: en
+  // Ecuador "desarrollador comercial" es quien abre mercado, no quien
+  // programa, y llegaba a 99 puntos encabezando el listado.
+  //
+  // "desarrollo comercial" ya estaba, pero no cubria "desarrollaDOR
+  // comercial": son palabras distintas y el match es por termino, no por
+  // raiz.
+  "desarrollador comercial", "desarrolladora comercial", "perfil comercial",
+  "redes comerciales", "gestor comercial", "ejecutivo de ventas",
+  "ingeniero de ventas", "ingeniera de ventas",
+  "asesor de ventas", "asesora de ventas", "asistente contable",
 ];
 
 /**

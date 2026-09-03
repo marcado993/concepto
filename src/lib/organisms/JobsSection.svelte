@@ -150,6 +150,7 @@
     Indeed: { bg: "#2557a7", fg: "#ffffff", short: "id" },
     Multitrabajos: { bg: "#7b2ff2", fg: "#ffffff", short: "MT" },
     Computrabajo: { bg: "#e8542f", fg: "#ffffff", short: "CT" },
+    "Trabajo.org": { bg: "#1d4ed8", fg: "#ffffff", short: "TO" },
     "Remote OK": { bg: "#ff4742", fg: "#ffffff", short: "OK" },
     Remotive: { bg: "#1c3d5a", fg: "#8fd3ff", short: "Rm" },
     Arbeitnow: { bg: "#334155", fg: "#cbd5e1", short: "An" },
@@ -292,7 +293,7 @@
            es de hoy o de la semana pasada — justo en un módulo cuyo valor
            entero es la frescura. -->
       {#if result.updatedAt}
-        <p class="jobs-sync" title="Las ofertas se traen automáticamente de Bolsa EPN, Multitrabajos, Computrabajo, Indeed y LinkedIn">
+        <p class="jobs-sync" title="Las ofertas se traen automáticamente de Bolsa EPN, Multitrabajos, Computrabajo, Trabajo.org, Indeed y LinkedIn">
           <span class="sync-dot" aria-hidden="true"></span>
           Actualizado {haceCuanto(result.updatedAt)} · se revisa cada {result.refreshHours} h
         </p>

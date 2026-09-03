@@ -99,7 +99,19 @@ export function assessJob(job: ScorableJob, now: Date): JobAssessment {
   // MENCIONA "software" en el cuerpo no es una oferta de software, pero una
   // que lo lleva en el título casi siempre sí. Por eso se puntúan aparte.
   const title = normalizeForMatch(job.title);
-  const body = normalizeForMatch(`${job.description} ${job.company}`);
+  // El nombre de la EMPRESA queda FUERA del texto que se puntúa, a propósito.
+  //
+  // Medido sobre 516 avisos reales de trabajo.org: incluirlo no rescataba
+  // ni una sola oferta legítima —la única que dependía solo del nombre era
+  // "Asistente De Inventarios" en una empresa de logística llamada EXPRESS,
+  // que hacía match con Express.js— y en cambio le regalaba señal del área
+  // a cualquier puesto publicado por una empresa de tecnología: un
+  // "Auxiliar administrativo" en "Bullhost Cloud Service" cobraba por la
+  // palabra "cloud" del membrete.
+  //
+  // Dónde trabaja alguien no dice de qué es el puesto. Esto vale para los
+  // cuatro ejes que leen este texto: área, ruido, tipo y seniority.
+  const body = normalizeForMatch(job.description);
   const place = normalizeForMatch(job.location ?? "");
   const all = `${title} ${body} ${place}`;
 

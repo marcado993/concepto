@@ -30,6 +30,12 @@ export const SOURCE_PRIORITY: Readonly<Record<string, number>> = {
   indeed: 100,
   multitrabajos: 95,
   computrabajo: 90,
+  // Trabajo.org va por ENCIMA de Computrabajo pese a ser un agregador: es
+  // la unica fuente local cuyo listado trae la descripcion completa (100%
+  // de sus avisos, medido sobre 577). Computrabajo no publica ninguna en el
+  // listado, asi que ante la misma vacante en ambas, la de trabajo.org es
+  // la que el motor puede leer de verdad.
+  trabajo_org: 92,
   linkedin: 85,
   // APIs internacionales: datos limpios y completos, pero casi todo lo que
   // traen es remoto del exterior.

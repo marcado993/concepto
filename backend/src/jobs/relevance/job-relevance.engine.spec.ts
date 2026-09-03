@@ -494,11 +494,15 @@ describe("assessJob — cobertura de TODAS las areas de Sistemas", () => {
   });
 
   // Riesgos de falso positivo propios del espanol de Ecuador, detectados al
-  // ampliar el vocabulario: el nombre de la empresa y la descripcion entran
-  // al texto evaluado, asi que una sigla corta puede colarse por donde no
-  // es. "soc" choca con "Soc. Anonima" (como se escribe toda sociedad
-  // anonima) y "servidores" con "servidores publicos" (los funcionarios del
-  // Estado). Ambos quedaron calificados por eso.
+  // ampliar el vocabulario: la descripcion entra al texto evaluado, asi que
+  // una sigla corta puede colarse por donde no es. "soc" choca con "Soc.
+  // Anonima" (como se escribe toda sociedad anonima) y "servidores" con
+  // "servidores publicos" (los funcionarios del Estado). Ambos quedaron
+  // calificados por eso.
+  //
+  // El nombre de la empresa ya NO entra al texto puntuado (ver el motor),
+  // pero estos casos se dejan tal cual: la sigla tambien puede venir en la
+  // descripcion, que es donde de verdad hay que atajarla.
   it.each([
     ["Asistente Administrativa", "Manejo de agenda", "Constructora Andina Soc. Anonima"],
     ["Analista de Talento Humano", "Seleccion para servidores publicos del ministerio", "Ministerio"],
@@ -507,6 +511,62 @@ describe("assessJob — cobertura de TODAS las areas de Sistemas", () => {
     "Dada la vacante ajena al area '%s' en '%s', Cuando se evalua, Entonces NO se cuela por una sigla corta",
     (title, description, company) => {
       expect(assessJob(job({ title, description, company, location: "Quito, Ecuador" }), NOW).relevant).toBe(false);
+    }
+  );
+
+  // --- Casos reales de trabajo.org, medidos el 2026-09-03 ---------------
+
+  // En Ecuador "desarrollador comercial" es quien abre mercado, no quien
+  // programa. Llegaba a 99 puntos y encabezaba el listado por delante de las
+  // pasantias de verdad.
+  it.each([
+    ["Desarrollador comercial Jr Temporal-QUITO", "Apertura de mercado y cartera de clientes."],
+    ["Desarrollador Comercial", "Trade development manager para la marca."],
+    ["Ingeniero de Ventas Ciberseguridad", "Venta consultiva de soluciones de seguridad."],
+    ["ASESOR DE REDES COMERCIALES", "Atencion de la red de agencias del banco."],
+    ["Asistente contable experiencia en manejo de Software", "Registro contable y conciliaciones."],
+    ["ASESOR DE VENTAS JUNIOR", "Cumplimiento de metas de venta en piso."],
+  ])(
+    "Dado el aviso comercial real '%s', Cuando se evalua, Entonces NO entra aunque lleve una palabra del area",
+    (title, description) => {
+      expect(assessJob(job({ title, description }), NOW).relevant).toBe(false);
+    }
+  );
+
+  // El nombre de la empresa NO puede dar senal del area: si no, cualquier
+  // puesto publicado por una empresa de tecnologia entra por el membrete.
+  // Los tres son avisos reales que se colaban asi.
+  it.each([
+    ["Auxiliar administrativo", "Bullhost Cloud Service"],
+    ["Perfil Comercial", "Cloud Business & Solutions"],
+    ["Asistente De Inventarios Empresa Logistica", "EXPRESS"],
+  ])(
+    "Dado '%s' publicado por '%s', Cuando se evalua, Entonces el NOMBRE de la empresa no lo hace del area",
+    (title, company) => {
+      const r = assessJob(
+        job({ title, company, description: "Tareas administrativas, archivo y atencion al cliente." }),
+        NOW
+      );
+
+      expect(r.relevant).toBe(false);
+    }
+  );
+
+  // Y la contraparte: las que SI tienen que entrar. Titulos reales de la
+  // misma corrida, para que apretar el ruido no se lleve por delante lo bueno.
+  it.each([
+    ["Pasante de Sistemas", "Apoyo al area de TI en soporte y mantenimiento."],
+    ["Pasante De Seguridad De La Informacion", "Apoyo en gestion de incidentes y politicas."],
+    ["Pasante de Infraestructura TI", "Soporte a servidores y red interna."],
+    ["Pasante de Ciberseguridad", "Monitoreo de alertas y analisis de vulnerabilidades."],
+    ["Desarrollador Fullstack Jr", "Java y Angular en proyectos del sector financiero."],
+    ["Analista Desarrolladora IT jr", "Desarrollo y mantenimiento de aplicaciones internas."],
+    ["Pasante Telecomunicaciones", "Apoyo en instalacion de fibra optica y redes."],
+    ["Unete como Practicante al Equipo de Sistemas", "Practicas preprofesionales en el area de sistemas."],
+  ])(
+    "Dado el aviso real del area '%s', Cuando se evalua, Entonces SI entra",
+    (title, description) => {
+      expect(assessJob(job({ title, description }), NOW).relevant).toBe(true);
     }
   );
 
