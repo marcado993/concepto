@@ -377,4 +377,14 @@ jobs:
             sudo docker compose -f docker-compose.prod.yml build --no-cache backend
             sudo docker compose -f docker-compose.prod.yml up -d --force-recreate backend
             sudo docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy
+            # Limpieza de la cache de build, DESPUES de desplegar.
+            #
+            # `build --no-cache` de arriba genera capas nuevas en cada
+            # despliegue y no borra las viejas: la cache llego a 8 GB en un
+            # disco de 30 GB y hubo que vaciarla a mano dos veces para que
+            # entrara una imagen nueva. Va al final y con `|| true` a
+            # proposito: si la limpieza falla, el despliegue YA ocurrio y no
+            # tiene por que marcarse como fallido por una tarea de
+            # mantenimiento.
+            sudo docker builder prune -f --filter until=24h || true
           '

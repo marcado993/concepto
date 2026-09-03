@@ -5,8 +5,14 @@
 // real de un directivo no termine controlando la sesión de administrador Y
 // la de estudiante con el mismo login/token.
 
+import { resolveApiBaseUrl } from "../apiBase";
+
 const STORAGE_KEY = "aeis_admin_token";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+// Ver apiBase.ts. NO se repite aca el `?? localhost`: este archivo tiene su
+// PROPIA copia de la URL y fue el que siguio rompiendo el login del panel
+// despues de arreglar adminApi.ts. El arreglo va en TODOS los sitios que
+// arman una URL, no solo en el mas visible.
+const API_BASE_URL = resolveApiBaseUrl();
 
 let token = $state<string | null>(readStoredToken());
 
