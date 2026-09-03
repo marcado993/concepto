@@ -2,8 +2,12 @@
 // propósito de ../api.ts (esa es la sesión de estudiante/Logto). Todo acá
 // usa adminAuthHeader() (ver adminAuth.svelte.ts), nunca authHeader().
 import { adminAuthHeader } from "./adminAuth.svelte";
+import { resolveApiBaseUrl } from "../apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+// Ver apiBase.ts: el default NO puede ser localhost, porque este panel se
+// construye a mano y un build sin VITE_API_BASE_URL lo dejaba pidiendole
+// el login a la maquina del visitante.
+const API_BASE_URL = resolveApiBaseUrl();
 
 export class AdminApiError extends Error {
   constructor(

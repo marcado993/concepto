@@ -7,9 +7,14 @@
 // backend/src/security/ y docs/dominio/05-metodologia-devsecops-pipeline.md.
 
 import type { SecurityIndicator, SubscriptionTierPublic, VenturePublic } from "./data";
+import { resolveApiBaseUrl } from "./apiBase";
 import { authHeader } from "./auth.svelte";
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+// Ver apiBase.ts. Hoy Vercel si define VITE_API_BASE_URL para esta app,
+// asi que el default casi nunca se usa — pero era el mismo default que
+// rompio el panel, y dejarlo distinto entre las dos apps es pedir que la
+// proxima vez toque la que no estaba protegida.
+export const API_BASE_URL = resolveApiBaseUrl();
 
 export class ApiError extends Error {
   constructor(
