@@ -38,6 +38,16 @@ msgspec>=0.21.1
 anyio>=4.14.0
 protego>=0.6.2
 
+# DuckDB — lee directo, por rangos HTTP, el dataset publico de
+# github.com/kalil0321/ats-scrapers (Ashby, Greenhouse, SuccessFactors,
+# Workday...). NO se instala el paquete `ats-scrapers`: su propia
+# funcion `search()` descarga el snapshot COMPLETO (2+ GB) a memoria antes
+# de filtrar (confirmado leyendo su client.py) - inviable en un contenedor
+# que corre cada 3 horas. DuckDB consulta el mismo Parquet sin bajarlo
+# entero: ~4 segundos, verificado. Wheel arm64 real para linux/py312
+# confirmada en PyPI (manylinux_2_28_aarch64), sin compilar en el build.
+duckdb==1.5.5
+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4

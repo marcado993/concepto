@@ -247,6 +247,11 @@ def _recolectar_fuente(fuente: str, cfg: Config) -> list[Job]:
 
         return trabajo_org.recolectar(cfg)
 
+    if fuente == "ats_scrapers":
+        from panchito.sources import ats_dataset
+
+        return ats_dataset.recolectar(cfg)
+
     raise ValueError(f"sin recolector para {fuente!r}")
 
 

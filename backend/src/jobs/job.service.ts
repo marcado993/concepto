@@ -81,6 +81,7 @@ const SOURCE_LABELS: Readonly<Record<string, string>> = {
   multitrabajos: "Multitrabajos",
   computrabajo: "Computrabajo",
   trabajo_org: "Trabajo.org",
+  ats_scrapers: "ats-scrapers",
   remotive: "Remotive",
   remoteok: "Remote OK",
   arbeitnow: "Arbeitnow",

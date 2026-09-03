@@ -570,6 +570,83 @@ describe("assessJob — cobertura de TODAS las areas de Sistemas", () => {
     }
   );
 
+  // --- Casos reales del dataset de ats-scrapers, medidos el 2026-09-03 -----
+  //
+  // Fuente: github.com/kalil0321/ats-scrapers (dataset alojado de ATS -
+  // Ashby, Greenhouse, SuccessFactors, Workday...). A diferencia de los
+  // portales locales, aca la descripcion completa llega hasta 10 kB, mucho
+  // mas larga que un extracto de tarjeta: eso le da al motor mas texto
+  // donde una mencion incidental de "tecnologia" puede colar un puesto que
+  // no es del area.
+
+  // "express" suelto (para Express.js) hacia match con "Express" en el
+  // sentido de "rapido/expreso" del ingles/espanol de negocios -
+  // "Adjuster II Express Claims" (ajustador de SEGUROS) llegaba a 65 puntos
+  // porque "express" estaba en el TITULO y el motor le da maxima fuerza a
+  // eso. Se reemplazo por formas inequivocas ("express.js", "expressjs").
+  it("Dado 'Express' en el sentido de VELOCIDAD y no de Express.js, Cuando se evalua, Entonces NO entra", () => {
+    const r = assessJob(
+      job({
+        title: "Adjuster II Express Claims PC",
+        company: "Aig",
+        description: "Claims management for successful resolution, interaction with policyholders and insurers.",
+      }),
+      NOW
+    );
+
+    expect(r.relevant).toBe(false);
+  });
+
+  it("Dado un puesto que SI usa Express.js, Cuando se evalua, Entonces SI entra", () => {
+    const r = assessJob(
+      job({ title: "Backend Developer", description: "Node.js con Express.js y PostgreSQL." }),
+      NOW
+    );
+
+    expect(r.relevant).toBe(true);
+  });
+
+  // Puestos de RRHH/administrativos puros cuya descripcion larga menciona
+  // de pasada las areas de la empresa ("una de las areas es Tecnologia...")
+  // y sumaba 3+ senales del cuerpo sin ser del area en absoluto.
+  it.each([
+    ["Pasante de Recursos Humanos", "nestleHRprdRMK"],
+    ["Recursos Humanos - Proyecto Secoya", "HOERBIGER"],
+    ["Administrativo de Personas", "Grupo Bimbo"],
+    ["Asistente Administrativo de Servicios Generales", "VeoliaEnvironnementSA"],
+    ["Asistente Administrativa", "Pwc"],
+    ["Ejecutivo de Telemarketing", "coface"],
+  ])(
+    "Dado el aviso real NO tecnico '%s' en '%s', Cuando se evalua, Entonces NO entra pese a mencionar el area de pasada",
+    (title, company) => {
+      const r = assessJob(
+        job({
+          title,
+          company,
+          description:
+            "Apoyo en la gestion administrativa del area. La empresa cuenta con varias areas, entre ellas Tecnologia y Sistemas, con bases de datos propias.",
+        }),
+        NOW
+      );
+
+      expect(r.relevant).toBe(false);
+    }
+  );
+
+  // La contraparte real: un Data/Applied Scientist SI es del area aunque su
+  // equipo se llame "Marketing" - el sufijo de departamento no lo descarta.
+  it.each([
+    ["Staff Data Scientist, Marketing"],
+    ["Lead Applied Scientist, Marketing"],
+  ])("Dado el rol tecnico real '%s' con sufijo de equipo no tecnico, Cuando se evalua, Entonces SI entra", (title) => {
+    const r = assessJob(
+      job({ title, description: "Data scientist con machine learning, modelos predictivos y pipeline de datos." }),
+      NOW
+    );
+
+    expect(r.relevant).toBe(true);
+  });
+
   it("Dada una vacante de BI, Cuando se evalua, Entonces 'business intelligence' e 'inteligencia de negocios' dan el MISMO tag", () => {
     const ingles = assessJob(job({ title: "Analista Business Intelligence", description: "Power bi y sql." }), NOW);
     const espanol = assessJob(job({ title: "Analista de Inteligencia de Negocios", description: "Power bi y sql." }), NOW);

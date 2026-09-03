@@ -158,7 +158,7 @@ export const DOMAIN_TERMS: readonly string[] = [
   "csharp", "c#", ".net", "dotnet", "php", "laravel", "ruby", "rails",
   "golang", "rust", "scala", "elixir",
   "react", "angular", "vue", "svelte", "next.js", "nextjs", "nuxt",
-  "node", "nodejs", "node.js", "express", "nestjs", "django", "flask",
+  "node", "nodejs", "node.js", "express.js", "expressjs", "nestjs", "django", "flask",
   "spring", "spring boot", "flutter", "react native",
   "sql", "postgresql", "postgres", "mysql", "oracle", "mongodb", "redis",
   "docker", "kubernetes", "aws", "azure", "gcp", "terraform",
@@ -216,6 +216,20 @@ export const NOISE_TERMS: readonly string[] = [
   "redes comerciales", "gestor comercial", "ejecutivo de ventas",
   "ingeniero de ventas", "ingeniera de ventas",
   "asesor de ventas", "asesora de ventas", "asistente contable",
+  // Vistos en avisos REALES del dataset de ats-scrapers (github.com/
+  // kalil0321/ats-scrapers, corrida del 2026-09-03): puestos de RRHH y
+  // administrativos puros cuya descripcion completa (hasta 10 kB, mucho mas
+  // larga que un extracto de portal local) menciona de pasada las areas de
+  // la empresa ("una de las areas es Tecnologia...") y sumaba 3+ senales del
+  // cuerpo sin ser del area en absoluto.
+  "recursos humanos", "administrativo de personas", "administrativa de personas",
+  "asistente administrativo", "asistente administrativa",
+  "auxiliar administrativo", "auxiliar administrativa",
+  "servicios generales", "ejecutivo de telemarketing", "ejecutiva de telemarketing",
+  // "Comercial Jr." generico: vacante real de ventas/desarrollo de negocio
+  // para recien graduados que solo menciona "la tecnologia" de pasada como
+  // motivador, no como parte del puesto.
+  "comercial jr",
 ];
 
 /**

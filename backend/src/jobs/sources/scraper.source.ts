@@ -33,6 +33,7 @@ export const SCRAPER_SOURCES = [
   "multitrabajos",
   "computrabajo",
   "trabajo_org",
+  "ats_scrapers",
 ] as const;
 
 /**

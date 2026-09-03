@@ -36,6 +36,13 @@ export const SOURCE_PRIORITY: Readonly<Record<string, number>> = {
   // listado, asi que ante la misma vacante en ambas, la de trabajo.org es
   // la que el motor puede leer de verdad.
   trabajo_org: 92,
+  // El mas bajo de las fuentes locales, a proposito: es el UNICO cuyo
+  // dedupe_key (titulo+empresa) puede colisionar con una vacante ya
+  // publicada en la bolsa oficial de la empresa via otro portal, y esa
+  // otra version casi siempre tiene mejor contexto local (idioma, moneda,
+  // formato de fecha). Sigue por encima de las APIs internacionales: son
+  // ofertas reales de empresas que operan en Ecuador, no ruido remoto.
+  ats_scrapers: 65,
   linkedin: 85,
   // APIs internacionales: datos limpios y completos, pero casi todo lo que
   // traen es remoto del exterior.
