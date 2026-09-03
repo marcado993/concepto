@@ -74,9 +74,9 @@ describe("JobService.list — filtros", () => {
 
     await service.list({ q: "java" } as QueryJobsDto);
 
-    const or = prisma.jobOffer.findMany.mock.calls[0][0].where.OR;
-    expect(or).toHaveLength(3);
-    expect(or[0].title).toEqual({ contains: "java", mode: "insensitive" });
+    const grupo = grupoOr(prisma, (c: any) => c.title !== undefined);
+    expect(grupo).toHaveLength(3);
+    expect(grupo[0].title).toEqual({ contains: "java", mode: "insensitive" });
   });
 
   // Una remota extranjera puede ser tan tomable como una de Quito — pero
@@ -87,7 +87,7 @@ describe("JobService.list — filtros", () => {
 
     await service.list({ ecuador: true } as QueryJobsDto);
 
-    const or = prisma.jobOffer.findMany.mock.calls[0][0].where.OR;
+    const or = grupoOr(prisma, (c: any) => c.location?.contains === "quito" || c.workMode === "REMOTE");
     expect(or.some((c: any) => c.location?.contains === "quito")).toBe(true);
 
     const remota = or.find((c: any) => c.workMode === "REMOTE");
@@ -104,7 +104,7 @@ describe("JobService.list — filtros", () => {
 
     await service.list({ ecuador: true } as QueryJobsDto);
 
-    const or = prisma.jobOffer.findMany.mock.calls[0][0].where.OR;
+    const or = grupoOr(prisma, (c: any) => c.location?.contains === "quito" || c.workMode === "REMOTE");
     expect(or).not.toContainEqual({ workMode: "REMOTE" });
   });
 
@@ -113,9 +113,50 @@ describe("JobService.list — filtros", () => {
 
     await service.list({ ecuador: false } as QueryJobsDto);
 
-    expect(prisma.jobOffer.findMany.mock.calls[0][0].where.OR).toBeUndefined();
+    expect(prisma.jobOffer.findMany.mock.calls[0][0].where.AND).toBeUndefined();
+  });
+
+  // La regresion real que motivo dejar de escribir `where.OR` a secas: dos
+  // filtros que cada uno necesita su PROPIO "OR" (buscar texto Y "solo
+  // Ecuador" a la vez) se pisaban entre si — el segundo en aplicarse
+  // borraba el OR del primero, asi que buscar "java" con Ecuador activado
+  // devolvia CUALQUIER oferta de Ecuador, ignorando "java" por completo.
+  it("Dada una busqueda libre CON ecuador=true, Cuando se lista, Entonces las DOS condiciones se aplican, ninguna borra a la otra", async () => {
+    const { service, prisma } = await buildService();
+
+    await service.list({ q: "java", ecuador: true } as QueryJobsDto);
+
+    const where = prisma.jobOffer.findMany.mock.calls[0][0].where;
+    const grupoBusqueda = where.AND.find((g: any) => g.OR?.some((c: any) => c.title !== undefined));
+    const grupoEcuador = where.AND.find((g: any) => g !== grupoBusqueda);
+
+    expect(grupoBusqueda.OR[0].title).toEqual({ contains: "java", mode: "insensitive" });
+    expect(grupoEcuador.OR.some((c: any) => c.workMode === "REMOTE")).toBe(true);
+  });
+
+  // El caso real que expuso esto: un aviso de LinkedIn con relevancia 93,
+  // publicado y "visto" ese mismo dia en el sitio, pero sin fecha propia
+  // parseable — quedaba invisible en TODAS las ventanas de antiguedad, sin
+  // importar cuan reciente fuera en realidad.
+  it("Dado maxAgeDays, Cuando se lista, Entonces una oferta SIN fecha entra si la VIMOS dentro de la ventana", async () => {
+    const { service, prisma } = await buildService();
+
+    await service.list({ maxAgeDays: 7 } as QueryJobsDto);
+
+    const grupo = grupoOr(prisma, (c: any) => c.postedAt !== undefined);
+    const ramaSinFecha = grupo.find((c: any) => c.postedAt === null);
+    expect(ramaSinFecha).toBeDefined();
+    expect(ramaSinFecha.firstSeenAt).toEqual({ gte: expect.any(Date) });
   });
 });
+
+/** La condicion cuyo grupo OR se busca por una pista de forma, ya que ahora
+ *  viven repartidas en `where.AND` en vez de todas juntas en `where.OR`. */
+function grupoOr(prisma: any, pista: (c: any) => boolean): any[] {
+  const and = prisma.jobOffer.findMany.mock.calls[0][0].where.AND;
+  const grupo = and.find((g: any) => g.OR?.some(pista));
+  return grupo.OR;
+}
 
 describe("JobService.list — orden", () => {
   it("Dado el orden por defecto, Cuando se lista, Entonces ordena por relevancia descendente", async () => {

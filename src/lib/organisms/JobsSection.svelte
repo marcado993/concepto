@@ -11,6 +11,13 @@
   import { tituloLegible } from "../jobTitle";
 
   let result = $state<JobListResult | null>(null);
+  // Las tarjetas YA cargadas, separadas de `result`: al pedir la pagina
+  // siguiente el backend sigue devolviendo solo esos 40, y hay que
+  // AGREGARLos a lo que ya se veia, no reemplazarlo. `result` conserva el
+  // total/facetas de la respuesta MAS RECIENTE nada mas.
+  let jobsAcumulados = $state<JobOfferPublic[]>([]);
+  let offset = $state(0);
+  let loadingMore = $state(false);
   let loadError = $state(false);
   let loading = $state(true);
 
@@ -43,9 +50,11 @@
    * llena. Ofrecer ventanas más anchas era ofrecer ofertas a las que ya no
    * se puede postular, y eso hace perder más tiempo del que ahorra.
    *
-   * Consecuencia deliberada: las ofertas SIN fecha quedan siempre fuera. El
-   * filtro responde "¿qué sigue abierto?" y de una oferta sin fecha no se
-   * puede afirmar eso (ver el filtro por maxAgeDays en el backend).
+   * Una oferta SIN fecha propia SÍ puede entrar: el backend la deja pasar
+   * si NOSOTROS la vimos por primera vez dentro de la ventana (ver
+   * maxAgeDays en job.service.ts) — no se puede afirmar "posteada hace 3
+   * días" sin fecha, pero sí "la encontramos hace 3 días", que es la
+   * pregunta real detrás del filtro.
    */
   const AGE_OPTIONS: { label: string; days: number }[] = [
     { label: "3 días", days: 3 },
@@ -53,6 +62,19 @@
     { label: "2 semanas", days: 14 },
   ];
   let maxAgeDays = $state(7);
+
+  /**
+   * Tamaño de página y "Cargar más".
+   *
+   * El caso real que lo motivó: con el filtro por defecto (últimos 7 días,
+   * más recientes primero) había 433 ofertas activas y solo se mostraban
+   * las primeras 40 — una pasantía real de TECNASA, con 82 de relevancia y
+   * publicada el día anterior, quedaba en la posición 76 y por lo tanto
+   * invisible SIEMPRE, sin importar que fuera exactamente lo que el motor
+   * está pensado para mostrar. El backend ya soportaba `offset`; solo
+   * faltaba pedirlo.
+   */
+  const PAGE_SIZE = 40;
 
   /**
    * Días bajo los cuales una oferta se marca como "reciente".
@@ -91,7 +113,7 @@
     tag: activeTag || undefined,
     maxAgeDays,
     sort,
-    limit: 40,
+    limit: PAGE_SIZE,
   });
 
   $effect(() => {
@@ -100,15 +122,20 @@
     // Svelte y la lista no se actualizaría al cambiar un filtro.
     const current = filters;
     loading = true;
+    offset = 0;
     let cancelled = false;
 
-    fetchJobs(current)
+    fetchJobs({ ...current, offset: 0 })
       .then((data) => {
         // Guard de carrera: cambiar dos filtros rápido lanza dos peticiones
         // y la primera puede responder DESPUÉS de la segunda, pisando el
         // resultado correcto con el viejo. El cleanup marca la obsoleta.
         if (cancelled) return;
         result = data;
+        // Cambiar un filtro empieza el listado de cero: mezclar la pagina
+        // anterior con la nueva mostraria ofertas que ya no cumplen el
+        // filtro actual.
+        jobsAcumulados = data.jobs;
         loadError = false;
         // Al cambiar los filtros la tarjeta abierta ya no está en la lista;
         // dejar el id vivo hacía que otra oferta apareciera expandida al
@@ -126,6 +153,32 @@
       cancelled = true;
     };
   });
+
+  /**
+   * Trae la página siguiente y la AGREGA a lo que ya se veía.
+   *
+   * No usa el `$effect` de arriba a propósito: ese depende de `filters`
+   * entero, así que tocar `offset` ahí dispararía como si hubiera cambiado
+   * un filtro y reemplazaría la lista en vez de extenderla.
+   */
+  async function cargarMas() {
+    if (!result || loadingMore) return;
+    const siguiente = offset + PAGE_SIZE;
+    loadingMore = true;
+    try {
+      const data = await fetchJobs({ ...filters, offset: siguiente });
+      jobsAcumulados = [...jobsAcumulados, ...data.jobs];
+      offset = siguiente;
+      // El total/facetas no cambian entre páginas del mismo filtro, pero
+      // `updatedAt` sí puede — nunca hace daño quedarse con la respuesta
+      // más fresca.
+      result = data;
+    } catch {
+      loadError = true;
+    } finally {
+      loadingMore = false;
+    }
+  }
 
   const KIND_LABELS: Record<string, string> = {
     INTERNSHIP: "Pasantía",
@@ -204,7 +257,7 @@
     expandedId = expandedId === id ? null : id;
   }
 
-  const jobs = $derived<JobOfferPublic[]>(result?.jobs ?? []);
+  const jobs = $derived<JobOfferPublic[]>(jobsAcumulados);
 </script>
 
 <div class="jobs-wrap">
@@ -387,6 +440,13 @@
           {/if}
         </article>
       {/each}
+
+      {#if result && jobs.length < result.total}
+        {@const total = result.total}
+        <button class="jobs-more" onclick={cargarMas} disabled={loadingMore}>
+          {loadingMore ? "Cargando…" : `Ver más (${total - jobs.length} más)`}
+        </button>
+      {/if}
     {/if}
   </div>
 </div>
@@ -480,6 +540,26 @@
     color: #eef4fb;
     font-size: 11.5px;
     cursor: pointer;
+  }
+
+  .jobs-more {
+    align-self: center;
+    margin-top: 6px;
+    padding: 11px 22px;
+    border-radius: 999px;
+    border: 1px solid var(--sheet-accent, #5b8def);
+    background: rgba(91, 141, 239, 0.14);
+    color: #eef4fb;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .jobs-more:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .jobs-more:not(:disabled):hover {
+    background: rgba(91, 141, 239, 0.24);
   }
 
   .jobs-meta {

@@ -169,17 +169,37 @@ function orderBy(sort: QueryJobsDto["sort"]): Prisma.JobOfferOrderByWithRelation
 function buildWhere(query: QueryJobsDto): Prisma.JobOfferWhereInput {
   const where: Prisma.JobOfferWhereInput = { active: true };
 
+  // Cada condición que necesita su PROPIO "OR" (antigüedad, búsqueda,
+  // Ecuador) se junta acá en vez de escribir `where.OR` directo. Escribir
+  // `where.OR` dos veces no lo combina, lo REEMPLAZA — así que buscar
+  // "java" y activar "solo Ecuador" a la vez perdía en silencio el texto
+  // buscado y devolvía cualquier oferta de Ecuador. `where.AND` con un
+  // grupo por cada condición evita que una le borre el OR a la otra.
+  const and: Prisma.JobOfferWhereInput[] = [];
+
   if (query.kind) where.kind = query.kind;
   if (query.workMode) where.workMode = query.workMode;
   if (query.seniority) where.seniority = query.seniority;
   if (query.tag) where.tags = { has: query.tag };
 
   if (query.maxAgeDays) {
-    // Las ofertas SIN fecha quedan fuera al filtrar por antigüedad, y es a
-    // propósito: el filtro existe para responder "¿qué sigue abierto?", y
-    // de una oferta sin fecha no se puede afirmar eso. Colarla en "últimos
-    // 3 días" sería justamente la mentira que el filtro viene a evitar.
-    where.postedAt = { gte: new Date(Date.now() - query.maxAgeDays * 86_400_000) };
+    const corte = new Date(Date.now() - query.maxAgeDays * 86_400_000);
+    // Una oferta SIN fecha de publicación no puede decir "posteada hace
+    // 3 días" — de ahí que antes quedara fuera de cualquier ventana de
+    // antigüedad, a propósito. Pero "sin fecha" no es lo mismo que
+    // "vieja": Multitrabajos y Computrabajo, por ejemplo, no siempre
+    // pasan una fecha en la tarjeta y el scraper no puede inventarla.
+    // Medido en producción, un 18% de las activas de LinkedIn no tienen
+    // postedAt — y quedaban invisibles en TODAS las ventanas, sin
+    // importar qué tan relevantes fueran.
+    //
+    // Se usa `firstSeenAt` (SIEMPRE tiene valor) como sustituto honesto:
+    // si nosotros mismos la vimos por primera vez dentro de la ventana,
+    // sí es razonable llamarla reciente, aunque no sepamos la fecha que
+    // puso la empresa.
+    and.push({
+      OR: [{ postedAt: { gte: corte } }, { postedAt: null, firstSeenAt: { gte: corte } }],
+    });
   }
 
   if (query.q) {
@@ -187,14 +207,18 @@ function buildWhere(query: QueryJobsDto): Prisma.JobOfferWhereInput {
     // guarda el texto tal como lo publicó la empresa, con mayúsculas y
     // tildes, y comparar en minúsculas del lado de la app no encontraría
     // "Desarrollador" buscando "desarrollador".
-    where.OR = [
-      { title: { contains: query.q, mode: "insensitive" } },
-      { company: { contains: query.q, mode: "insensitive" } },
-      { description: { contains: query.q, mode: "insensitive" } },
-    ];
+    and.push({
+      OR: [
+        { title: { contains: query.q, mode: "insensitive" } },
+        { company: { contains: query.q, mode: "insensitive" } },
+        { description: { contains: query.q, mode: "insensitive" } },
+      ],
+    });
   }
 
-  if (query.ecuador === true) Object.assign(where, ecuadorFilter());
+  if (query.ecuador === true) and.push(ecuadorFilter());
+
+  if (and.length > 0) where.AND = and;
 
   return where;
 }
