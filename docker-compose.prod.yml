@@ -57,7 +57,7 @@ services:
         condition: service_healthy
     environment:
       # Bolsa de empleo: dónde viven los scrapers (Bolsa EPN, Indeed,
-      # LinkedIn, Multitrabajos, Computrabajo). Es el nombre del servicio
+      # LinkedIn, Multitrabajos, Computrabajo, trabajo.org). Es el nombre del servicio
       # del compose, no una URL pública — el contenedor no es alcanzable
       # desde fuera de esta red. Si se quita esta variable, el módulo de
       # empleos sigue funcionando solo con las APIs públicas
@@ -71,10 +71,13 @@ services:
   # Scrapers de ofertas de empleo (Python). Alimenta el módulo de bolsa de
   # empleo que reemplazó a Emprendimientos en el menú de la app.
   #
-  # Cinco fuentes: la Bolsa EPN, Multitrabajos y Computrabajo con scrapers
+  # Seis fuentes: la Bolsa EPN, Multitrabajos y Computrabajo con scrapers
   # propios sobre Playwright (ninguna tiene API pública, y son justo las que
-  # publican pasantías para estudiantes de la EPN), más Indeed Ecuador y
-  # LinkedIn vía JobSpy. Portado del worker Panchito GPT.
+  # publican pasantías para estudiantes de la EPN), trabajo.org con Scrapling
+  # (sin navegador: su listado ya viene renderizado del servidor, y es la
+  # única fuente local que trae la descripción completa en la propia
+  # tarjeta), más Indeed Ecuador y LinkedIn vía JobSpy. Portado del worker
+  # Panchito GPT.
   #
   # Igual que postgres: SIN "ports:". Solo el backend le habla, por la red
   # interna. Un scraper es de las últimas piezas que conviene exponer a

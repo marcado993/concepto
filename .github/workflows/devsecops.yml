@@ -354,7 +354,11 @@ jobs:
             cd ~/aeis-app
             git fetch origin main
             git checkout main
+            # Se anota DONDE estaba el repo antes de moverlo, para poder
+            # preguntar despues que carpetas cambiaron en este despliegue.
+            ANTES=$(git rev-parse HEAD)
             git reset --hard origin/main
+            DESPUES=$(git rev-parse HEAD)
             # --build (sin --no-cache) se comprobó dos veces en producción
             # que puede quedarse con la capa COPY . . vieja del build
             # anterior y NO detectar que el código fuente cambió — el
@@ -377,6 +381,23 @@ jobs:
             sudo docker compose -f docker-compose.prod.yml build --no-cache backend
             sudo docker compose -f docker-compose.prod.yml up -d --force-recreate backend
             sudo docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy
+            # El scraper de empleos es OTRA imagen, y hasta hoy NINGUN
+            # despliegue la reconstruia: se agrego una fuente nueva
+            # (trabajo.org) y el contenedor viejo simplemente la reportaba
+            # como desconocida, sin error visible. El backend le pide
+            # fuentes por nombre, asi que su codigo tiene que ir al dia.
+            #
+            # Va CONDICIONADO a que algo bajo jobs-scraper/ haya cambiado:
+            # esa imagen instala Chromium y compila dependencias, tarda
+            # varios minutos, y reconstruirla en cada push de frontend
+            # seria pagarlo por nada.
+            if ! git diff --quiet "$ANTES" "$DESPUES" -- jobs-scraper/; then
+              echo "jobs-scraper cambio, reconstruyendo su imagen"
+              sudo docker compose -f docker-compose.prod.yml build --no-cache jobs-scraper
+              sudo docker compose -f docker-compose.prod.yml up -d --force-recreate jobs-scraper
+            else
+              echo "jobs-scraper sin cambios, se deja como esta"
+            fi
             # Limpieza de la cache de build, DESPUES de desplegar.
             #
             # `build --no-cache` de arriba genera capas nuevas en cada
