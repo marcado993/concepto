@@ -127,6 +127,18 @@ export const DOMAIN_TERMS: readonly string[] = [
   // "administrador de servidores").
   "virtualizacion", "vmware", "windows server", "active directory",
   "mobile developer", "desarrollador movil", "android", "ios",
+  // Vistos en avisos REALES de Computrabajo que se caian por no tener ni
+  // una senal: "Pasante de Aplicaciones", "Tecnico de Computadoras",
+  // "Web master", "Disenador web wordpress". Son del area y el titulo era
+  // lo unico que el motor podia leer, porque esa bolsa no publica
+  // descripcion en el listado (verificado abriendo sus tarjetas: solo
+  // traen empresa, ciudad y fecha).
+  //
+  // "web" NO va suelto: es la mitad de "marketing web" y "pagina web" en
+  // avisos comerciales. Va en las formas que si son del area.
+  "aplicaciones", "aplicaciones web", "aplicaciones moviles",
+  "computadoras", "computadores",
+  "web master", "webmaster", "diseno web", "sitio web", "wordpress",
   // --- Redes y telecomunicaciones ---
   // "redes" AHORA VA SUELTO, y antes no. Enumerar cada forma ("administrador
   // de redes", "ingeniero de redes"...) fallaba con la variedad real de los

@@ -154,6 +154,36 @@ describe("assessJob — clasificacion de dominio", () => {
     expect(assessJob(job({ title, description: "" }), NOW).relevant).toBe(false);
   });
 
+  // Vistos en avisos REALES de Computrabajo, que NO publica descripcion en
+  // el listado (verificado abriendo sus tarjetas: solo traen empresa,
+  // ciudad y fecha). El titulo es lo unico que el motor puede leer ahi.
+  it.each([
+    ["Pasante de Aplicaciones"],
+    ["Tecnico de Computadoras"],
+    ["Practicante Tecnico Electronico Computadoras"],
+    ["Web master"],
+    ["Pasante en diseno web"],
+    ["Disenador web wordpress senior"],
+  ])("Dado el aviso real de Computrabajo '%s' SIN descripcion, Cuando se evalua, Entonces entra", (title) => {
+    expect(assessJob(job({ title, description: "" }), NOW).relevant).toBe(true);
+  });
+
+  // La contraparte de abrir "aplicaciones", "computadoras" y las formas de
+  // "web": los mismos avisos donde esas palabras aparecen en un puesto
+  // COMERCIAL. Todos vienen de la misma corrida real.
+  it.each([
+    ["Vendedor de Computadoras"],
+    ["Super Vendedor en Tecnologias"],
+    ["Pasante Marketing Digital"],
+    ["Especialista en marketing digital"],
+    ["Ejecutivo de Ventas de Software"],
+    ["Docente de informatica"],
+    ["Asistente de Desarrollo de Negocios"],
+    ["Quimico de Desarrollo y Control de Calidad"],
+  ])("Dado el aviso comercial real '%s', Cuando se evalua, Entonces sigue cayendo", (title) => {
+    expect(assessJob(job({ title, description: "" }), NOW).relevant).toBe(false);
+  });
+
   it("Dado un titulo sin ninguna senal del area, Cuando se evalua, Entonces NO es relevante aunque sume puntos por ubicacion", () => {
     const r = assessJob(
       job({ title: "Asistente Administrativa", description: "Manejo de agenda y archivo.", location: "Quito" }),
