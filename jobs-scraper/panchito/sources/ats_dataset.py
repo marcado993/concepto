@@ -44,11 +44,10 @@ como tenant "Fa Ewnb Saasfaprod1" -ver `_LOGOS_EMPRESA` mas abajo) y Devsu.
 
 from __future__ import annotations
 
-import json
 import logging
-import re
-import urllib.request
 from datetime import datetime, timezone
+
+import requests
 
 from ..config import Config
 from ..models import Job
@@ -92,12 +91,19 @@ def _resolver_url_parquet() -> str:
     propio proyecto expone para no romperse si rotan el artefacto. Si el
     manifiesto no responde, se cae al path estable conocido en vez de
     abortar la fuente entera por un solo request de configuracion.
+
+    `requests` y no `urllib.request` a proposito: Semgrep (policy propia del
+    pipeline, ver .github/workflows/devsecops.yml) marca urllib como
+    bloqueante porque soporta el esquema `file://` -si la URL viniera de un
+    input externo, es una via de lectura arbitraria de archivos. Acá
+    `MANIFEST_URL` es una constante fija, nunca dato de un tercero, pero
+    `requests` no soporta ese esquema de fabrica y evita la clase entera de
+    problema sin tener que justificar caso por caso.
     """
     try:
-        peticion = urllib.request.Request(MANIFEST_URL, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(peticion, timeout=15) as resp:
-            manifiesto = json.loads(resp.read())
-        return manifiesto["all"]["parquet"]
+        resp = requests.get(MANIFEST_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        resp.raise_for_status()
+        return resp.json()["all"]["parquet"]
     except Exception as e:
         log.warning("  ats_dataset: manifiesto no disponible (%s), usando URL fija", type(e).__name__)
         return PARQUET_FALLBACK
