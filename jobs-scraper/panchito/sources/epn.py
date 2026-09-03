@@ -68,8 +68,29 @@ def _extraer_tarjetas(page) -> list[dict]:
             fecha:    c.querySelector('.publish_time')?.textContent.replace(/\s+/g, ' ').trim() || '',
             etiquetas:[...c.querySelectorAll('.label')].map(e => e.textContent.trim()),
             logo:     c.querySelector('img')?.getAttribute('src') || '',
+            texto:    (c.innerText || '').replace(/\s+/g, ' ').trim(),
         }))"""
     )
+
+
+def _limpiar_texto(texto: str, titulo: str, empresa: str, lugar: str, etiquetas: list[str]) -> str:
+    """Deja del texto de la tarjeta solo lo que aporta algo nuevo.
+
+    `innerText` trae el título, la empresa, el lugar y las etiquetas
+    repetidos, porque están dentro de la misma tarjeta. Dárselos al motor
+    otra vez como "descripción" solo duplicaría señales que ya cuenta por
+    su cuenta.
+    """
+    if not texto:
+        return ""
+    fuera = [titulo, empresa, lugar, *etiquetas]
+    limpio = texto
+    for parte in fuera:
+        if parte:
+            limpio = limpio.replace(parte, " ")
+    limpio = " ".join(limpio.split())
+    # Menos de 30 caracteres es ruido de maquetación, no una descripción.
+    return limpio if len(limpio) >= 30 else ""
 
 
 def _tarjeta_a_job(t: dict, ahora: datetime) -> Job | None:
@@ -92,6 +113,12 @@ def _tarjeta_a_job(t: dict, ahora: datetime) -> Job | None:
     if _LOGO_PLACEHOLDER.search(logo):
         logo = ""
 
+    # Texto de la tarjeta como descripción, quitando lo que ya viaja en sus
+    # propios campos. Sin esto el motor solo podía leer el título, y una
+    # vacante como "Pasante de Ingeniería - Automatización de Sistemas" no
+    # tenía ni una línea donde encontrar de qué área era.
+    descripcion = _limpiar_texto(t.get("texto", ""), titulo, empresa, lugar, etiquetas)
+
     return Job(
         dedupe_key=calcular_dedupe_key(titulo, empresa),
         source="epn",
@@ -109,6 +136,7 @@ def _tarjeta_a_job(t: dict, ahora: datetime) -> Job | None:
                 for e in etiquetas)
             or detectar_pasantia(titulo)
         ),
+        description=descripcion,
         posted_at=parsear_fecha(t.get("fecha", "")),
         scraped_at=ahora,
         tags=etiquetas,

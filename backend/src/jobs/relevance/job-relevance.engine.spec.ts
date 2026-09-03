@@ -123,6 +123,37 @@ describe("assessJob — clasificacion de dominio", () => {
     expect(delArea.score).toBeGreaterThan(deOtraCarrera.score * 3);
   });
 
+  // Medido contra 630 avisos reales de Computrabajo y la Bolsa EPN: las 572
+  // descartadas NO tenian descripcion, asi que el motor solo podia leer el
+  // titulo. Con "sistemas" y "redes" solo calificados, estos titulos —que
+  // son los mas frecuentes del area en Ecuador— no tenian ni UNA senal.
+  it.each([
+    ["Administrador/a de redes"],
+    ["Tecnico auxiliar en redes, pc, impresoras"],
+    ["Pasante de Sistemas"],
+    ["Auxiliar de Sistemas"],
+    ["Tecnico en Sistemas"],
+    ["PASANTE DE INGENIERIA - AUTOMATIZACION DE SISTEMAS"],
+  ])("Dado el titulo real '%s' SIN descripcion, Cuando se evalua, Entonces entra", (title) => {
+    const r = assessJob(job({ title, description: "" }), NOW);
+
+    expect(r.relevant).toBe(true);
+  });
+
+  // La contraparte de abrir "sistemas" y "redes": son tambien la mitad de
+  // puestos que NO son del area. Se frenan desde el ruido, que rebaja la
+  // oferta entera, en vez de enumerar de antemano cada forma valida de
+  // escribir un puesto de Sistemas — enumerar es lo que dejaba fuera a
+  // "Administrador/a de redes" por una simple barra.
+  it.each([
+    ["Editor de video y manejo de redes sociales"],
+    ["Community Manager"],
+    ["Auditor de Sistemas de Gestion de Calidad"],
+    ["Asistente de Sistemas Contables"],
+  ])("Dado el titulo ajeno '%s', Cuando se evalua, Entonces sigue cayendo", (title) => {
+    expect(assessJob(job({ title, description: "" }), NOW).relevant).toBe(false);
+  });
+
   it("Dado un titulo sin ninguna senal del area, Cuando se evalua, Entonces NO es relevante aunque sume puntos por ubicacion", () => {
     const r = assessJob(
       job({ title: "Asistente Administrativa", description: "Manejo de agenda y archivo.", location: "Quito" }),

@@ -74,6 +74,24 @@ def _extraer_tarjetas(page) -> list[dict]:
     )
 
 
+def _extracto(parrafos: list[str], ubicacion: str, fecha: str, empresa: str) -> str:
+    """El párrafo más largo que NO sea un dato que ya tenemos aparte.
+
+    Se descartan ubicación, fecha y empresa porque ya viajan en sus propios
+    campos: repetirlos como "descripción" solo le daría al motor las mismas
+    señales dos veces, y ninguna de ellas dice de qué trata el puesto.
+
+    El mínimo de 60 caracteres evita quedarse con una etiqueta suelta
+    ("Postulación rápida", "Contrato fijo") y llamarla descripción.
+    """
+    ya_conocidos = {t.strip() for t in (ubicacion, fecha, empresa) if t}
+    candidatos = [p for p in parrafos if p and p.strip() not in ya_conocidos]
+    if not candidatos:
+        return ""
+    mejor = max(candidatos, key=len)
+    return mejor if len(mejor) >= 60 else ""
+
+
 def _tarjeta_a_job(t: dict, ahora: datetime) -> Job | None:
     titulo = limpiar_titulo(t.get("titulo", ""))
     if not titulo:
@@ -88,6 +106,21 @@ def _tarjeta_a_job(t: dict, ahora: datetime) -> Job | None:
     url = href if href.startswith("http") else f"{BASE}{href}"
     url = url.split("#")[0]  # el ancla #lc=ListOffers-... es tracking de la sesión
 
+    # Extracto de la tarjeta como descripción.
+    #
+    # Los párrafos ya se extraían, pero solo se usaban para detectar si era
+    # remoto y después se tiraban. Guardarlos cambia el resultado por
+    # completo: SIN descripción el motor de relevancia solo puede leer el
+    # título, y medido contra datos reales las 572 ofertas descartadas de
+    # esta fuente y la EPN eran TODAS sin descripción — "Administrador/a de
+    # redes" caía por no tener ni una línea que leer.
+    #
+    # No es la descripción completa (esa vive en el detalle, y entrar a cada
+    # aviso multiplicaría los requests por 20), pero el extracto de la
+    # tarjeta ya trae el área y a veces el stack, que es lo que el motor
+    # necesita.
+    descripcion = _extracto(parrafos, ubicacion, t.get("fecha", ""), empresa)
+
     return Job(
         dedupe_key=calcular_dedupe_key(titulo, empresa),
         source="computrabajo",
@@ -97,7 +130,8 @@ def _tarjeta_a_job(t: dict, ahora: datetime) -> Job | None:
         company=empresa,
         location=ubicacion,
         is_remote=detectar_remoto(titulo, ubicacion, " ".join(parrafos)),
-        is_internship=detectar_pasantia(titulo),
+        is_internship=detectar_pasantia(titulo, descripcion),
+        description=descripcion,
         posted_at=parsear_fecha(t.get("fecha", "")),
         scraped_at=ahora,
     )

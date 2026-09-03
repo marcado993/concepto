@@ -101,6 +101,14 @@ export const DOMAIN_TERMS: readonly string[] = [
   // ("Vendedor de tecnologia", "Asesor comercial de tecnologia") ya lo
   // frena el ruido del titulo, que castiga mucho mas de lo que suma esto.
   "tecnologia", "tecnologias",
+  // "sistemas" SUELTO. Es EL titulo del area en Ecuador ("Pasante de
+  // Sistemas", "Auxiliar de Sistemas", "Tecnico en Sistemas") y la carrera
+  // se llama asi. Estaba solo calificado ("analista de sistemas",
+  // "ingeniero de sistemas"...), y como las bolsas locales no publican
+  // descripcion, un "Pasante de Sistemas" de Computrabajo se quedaba sin
+  // UNA sola senal del area y puntuaba 0. Los choques reales
+  // ("sistemas de gestion", "sistemas contables") van a NOISE_TERMS.
+  "sistemas",
   // "ti" NUNCA va suelto: en espanol es un pronombre ("un plan pensado para
   // ti") y aparece en cualquier descripcion de beneficios. Solo calificado
   // por el rol que lo acompana.
@@ -120,10 +128,14 @@ export const DOMAIN_TERMS: readonly string[] = [
   "virtualizacion", "vmware", "windows server", "active directory",
   "mobile developer", "desarrollador movil", "android", "ios",
   // --- Redes y telecomunicaciones ---
-  // Mismo motivo que "tester": "redes" a secas es la mitad de "redes
-  // sociales", y una vacante de Community Manager no es una vacante de
-  // Sistemas. Va calificado, pero con todas las formas reales en que se
-  // publica una vacante de redes en Ecuador.
+  // "redes" AHORA VA SUELTO, y antes no. Enumerar cada forma ("administrador
+  // de redes", "ingeniero de redes"...) fallaba con la variedad real de los
+  // avisos: medido en produccion, "Administrador/a de redes" quedaba fuera
+  // solo por la barra de la forma inclusiva, y "Tecnico auxiliar en redes,
+  // pc, impresoras" tambien. El unico choque real es "redes sociales", y ese
+  // se resuelve mejor desde NOISE_TERMS — ahi rebaja la oferta entera en vez
+  // de obligar a adivinar de antemano todas las formas de escribir un puesto.
+  "redes",
   "cloud", "infraestructura ti", "infraestructura tecnologica",
   "redes de datos", "administrador de redes", "ingeniero de redes",
   "analista de redes", "soporte de redes", "networking", "telecomunicaciones",
@@ -173,6 +185,13 @@ export const NOISE_TERMS: readonly string[] = [
   "desarrollo organizacional", "desarrollo humano", "desarrollo comercial",
   "desarrollo social", "desarrollo de negocio", "desarrollo de negocios",
   "desarrollo de mercado", "desarrollo de proveedores",
+  // Choques directos de los terminos sueltos "redes" y "sistemas", que se
+  // abrieron a proposito (ver DOMAIN_TERMS). Aca rebajan la oferta entera,
+  // que es mas fiable que intentar enumerar de antemano todas las formas
+  // validas de escribir un puesto del area.
+  "redes sociales", "community manager", "gestion de redes sociales",
+  "sistemas de gestion", "sistema de gestion", "sistemas contables",
+  "sistemas integrados de gestion", "sistemas de calidad",
 ];
 
 /**
